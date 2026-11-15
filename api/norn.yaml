@@ -1,0 +1,345 @@
+openapi: 3.1.0
+info:
+  title: Norn
+  version: "1"
+  description: |
+    Yggdrasil's assistant: your inbox, calendars, sign-ins, memory, profile
+    and writing help, and the front desk every message you type goes to
+    first. Any program that serves this contract and passes
+    `ygg check norn <url>` can replace the built-in one
+    (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - Learn only from your own words, never from an answer.
+    - Never let a fact or a sentence name someone the source didn't.
+    - Raw inbox text never leaves this part: Glim and the other parts get
+      summaries only.
+    - An expired sign-in is raised on Gjallar by Norn, the part holding it.
+servers:
+  - url: http://127.0.0.1:8771
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/memory:
+    get:
+      summary: Everything Norn remembers about you, newest first.
+      responses:
+        "200":
+          description: The memories.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Memory" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Remember this. Saying it twice is not an error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "201":
+          description: Remembered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Memory" }
+        "200":
+          description: Already known, by wording or by meaning.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [known]
+                properties:
+                  known: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/memory/{id}:
+    delete:
+      summary: Forget one memory.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Forgotten.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/jokes:
+    get:
+      summary: The widget's jokes you rated, newest first.
+      responses:
+        "200":
+          description: The ratings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [text, topic, form, rating, at]
+                  properties:
+                    text: { type: string }
+                    topic: { type: [string, "null"] }
+                    form: { type: [string, "null"] }
+                    rating: { type: integer, enum: [1, -1] }
+                    at: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/jokes/rating:
+    post:
+      summary: A thumb on a joke. Rating it again changes your mind; 0 takes it back.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, rating]
+              properties:
+                text: { type: string, maxLength: 1000 }
+                topic: { type: string }
+                form: { type: string }
+                rating: { type: integer, enum: [1, -1, 0] }
+      responses:
+        "200":
+          description: Rated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rated]
+                properties:
+                  rated: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/widgets:
+    get:
+      summary: Where this computer is, and what to hide at home and away. A hidden inbox source or calendar is not fetched at all.
+      responses:
+        "200": { $ref: "#/components/responses/WidgetSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Set them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WidgetSettings" }
+      responses:
+        "200": { $ref: "#/components/responses/WidgetSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/conversations:
+    get:
+      summary: Every conversation, the most recent first, named by your first message in it.
+      responses:
+        "200":
+          description: The conversations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [session, title, messages, started, last]
+                  properties:
+                    session: { type: string }
+                    title: { type: [string, "null"] }
+                    messages: { type: integer }
+                    started: { type: integer }
+                    last: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/search:
+    get:
+      summary: Turns holding that text, newest first, each with a snippet around the match. A plain substring match.
+      parameters:
+        - { name: q, in: query, required: true, example: secrets, schema: { type: string, minLength: 2, maxLength: 200 } }
+      responses:
+        "200":
+          description: The hits.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [session, title, role, author, label, at, snippet]
+                  properties:
+                    session: { type: string }
+                    title: { type: [string, "null"] }
+                    role: { type: string, enum: [user, assistant] }
+                    author: { type: [string, "null"], description: The agent that said it; null for you and Norn. }
+                    label: { type: [string, "null"] }
+                    at: { type: integer }
+                    snippet: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/chat/llm-calls:
+    get:
+      summary: The model calls each of your messages caused, with what was sent, the reply and the thinking. For the chat's debug view.
+      parameters:
+        - { name: session, in: query, required: true, example: s1, schema: { type: string, pattern: "^[\\w-]{1,64}$" } }
+      responses:
+        "200":
+          description: Calls by message.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [turns]
+                properties:
+                  turns:
+                    type: array
+                    items:
+                      type: object
+                      required: [turn, calls]
+                      properties:
+                        turn: { type: integer }
+                        calls: { type: array, items: { $ref: "#/components/schemas/LlmCall" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/systemone:
+    post:
+      summary: Forwarded to Laya unchanged. Laya's key goes in X-Laya-Authorization, or Norn uses its own.
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Laya's answer, as Laya gave it (any status).
+          content:
+            application/json:
+              schema: { type: object }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: A named token. `owner` is you; any other name is a part.
+  responses:
+    WidgetSettings:
+      description: The settings.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/WidgetSettings" }
+    BadRequest:
+      description: The request was not valid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: Something Norn relies on did not answer.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Memory:
+      type: object
+      required: [id, text, source, at]
+      properties:
+        id: { type: integer }
+        text: { type: string }
+        source: { type: string, enum: [extracted, manual] }
+        at: { type: integer }
+    WidgetSettings:
+      type: object
+      required: [place, hideAtHome, hideAway]
+      properties:
+        place: { type: string, enum: [home, away, unknown] }
+        hideAtHome: { $ref: "#/components/schemas/Features" }
+        hideAway: { $ref: "#/components/schemas/Features" }
+    Features:
+      type: array
+      items: { type: string, enum: [agents, inbox, ask, teams, slack, outlook, outlook-calendar, gmail, google-calendar] }
+    LlmCall:
+      type: object
+      required: [at, session, exchange, purpose, backend, model, totalMs]
+      properties:
+        at: { type: integer }
+        session: { type: [string, "null"] }
+        exchange: { type: [integer, "null"] }
+        purpose: { type: string }
+        backend: { type: string, enum: [xestrata, ollama] }
+        model: { type: string }
+        promptTokens: { type: [integer, "null"] }
+        cachedTokens: { type: [integer, "null"] }
+        outputTokens: { type: [integer, "null"] }
+        promptMs: { type: [number, "null"] }
+        outputMs: { type: [number, "null"] }
+        totalMs: { type: integer }
+        error: { type: [string, "null"] }
+        messages:
+          type: [array, "null"]
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role: { type: string }
+              content: { type: string }
+        response: { type: [string, "null"] }
+        thinking: { type: [string, "null"] }
