@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"yggdrasil/internal/alert"
 	"yggdrasil/internal/llm"
 	"yggdrasil/internal/part"
 )
@@ -36,6 +37,9 @@ type Config struct {
 	LayaKey string
 	// TimeZone is the reader's, for times in answers and the activity heatmap.
 	TimeZone string
+	// DataDir holds the sign-ins, beside the database.
+	DataDir                            string
+	GoogleClientID, GoogleClientSecret string
 }
 
 // Norn is the running assistant.
@@ -45,12 +49,22 @@ type Norn struct {
 	LLM    *llm.Client
 	Brain  *Brain
 	HTTP   *http.Client
-	logf   func(format string, args ...any)
+	// Gjallar is where Norn raises what is its to raise: a sign-in that ended.
+	Gjallar  *alert.Client
+	Accounts *Accounts
+	Zone     *time.Location
+	logf     func(format string, args ...any)
 }
 
 // New makes Norn over its store and model client.
 func New(config Config, store *Store, client *llm.Client, logf func(string, ...any)) *Norn {
-	n := &Norn{Config: config, Store: store, LLM: client, HTTP: &http.Client{Timeout: 60 * time.Second}, logf: logf}
+	zone, err := time.LoadLocation(config.TimeZone)
+	if err != nil {
+		zone = time.UTC
+	}
+	n := &Norn{Config: config, Store: store, LLM: client, HTTP: &http.Client{Timeout: 60 * time.Second}, logf: logf,
+		Gjallar: alert.NewClient("", ""), Zone: zone,
+		Accounts: NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Brain = &Brain{
 		Store:      store,
 		EmbedModel: config.EmbedModel,
@@ -76,6 +90,7 @@ func (n *Norn) Mount(p *part.Part) {
 	p.Handle("GET /v1/search", n.search)
 	p.Handle("GET /v1/chat/llm-calls", n.llmCalls)
 	p.Handle("POST /v1/systemone", n.systemOne)
+	n.mountAccounts(p)
 }
 
 func (n *Norn) fail(w http.ResponseWriter, err error) {

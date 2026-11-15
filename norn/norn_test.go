@@ -23,7 +23,7 @@ func newNorn(t *testing.T) (*Norn, *part.Part) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	n := New(Config{EmbedModel: "embed", LayaURL: "http://127.0.0.1:1"}, store, &llm.Client{OllamaURL: "http://127.0.0.1:1"}, t.Logf)
+	n := New(Config{EmbedModel: "embed", LayaURL: "http://127.0.0.1:1", DataDir: t.TempDir(), TimeZone: "Europe/Stockholm"}, store, &llm.Client{OllamaURL: "http://127.0.0.1:1"}, t.Logf)
 	// No models in tests: a fixed embedding per text, and no completions.
 	n.Brain.Embed = func(_ context.Context, texts []string) ([][]float64, error) {
 		vectors := make([][]float64, len(texts))

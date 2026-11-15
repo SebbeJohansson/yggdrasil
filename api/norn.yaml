@@ -242,6 +242,86 @@ paths:
               schema: { type: object }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/microsoft:
+    get:
+      summary: The Microsoft sign-in (Teams, Outlook, the work calendar), and the calendar's last read.
+      responses:
+        "200": { $ref: "#/components/responses/Microsoft" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/microsoft/sign-in:
+    post:
+      summary: Start a device-code sign-in, or get the code already waiting. Signed in with these scopes already, nothing happens unless force.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenant: { type: string, pattern: "^[\\w.-]{1,100}$", description: A tenant id or domain; organizations by default. }
+                mail: { type: boolean, description: Ask for Mail.Read. }
+                calendar: { type: boolean, description: Ask for Calendars.Read. }
+                force: { type: boolean, description: Sign in again even though the scopes are held. }
+      responses:
+        "200": { $ref: "#/components/responses/Microsoft" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/microsoft/token:
+    post:
+      summary: An access token for Graph, for the widget's own calls.
+      responses:
+        "200":
+          description: The token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken, expiresAt]
+                properties:
+                  accessToken: { type: string }
+                  expiresAt: { type: integer, description: Epoch ms. }
+        "401":
+          description: Not signed in to Microsoft, or a missing or wrong bearer token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/microsoft/sign-out:
+    post:
+      summary: Forget the Microsoft sign-in.
+      responses:
+        "200": { $ref: "#/components/responses/Microsoft" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/google:
+    get:
+      summary: The Google sign-in (Gmail, Google Calendar, Google Tasks), and the personal calendar's last read. off without a client configured.
+      responses:
+        "200": { $ref: "#/components/responses/Google" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/google/sign-in:
+    post:
+      summary: Start a sign-in. Answers the consent page to open; Google sends the browser back to localhost:42814.
+      responses:
+        "200": { $ref: "#/components/responses/Google" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/google/sign-out:
+    post:
+      summary: Forget the Google sign-in.
+      responses:
+        "200": { $ref: "#/components/responses/Google" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/calendar:
+    get:
+      summary: The work calendar, a day back to seven days ahead, read from Outlook every 2 minutes. Empty with at null when none is fresh.
+      responses:
+        "200": { $ref: "#/components/responses/Calendar" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/calendar/personal:
+    get:
+      summary: The same from Google Calendar, with Google Tasks that have a due date. Empty while switched off where you are.
+      responses:
+        "200": { $ref: "#/components/responses/Calendar" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 components:
   securitySchemes:
     bearer:
@@ -249,6 +329,73 @@ components:
       scheme: bearer
       description: A named token. `owner` is you; any other name is a part.
   responses:
+    Microsoft:
+      description: The sign-in.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [state, calendar]
+            properties:
+              state: { type: string, enum: [signed-out, linking, signed-in, error] }
+              code:
+                type: object
+                description: While linking, what to type and where. Never the device code itself.
+                required: [userCode, verificationUri, expiresAt]
+                properties:
+                  userCode: { type: string }
+                  verificationUri: { type: string }
+                  expiresAt: { type: integer }
+              error: { type: string }
+              scopes:
+                type: object
+                required: [mail, calendar]
+                properties:
+                  mail: { type: boolean }
+                  calendar: { type: boolean }
+              calendar: { $ref: "#/components/schemas/CalendarRead" }
+    Google:
+      description: The sign-in.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [state, calendar]
+            properties:
+              state: { type: string, enum: [off, signed-out, waiting, signed-in, error] }
+              authorizeUrl: { type: string, description: While waiting, the consent page to open. }
+              grants:
+                type: object
+                required: [gmail, calendar, tasks]
+                properties:
+                  gmail: { type: boolean }
+                  calendar: { type: boolean }
+                  tasks: { type: boolean }
+              error: { type: string }
+              calendar: { $ref: "#/components/schemas/CalendarRead" }
+    Calendar:
+      description: The calendar.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [events, from, to, at]
+            properties:
+              events: { type: array, items: { $ref: "#/components/schemas/CalendarEvent" } }
+              tasks:
+                type: array
+                items:
+                  type: object
+                  required: [title, due]
+                  properties:
+                    title: { type: string }
+                    due: { type: string, description: YYYY-MM-DD. Google keeps no time of day. }
+                    list: { type: string }
+                    notes: { type: string }
+                    link: { type: string }
+              from: { type: [integer, "null"] }
+              to: { type: [integer, "null"] }
+              at: { type: [integer, "null"], description: When it was read; null when there is no fresh read. }
     WidgetSettings:
       description: The settings.
       content:
@@ -316,6 +463,25 @@ components:
     Features:
       type: array
       items: { type: string, enum: [agents, inbox, ask, teams, slack, outlook, outlook-calendar, gmail, google-calendar] }
+    CalendarRead:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [off, pending, ok, refused] }
+        error: { type: string }
+    CalendarEvent:
+      type: object
+      required: [subject, start, end, allDay, online]
+      properties:
+        subject: { type: string }
+        start: { type: integer, description: Epoch ms. }
+        end: { type: integer }
+        allDay: { type: boolean }
+        location: { type: string }
+        organizer: { type: string, description: Left out when you organize it. }
+        response: { type: string, enum: [accepted, tentativelyAccepted, declined, notResponded, organizer, none] }
+        showAs: { type: string }
+        online: { type: boolean }
     LlmCall:
       type: object
       required: [at, session, exchange, purpose, backend, model, totalMs]

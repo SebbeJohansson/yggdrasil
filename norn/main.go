@@ -3,7 +3,9 @@ package norn
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
+	"yggdrasil/internal/alert"
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/llm"
 	"yggdrasil/internal/part"
@@ -22,6 +24,8 @@ import (
 //	MEMORY_LEARN     false keeps memory read-only (true)
 //	LAYA_URL, LAYA_KEY  Laya, for the judge, the tone badge and /v1/systemone
 //	TIME_ZONE        yours (Europe/Stockholm)
+//	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  your own Google "Desktop app" OAuth client; unset is no Google
+//	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Norn's token there (a sign-in that ended is raised)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("NORN_TOKENS")
 	if err != nil {
@@ -30,7 +34,8 @@ func Main(ctx context.Context) error {
 	if len(tokens) == 0 {
 		return fmt.Errorf("NORN_TOKENS is empty: set at least owner=<token>")
 	}
-	store, err := OpenStore(env.String("NORN_DB", "data/norn.db"))
+	dbPath := env.String("NORN_DB", "data/norn.db")
+	store, err := OpenStore(dbPath)
 	if err != nil {
 		return err
 	}
@@ -58,7 +63,12 @@ func Main(ctx context.Context) error {
 		LayaURL:     env.String("LAYA_URL", "http://127.0.0.1:8000"),
 		LayaKey:     env.String("LAYA_KEY", ""),
 		TimeZone:    env.String("TIME_ZONE", "Europe/Stockholm"),
+		DataDir:     filepath.Dir(dbPath),
+		// Your own Google "Desktop app" OAuth client, for Gmail and Google Calendar.
+		GoogleClientID:     env.String("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret: env.String("GOOGLE_CLIENT_SECRET", ""),
 	}, store, client, p.Logf)
+	n.Gjallar = alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", ""))
 	n.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }
