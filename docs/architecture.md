@@ -33,6 +33,18 @@ never call each other's Go code. They talk over HTTP only:
   re-sending what Gjallar didn't take. Used by Ratatoskr, Munin and Veðrfölnir.
 - `internal/ntfy`: phone pushes.
 - `internal/env`: settings.
+- `internal/where`: where each part is found (`YGG_<PART>_URL`).
+- `internal/contract`: reads a part's spec and checks a running service
+  against it (`ygg check`).
+
+## Contracts
+
+Each part's API is an OpenAPI 3.1 spec in `api/`, embedded in the binary and
+served by each part at `GET /openapi.yaml`. The spec is the contract: a part
+reaches another only at `YGG_<PART>_URL` and only through its spec, so any
+program that meets it can replace a built-in part
+([replacing-a-part.md](replacing-a-part.md)). Each built-in part's tests
+hold it to its spec: the same routes, and every answer in the spec's shape.
 
 ## The parts
 

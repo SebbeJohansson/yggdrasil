@@ -15,6 +15,22 @@ Why one process per part: [docs/architecture.md](docs/architecture.md).
 
 None of them fixes anything. Everything listens on 127.0.0.1 only.
 
+## Contracts
+
+Each part's contract is an OpenAPI spec in [`api/`](api), and each part
+serves its own at `GET /openapi.yaml`. A part can be replaced by any program
+that meets its contract, in any language:
+[docs/replacing-a-part.md](docs/replacing-a-part.md). Check one, built-in or
+not:
+
+```sh
+ygg check munin                          # whatever YGG_MUNIN_URL points at
+ygg check munin http://127.0.0.1:8786    # or any URL
+```
+
+Parts find each other only through `YGG_<PART>_URL`
+(`~/.config/yggdrasil/parts.env`), never by assuming the built-in one.
+
 ## Run
 
 The host has no Go; `scripts/go` runs the toolchain in Docker.
@@ -45,9 +61,14 @@ scripts/go vet ./...
 scripts/go test ./...
 ```
 
+Every built-in part's tests check it against its own contract: the routes it
+serves match its spec, and every answer has the spec's shape.
+
 ## Routes
 
-Every part answers `GET /health` without a token:
+The specs in `api/` are the full reference; this is the short version.
+
+Every part answers `GET /health` and `GET /openapi.yaml` without a token:
 `{ ok, part, version, startedAt, loops: { <name>: { everySeconds, lastRunAt, lastError? } } }`.
 Ratatoskr reads it. Everything else needs `Authorization: Bearer <token>`.
 
@@ -75,7 +96,7 @@ every 15 minutes.
 | --- | --- |
 | `GET /v1/status` | `{ parts, checks, gjallarUp }`: every part as last seen, and every check. The widget reads this directly, so it can show "Gjallar is down" without Gjallar |
 
-It checks every part's `/health` every 30 s. Down is `down:<part>`
+It checks the parts in `RATATOSKR_WATCH` every 30 s, at their `YGG_<PART>_URL`. Down is `down:<part>`
 (critical). A loop that hasn't run within three of its intervals plus a
 minute is `stalled:<part>:<loop>` (warning).
 
