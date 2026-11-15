@@ -496,12 +496,362 @@ paths:
                   error: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
+  /v1/work/code:
+    post:
+      summary: Hand a coding task over. One agent per project, each in a worktree, all on one branch name when there are several. A project with no room waits and starts when an agent finishes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session, prompt, projects]
+              properties:
+                session: { type: string, description: The Norn conversation the agents post into. }
+                prompt: { type: string, description: The task with its background, as Norn wrote it. }
+                name: { type: string, description: The task in a few words. }
+                projects: { type: array, minItems: 1, maxItems: 4, items: { type: string } }
+                communication: { type: string, enum: [concise, detailed, verbose] }
+                mode: { type: string, enum: [auto, manual] }
+                goalId: { type: integer }
+                goal: { type: string, description: What the ledger calls it, in your words. }
+      responses:
+        "200":
+          description: What was started, in words and by agent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer, parts, busy, failed]
+                properties:
+                  answer: { type: string }
+                  parts: { type: array, items: { $ref: "#/components/schemas/Started" } }
+                  busy: { type: array, items: { type: string } }
+                  failed: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/work/ask:
+    post:
+      summary: Hand a question that needs tools to a read-only question agent across every project, or follow up the conversation's own when it is settled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session, prompt]
+              properties:
+                session: { type: string }
+                prompt: { type: string }
+                name: { type: string }
+                communication: { type: string, enum: [concise, detailed, verbose] }
+                mode: { type: string, enum: [auto, manual] }
+                agent: { type: string, description: The conversation's question agent, to follow up. }
+                followUp: { type: string, description: What it is sent when followed up. }
+                goal: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/work/reply:
+    post:
+      summary: Your words to an agent that has stopped. 409 while it works or waits on a tool.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent, text]
+              properties:
+                session: { type: string }
+                agent: { type: string }
+                text: { type: string }
+                images: { type: array, items: { type: string } }
+                communication: { type: string, enum: [concise, detailed, verbose] }
+                mode: { type: string, enum: [auto, manual] }
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/work/tell:
+    post:
+      summary: Pass a message to an agent, after its current turn if it is busy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent, text]
+              properties:
+                agent: { type: string }
+                text: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/tasks:
+    get:
+      summary: The task ledger. Every task started since then (a week by default), or still open, with its live status.
+      parameters:
+        - { name: since, in: query, schema: { type: integer, description: Epoch ms. } }
+      responses:
+        "200":
+          description: The tasks, newest first.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/TaskView" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/auto-allowed:
+    get:
+      summary: The tool calls Sindri allowed on your behalf (everyday reads, tests and git reads in the agent's own folder), newest first.
+      parameters:
+        - { name: since, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: The calls.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, at, agent, taskId, tool, summary, rule]
+                  properties:
+                    id: { type: integer }
+                    at: { type: integer }
+                    agent: { type: string }
+                    taskId: { type: [integer, "null"] }
+                    tool: { type: string }
+                    summary: { type: string }
+                    rule: { type: string, enum: [read, tests, git read] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/coding-agent:
+    get:
+      summary: The CLI new agents run on. Switching an agent between them happens only by hand.
+      responses:
+        "200": { $ref: "#/components/responses/CodingAgent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Choose it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodingAgent" }
+      responses:
+        "200": { $ref: "#/components/responses/CodingAgent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/automation:
+    get:
+      summary: What Sindri does on its own. autoAllow answers everyday tool calls; followThrough sends failed tests back once.
+      responses:
+        "200": { $ref: "#/components/responses/Automation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Switch them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                autoAllow: { type: boolean }
+                followThrough: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Automation" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/goals:
+    get:
+      summary: Every goal, newest first, with its state and next step read from its tasks.
+      responses:
+        "200":
+          description: The goals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [goals]
+                properties:
+                  goals: { type: array, items: { $ref: "#/components/schemas/Goal" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: A new goal, as a draft.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, maxLength: 200 }
+                repos: { type: array, maxItems: 4, items: { type: string } }
+                source: { type: string, description: "manual, todo:<repo>:<line>, linear:<id>" }
+                context: { type: string, maxLength: 20000 }
+      responses:
+        "201": { $ref: "#/components/responses/Goal" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/goals/candidates:
+    get:
+      summary: The open "- [ ]" lines of a project's TODO.md, each ready to post as a goal.
+      parameters:
+        - { name: from, in: query, required: true, example: todo, schema: { type: string, enum: [todo] } }
+        - { name: project, in: query, required: true, example: demo, schema: { type: string } }
+      responses:
+        "200":
+          description: The candidates.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, candidates]
+                properties:
+                  from: { type: string }
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                      required: [source, title, context, repos]
+                      properties:
+                        source: { type: string }
+                        title: { type: string }
+                        context: { type: string }
+                        repos: { type: array, items: { type: string } }
+                        url: { type: string }
+                        goal: { type: integer, description: The goal that already has this source. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}:
+    patch:
+      summary: Change a goal's title, repos or context. Its agents are told to read it again.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                repos: { type: array, items: { type: string } }
+                context: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Goal" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Remove the goal record only. Its tasks and agents stay.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/start:
+    post:
+      summary: One coding agent per repo that has none yet, on one branch name.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                repos: { type: array, items: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/GoalStarted" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/relook:
+    post:
+      summary: Tell each of the goal's agents to read it again.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      responses:
+        "200": { $ref: "#/components/responses/GoalStarted" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/images:
+    post:
+      summary: A picture for the goal. design is how it should look; current is how it looks now.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, data]
+              properties:
+                name: { type: string }
+                data: { type: string, description: Base64, png, jpg, gif or webp, at most 10 MB. }
+                kind: { type: string, enum: [design, current] }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "201": { $ref: "#/components/responses/GoalImage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/images/{imageId}:
+    get:
+      summary: The picture's bytes.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }, { $ref: "#/components/parameters/ImageID" }]
+      responses:
+        "200": { description: The picture., content: { image/png: {} } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      summary: Change a picture's kind or note.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }, { $ref: "#/components/parameters/ImageID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: { type: string, enum: [design, current] }
+                note: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/GoalImage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Remove a picture.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }, { $ref: "#/components/parameters/ImageID" }]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearer:
       type: http
       scheme: bearer
   parameters:
+    GoalID:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    ImageID:
+      name: imageId
+      in: path
+      required: true
+      schema: { type: integer }
     ID:
       name: id
       in: path
@@ -528,6 +878,52 @@ components:
       "404": { $ref: "#/components/responses/Error" }
       "409": { $ref: "#/components/responses/Error" }
   responses:
+    OK:
+      description: Done.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok]
+            properties:
+              ok: { type: boolean }
+    CodingAgent:
+      description: The setting.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CodingAgent" }
+    Automation:
+      description: The settings.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [autoAllow, followThrough]
+            properties:
+              autoAllow: { type: boolean }
+              followThrough: { type: boolean }
+    Goal:
+      description: The goal.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Goal" }
+    GoalImage:
+      description: The picture, without its bytes.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GoalImage" }
+    GoalStarted:
+      description: The goal, and which agents started or were told.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [goal, failed]
+            properties:
+              goal: { $ref: "#/components/schemas/Goal" }
+              started: { type: array, items: { $ref: "#/components/schemas/Started" } }
+              told: { type: array, items: { $ref: "#/components/schemas/Started" } }
+              failed: { type: array, items: { type: string } }
     Agent:
       description: The agent.
       content:
@@ -563,6 +959,88 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    Started:
+      type: object
+      required: [agentId]
+      properties:
+        agentId: { type: string }
+        status: { type: string }
+        project: { type: string }
+        branch: { type: string }
+    CodingAgent:
+      type: object
+      required: [primary]
+      properties:
+        primary: { type: string, enum: [claude, copilot] }
+    TaskView:
+      type: object
+      required: [id, at, session, goal, kind, project, branch, agent, partOf, outcome, result, endedAt, status, label, lastActivity, merged]
+      properties:
+        id: { type: integer }
+        at: { type: integer }
+        session: { type: string }
+        goal: { type: string }
+        kind: { type: string, enum: [code, ask] }
+        project: { type: [string, "null"] }
+        branch: { type: [string, "null"] }
+        agent: { type: string }
+        partOf: { type: [integer, "null"] }
+        goalId: { type: integer }
+        outcome: { type: [string, "null"], enum: [done, asked, failed, stopped, scheduled, null] }
+        result: { type: [string, "null"] }
+        endedAt: { type: [integer, "null"] }
+        status: { type: string, enum: [needs-you, running, done, failed, stopped, gone, scheduled] }
+        label: { type: [string, "null"] }
+        lastActivity: { type: integer }
+        merged: { type: boolean }
+    GoalImage:
+      type: object
+      required: [id, goal, at, name, mediaType, kind, note, bytes]
+      properties:
+        id: { type: integer }
+        goal: { type: integer }
+        at: { type: integer }
+        name: { type: string }
+        mediaType: { type: string }
+        kind: { type: string, enum: [design, current] }
+        note: { type: string }
+        bytes: { type: integer }
+    Goal:
+      type: object
+      required: [id, at, title, repos, source, context, session, images, state, tasks, next]
+      properties:
+        id: { type: integer }
+        at: { type: integer }
+        title: { type: string }
+        repos: { type: array, items: { type: string } }
+        source: { type: string }
+        context: { type: string }
+        session: { type: string }
+        images: { type: array, items: { $ref: "#/components/schemas/GoalImage" } }
+        state: { type: string, enum: [draft, running, needs-you, done, merged] }
+        tasks:
+          type: array
+          items:
+            type: object
+            required: [id, repo, agent, status, label, branch, merged, lastActivity, result]
+            properties:
+              id: { type: integer }
+              repo: { type: [string, "null"] }
+              agent: { type: string }
+              status: { type: string }
+              label: { type: [string, "null"] }
+              branch: { type: [string, "null"] }
+              merged: { type: boolean }
+              lastActivity: { type: integer }
+              result: { type: [string, "null"] }
+        next:
+          type: object
+          required: [action, text]
+          properties:
+            action: { type: string, enum: [start, resume, answer, review, none] }
+            text: { type: string }
+            repo: { type: string }
+            agent: { type: string }
     Health:
       type: object
       required: [ok, part, version, startedAt, loops]

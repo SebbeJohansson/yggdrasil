@@ -188,7 +188,16 @@ func TestMeetsItsContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, m, a.ID, func(a *Agent) bool { return a.Status == Waiting })
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	work := &Work{Agents: m, Store: store, Norn: &NornClient{}, AskCwd: m.roots[0], logf: t.Logf}
+	if _, err := store.AddGoal("A goal", []string{"demo"}, "manual", "", "goal-1"); err != nil {
+		t.Fatal(err)
+	}
 	p := part.New(Name, contracttest.Tokens(), nil)
-	(&Sindri{Agents: m, Root: m.roots[0]}).Mount(p)
+	(&Sindri{Agents: m, Root: m.roots[0], Work: work}).Mount(p)
 	contracttest.Run(t, p)
 }

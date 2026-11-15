@@ -1,0 +1,169 @@
+package sindri
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+type post struct{ Session, Agent, Label, Content string }
+
+// fakeNorn records what Sindri posts into conversations.
+type fakeNorn struct {
+	mu    sync.Mutex
+	posts []post
+}
+
+func (f *fakeNorn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body struct{ Agent, Label, Content string }
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	session := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/conversations/"), "/agent-turns")
+	f.mu.Lock()
+	f.posts = append(f.posts, post{session, body.Agent, body.Label, body.Content})
+	f.mu.Unlock()
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (f *fakeNorn) said() []post {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]post{}, f.posts...)
+}
+
+func newWork(t *testing.T) (*Work, *fakeNorn) {
+	t.Helper()
+	m, _ := setup(t)
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	norn := &fakeNorn{}
+	server := httptest.NewServer(norn)
+	t.Cleanup(server.Close)
+	w := &Work{Agents: m, Store: store, Norn: &NornClient{URL: server.URL, Token: "t", HTTP: server.Client()}, AskCwd: m.roots[0], AutoAllowDefault: true, logf: t.Logf}
+	return w, norn
+}
+
+func feedUntil(t *testing.T, w *Work, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = w.Feed(context.Background())
+		if ok() {
+			return
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatalf("never got there")
+}
+
+func TestACodingTaskPostsIntoItsConversationAndEndsInTheLedger(t *testing.T) {
+	w, norn := newWork(t)
+	handed := w.Code(CodeRequest{Session: "s1", Prompt: "change the work file", Name: "Change work", Projects: []string{"demo"}, Communication: "concise"}, nil)
+	w.record("s1", "Change work", &handed)
+	if len(handed.Parts) != 1 || !strings.HasPrefix(handed.Parts[0].Branch, "agent/") || !strings.Contains(handed.Answer, "Claude is coding this in demo") {
+		t.Fatalf("got %+v", handed)
+	}
+	feedUntil(t, w, func() bool {
+		for _, p := range norn.said() {
+			if p.Agent == handed.Parts[0].AgentID && strings.Contains(p.Content, "Should I merge it?") {
+				return true
+			}
+		}
+		return false
+	})
+	posts := norn.said()
+	if posts[len(posts)-1].Session != "s1" || posts[len(posts)-1].Label != "Change work" {
+		t.Fatalf("got %+v", posts)
+	}
+	views := w.TaskViews(must2(w.Store.TasksSince(0)))
+	if len(views) != 1 || views[0].Status != "needs-you" || *views[0].Outcome != "asked" {
+		t.Fatalf("an agent that asks you something needs you: %+v", views)
+	}
+	// Nothing new: nothing posted again.
+	before := len(norn.said())
+	_ = w.Feed(context.Background())
+	if len(norn.said()) != before {
+		t.Fatalf("posted the same state twice")
+	}
+}
+
+func must2[T any](value T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return value
+}
+
+func TestEverydayToolCallsAreAllowedAndWrittenDown(t *testing.T) {
+	w, _ := newWork(t)
+	a, err := w.start(StartRequest{Cwd: "demo", Prompt: "ask first", Session: "s1"}, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, w.Agents, a.ID, func(a *Agent) bool { return a.Status == NeedsApproval })
+	_ = w.Feed(context.Background())
+	if allowed := must2(w.Store.AutoAllowedSince(0)); len(allowed) != 0 {
+		t.Fatalf("rm -rf was allowed: %+v", allowed)
+	}
+	for tool, want := range map[string]string{"git diff HEAD": "git read", "npm test": "tests", "git push": "", "cat ../secret": "", "npm test; rm -rf /": ""} {
+		if got := AutoAllowRule("Bash", map[string]any{"command": tool}, []string{"/w"}); got != want {
+			t.Errorf("%q: got %q, want %q", tool, got, want)
+		}
+	}
+	for path, want := range map[string]string{"/w/src/a.go": "read", "src/a.go": "read", "/w/.env": "", "/w/.env.example": "read", "/etc/passwd": ""} {
+		if got := AutoAllowRule("Read", map[string]any{"file_path": path}, []string{"/w"}); got != want {
+			t.Errorf("%q: got %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestAGoalStartsItsRepoAndReadsItsStateFromItsTasks(t *testing.T) {
+	w, _ := newWork(t)
+	goal, err := w.Store.AddGoal("Add a work file", []string{"demo"}, "manual", "", "goal-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if views := must2(w.GoalViews()); views[0].State != "draft" || views[0].Next.Action != "start" {
+		t.Fatalf("got %+v", views[0])
+	}
+	started, failed, err := w.StartGoal(goal.ID, nil)
+	if err != nil || len(started) != 1 || len(failed) != 0 {
+		t.Fatalf("got %+v %v %v", started, failed, err)
+	}
+	waitFor(t, w.Agents, started[0].AgentID, func(a *Agent) bool { return a.Status == Waiting })
+	views := must2(w.GoalViews())
+	if views[0].State != "needs-you" || views[0].Next.Action != "answer" || len(views[0].Tasks) != 1 {
+		t.Fatalf("got %+v", views[0])
+	}
+	if _, _, err := w.StartGoal(goal.ID, nil); err == nil {
+		t.Fatalf("started the same repo twice")
+	}
+}
+
+func TestTodoCandidates(t *testing.T) {
+	todo := "# Todo\n- [x] done\n- [ ] Add **dark** mode to [the panel](x.md)\n  with a toggle\n- [ ] Second\n"
+	got := TodoCandidates("demo", todo, map[string]int64{"todo:demo:- [ ] Second": 7})
+	if len(got) != 2 || got[0].Title != "Add dark mode to the panel" || got[0].Context != "with a toggle" || got[1].Goal == nil || *got[1].Goal != 7 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestNeededPartsAndMessages(t *testing.T) {
+	text := "Done.\nNeeds a part in `api`: add the route\nTell the web part: the field is called total\nNeeds a part in unknown: x"
+	if parts := NeededParts(text, []string{"api", "web"}); len(parts) != 1 || parts[0].Task != "add the route" {
+		t.Fatalf("got %+v", parts)
+	}
+	if messages := PartMessages(text, []string{"api", "web"}); len(messages) != 1 || messages[0].Project != "web" {
+		t.Fatalf("got %+v", messages)
+	}
+	if PickedTask("Task: **Fix the DM title**.\nDone") != "Fix the DM title" {
+		t.Fatalf("got %q", PickedTask("Task: **Fix the DM title**.\nDone"))
+	}
+}

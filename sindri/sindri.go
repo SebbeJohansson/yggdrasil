@@ -25,6 +25,8 @@ const Name = "sindri"
 type Sindri struct {
 	Agents *Manager
 	Root   string
+	// Work hands work to agents and follows them; nil serves the agents alone.
+	Work *Work
 }
 
 // Mount adds Sindri's routes and loops to the part.
@@ -80,6 +82,10 @@ func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("GET /v1/projects/{name}/docs", func(w http.ResponseWriter, r *http.Request) {
 		answer(w)(ReadProjectDocs(s.Root, r.PathValue("name")))
 	})
+	if s.Work != nil {
+		s.Work.MountWork(p)
+		p.Loop("feed", 3*time.Second, s.Work.Feed)
+	}
 	p.Loop("reap", time.Minute, func(context.Context) error {
 		s.Agents.ReapIdle()
 		return nil

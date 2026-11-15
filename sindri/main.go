@@ -3,6 +3,7 @@ package sindri
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,11 @@ import (
 //	SINDRI_IDLE         how long an idle agent's process is kept (30m)
 //	CLAUDE_BIN          Claude Code (~/.local/bin/claude)
 //	COPILOT_BIN         GitHub Copilot CLI (~/.local/bin/copilot)
+//	SINDRI_DB           tasks, goals, approvals (~/.local/state/yggdrasil/sindri.db)
+//	DELEGATE_MODEL      the model agents run on (sonnet)
+//	SINDRI_ASK_CWD      where question agents run (<root>/yggdrasil/workspace)
+//	AUTO_ALLOW          allow everyday reads, tests and git reads by default (true)
+//	YGG_NORN_URL        Norn, where agents' messages are posted; NORN_TOKEN is Sindri's token there
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("SINDRI_TOKENS")
 	if err != nil {
@@ -46,7 +52,19 @@ func Main(ctx context.Context) error {
 		return err
 	}
 	defer agents.Shutdown()
-	s := &Sindri{Agents: agents, Root: agents.roots[0]}
+	store, err := OpenStore(env.String("SINDRI_DB", filepath.Join(home, ".local/state/yggdrasil/sindri.db")))
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	work := &Work{
+		Agents: agents, Store: store, logf: p.Logf,
+		Norn:             &NornClient{URL: where.URL("norn"), Token: env.String("NORN_TOKEN", ""), HTTP: &http.Client{Timeout: 10 * time.Second}},
+		Model:            env.String("DELEGATE_MODEL", "sonnet"),
+		AskCwd:           env.String("SINDRI_ASK_CWD", filepath.Join(roots[0], "yggdrasil", "workspace")),
+		AutoAllowDefault: env.String("AUTO_ALLOW", "true") == "true",
+	}
+	s := &Sindri{Agents: agents, Root: agents.roots[0], Work: work}
 	s.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }
