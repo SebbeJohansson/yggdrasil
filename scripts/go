@@ -4,6 +4,7 @@
 #
 #   scripts/go test ./...
 #   scripts/go build -o bin/ygg ./cmd/ygg
+#   scripts/go install <tool>@<version>     # into bin/tools
 set -e
 mkdir -p "$HOME/go/pkg/mod" "$HOME/.cache/go-build"
 # Go plus git, which Sindri's tests drive. Built once, then cached.
@@ -11,6 +12,6 @@ if ! docker image inspect yggdrasil-go >/dev/null 2>&1; then
 	printf 'FROM golang:1.25-alpine\nRUN apk add --no-cache git\n' | docker build -q -t yggdrasil-go - >/dev/null
 fi
 exec docker run --rm -u "$(id -u):$(id -g)" \
-  -e HOME=/tmp -e GOMODCACHE=/gomod -e GOCACHE=/gocache -e CGO_ENABLED=0 -e GOFLAGS="${GOFLAGS:-}" \
+  -e HOME=/tmp -e GOMODCACHE=/gomod -e GOCACHE=/gocache -e CGO_ENABLED=0 -e GOFLAGS="${GOFLAGS:-}" -e GOBIN=/src/bin/tools \
   -v "$HOME/go/pkg/mod:/gomod" -v "$HOME/.cache/go-build:/gocache" \
   -v "$PWD:/src" -w /src yggdrasil-go go "$@"

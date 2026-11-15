@@ -54,6 +54,21 @@ curl -H "Authorization: Bearer $T" localhost:8775/v1/status
 To push critical alerts to your phone, set `NTFY_URL` in `gjallar.env` and
 `ratatoskr.env` to the same ntfy topic.
 
+## Develop
+
+```sh
+scripts/dev.sh                 # every part from your working tree
+scripts/dev.sh norn sindri     # just these; the rest keep running as installed
+```
+
+[air](https://github.com/air-verse/air), Go's usual live reloader, watches the
+Go files and the specs, rebuilds `ygg` on every save and restarts the parts
+you named, each with its own settings from `~/.config/yggdrasil` and its log
+lines marked with its name. Their installed copies (the systemd units, the
+containers) are stopped first, so the dev ones take the same ports and data,
+and started again when you press Ctrl-C. The first run installs air into
+`bin/tools`, through `scripts/go` like every other Go command here.
+
 ## Test
 
 ```sh
