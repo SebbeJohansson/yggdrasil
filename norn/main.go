@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"yggdrasil/internal/linear"
 
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/env"
@@ -93,6 +94,7 @@ func Main(ctx context.Context) error {
 	if token := env.String("SINDRI_TOKEN", ""); token != "" {
 		n.Sindri.URL, n.Sindri.Token = where.URL("sindri"), token
 	}
+	n.Linear = &linear.Client{Key: env.String("LINEAR_KEY", "")}
 	n.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }

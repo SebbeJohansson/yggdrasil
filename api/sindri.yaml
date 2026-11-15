@@ -703,10 +703,12 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/goals/candidates:
     get:
-      summary: The open "- [ ]" lines of a project's TODO.md, each ready to post as a goal.
+      summary: The open "- [ ]" lines of a project's TODO.md, or your open Linear issues, each ready to post as a goal. A goal from Linear moves its issue along as the goal moves.
       parameters:
-        - { name: from, in: query, required: true, example: todo, schema: { type: string, enum: [todo] } }
-        - { name: project, in: query, required: true, example: demo, schema: { type: string } }
+        - { name: from, in: query, required: true, example: todo, schema: { type: string, enum: [todo, linear] } }
+        - { name: project, in: query, example: demo, schema: { type: string }, description: "todo: the project (required). linear: part of a Linear project's name." }
+        - { name: query, in: query, schema: { type: string }, description: "linear: part of the title." }
+        - { name: assignee, in: query, schema: { type: string, enum: [mine, unassigned, all] }, description: "linear: whose issues; mine by default." }
       responses:
         "200":
           description: The candidates.
@@ -732,6 +734,8 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/goals/{id}:
     patch:
       summary: Change a goal's title, repos or context. Its agents are told to read it again.

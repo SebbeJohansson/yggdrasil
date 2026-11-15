@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"yggdrasil/internal/linear"
 
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/part"
@@ -58,6 +59,7 @@ func Main(ctx context.Context) error {
 	}
 	defer store.Close()
 	work := &Work{
+		Linear: &linear.Client{Key: env.String("LINEAR_KEY", "")},
 		Agents: agents, Store: store, logf: p.Logf,
 		Norn:             &NornClient{URL: where.URL("norn"), Token: env.String("NORN_TOKEN", ""), HTTP: &http.Client{Timeout: 10 * time.Second}},
 		Model:            env.String("DELEGATE_MODEL", "sonnet"),

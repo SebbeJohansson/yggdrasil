@@ -523,3 +523,19 @@ func (s *Store) SetNotesSeen(agent string, n int) error {
 	_, err := s.db.Exec(`UPDATE feed SET notes_seen = ? WHERE agent = ?`, n, agent)
 	return err
 }
+
+// GoalLinearSynced is the Linear step last written for the goal, or "".
+func (s *Store) GoalLinearSynced(id int64) string {
+	var step *string
+	_ = s.db.QueryRow(`SELECT linear_synced FROM goals WHERE id = ?`, id).Scan(&step)
+	if step == nil {
+		return ""
+	}
+	return *step
+}
+
+// SetGoalLinearSynced remembers the Linear step written for the goal.
+func (s *Store) SetGoalLinearSynced(id int64, step string) error {
+	_, err := s.db.Exec(`UPDATE goals SET linear_synced = ? WHERE id = ?`, step, id)
+	return err
+}

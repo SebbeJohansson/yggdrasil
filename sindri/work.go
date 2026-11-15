@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yggdrasil/internal/linear"
 )
 
 // MaxParts is the most repositories one task spans.
@@ -82,7 +83,10 @@ type Work struct {
 	// AutoAllowDefault is automation.autoAllow before it is set.
 	AutoAllowDefault bool
 	logf             func(string, ...any)
-	feeding          sync.Mutex
+	// Linear lists issues as goal candidates and moves them as goals move; off without LINEAR_KEY.
+	Linear       *linear.Client
+	linearFailed map[int64]time.Time
+	feeding      sync.Mutex
 }
 
 // CodingAgent is the CLI new agents run on.

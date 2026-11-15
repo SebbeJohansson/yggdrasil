@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"yggdrasil/internal/linear"
 
 	"yggdrasil/internal/part"
 )
@@ -696,32 +697,50 @@ func (w *Work) startGoalRoute(rw http.ResponseWriter, r *http.Request) {
 
 func (w *Work) candidates(rw http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	if query.Get("from") != "todo" {
-		part.Error(rw, http.StatusBadRequest, "`from` must be todo (Linear candidates move here later)")
-		return
-	}
 	project := query.Get("project")
-	if project == "" {
-		part.Error(rw, http.StatusBadRequest, "`project` is required for todo")
-		return
-	}
-	docs, err := ReadProjectDocs(w.Agents.roots[0], project)
-	if err != nil {
-		fail(rw, err)
-		return
-	}
 	goals, _ := w.Store.Goals()
 	known := map[string]int64{}
 	for _, g := range goals {
 		known[g.Source] = g.ID
 	}
-	todo := ""
-	for _, file := range docs.Files {
-		if strings.EqualFold(file.File, "TODO.md") && file.Content != nil {
-			todo = *file.Content
+	switch query.Get("from") {
+	case "todo":
+		if project == "" {
+			part.Error(rw, http.StatusBadRequest, "`project` is required for todo")
+			return
 		}
+		docs, err := ReadProjectDocs(w.Agents.roots[0], project)
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		todo := ""
+		for _, file := range docs.Files {
+			if strings.EqualFold(file.File, "TODO.md") && file.Content != nil {
+				todo = *file.Content
+			}
+		}
+		part.JSON(rw, http.StatusOK, map[string]any{"from": "todo", "candidates": TodoCandidates(project, todo, known)})
+	case "linear":
+		if !w.Linear.On() {
+			part.Error(rw, http.StatusServiceUnavailable, "no LINEAR_KEY in sindri.env")
+			return
+		}
+		assignee := query.Get("assignee")
+		if assignee != "" && !slices.Contains(linear.Assignees, assignee) {
+			part.Error(rw, http.StatusBadRequest, "`assignee` must be mine, unassigned or all")
+			return
+		}
+		found, err := LinearCandidates(r.Context(), w.Linear, linear.Filter{Project: project, Query: strings.TrimSpace(query.Get("query")), Assignee: assignee}, known)
+		if err != nil {
+			w.logf("Linear did not answer: %v", err)
+			part.Error(rw, http.StatusBadGateway, "Linear did not answer")
+			return
+		}
+		part.JSON(rw, http.StatusOK, map[string]any{"from": "linear", "candidates": found})
+	default:
+		part.Error(rw, http.StatusBadRequest, "`from` must be todo or linear")
 	}
-	part.JSON(rw, http.StatusOK, map[string]any{"from": "todo", "candidates": TodoCandidates(project, todo, known)})
 }
 
 var imageMediaTypes = map[string]string{"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"yggdrasil/internal/linear"
 
 	"yggdrasil/internal/llm"
 	"yggdrasil/internal/part"
@@ -385,6 +386,27 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		}
 		id, _ := n.Store.LogDecision(ctx, session, question, DispatchPrompt(input), source, result.Model, decision, result.Guards, result.MS)
 		a.decisionID = &id
+		// "Is the Linear task marked as done?": read from Linear, not from an
+		// agent's last message. The key is in the message, in the task of the
+		// agent it is about, or earlier in the conversation.
+		if n.Linear.On() && linear.AsksState(question) {
+			key := linear.Ticket.FindString(question)
+			if key == "" && target != nil {
+				key = linear.Ticket.FindString(target.Task)
+			}
+			for i := len(conversation) - 1; key == "" && i >= 0; i-- {
+				key = linear.Ticket.FindString(conversation[i].Text)
+			}
+			if key != "" {
+				issue, err := n.Linear.Issue(ctx, key)
+				switch {
+				case err == nil:
+					return a.answered(linear.Answer(issue, n.Zone), nil, "rule: linear"), nil
+				case !errors.Is(err, linear.ErrNotFound):
+					n.logf("could not read %s from Linear: %v", key, err)
+				}
+			}
+		}
 		if result.Model != nil {
 			switch d := result.Decision; {
 			case d.Action == "status" && target != nil:

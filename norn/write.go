@@ -857,9 +857,9 @@ func settledStatus(status string) bool {
 // --- routes --------------------------------------------------------------
 
 type writeRequest struct {
-	Text      string   `json:"text"`
-	Languages []any    `json:"languages"`
-	Style     string   `json:"style"`
+	Text      string `json:"text"`
+	Languages []any  `json:"languages"`
+	Style     string `json:"style"`
 }
 
 func readWrite(w http.ResponseWriter, r *http.Request) (writeRequest, bool) {

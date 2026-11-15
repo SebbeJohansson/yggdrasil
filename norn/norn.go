@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"yggdrasil/internal/linear"
 
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/llm"
@@ -65,9 +66,11 @@ type Norn struct {
 	Zone     *time.Location
 	// Sindri is where coding work and questions that need tools go.
 	Sindri *SindriClient
+	// Linear answers "is AI-141 done?"; off without LINEAR_KEY.
+	Linear *linear.Client
 	// suggestions remembers what the improve check said about each sentence.
 	suggestions *SuggestionCache
-	logf   func(format string, args ...any)
+	logf        func(format string, args ...any)
 }
 
 // New makes Norn over its store and model client.
@@ -79,7 +82,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 	n := &Norn{Config: config, Store: store, LLM: client, HTTP: &http.Client{Timeout: 60 * time.Second}, logf: logf,
 		Gjallar: alert.NewClient("", ""), Zone: zone, Sindri: &SindriClient{HTTP: &http.Client{Timeout: 60 * time.Second}},
 		suggestions: NewSuggestionCache(1000),
-		Accounts: NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
+		Accounts:    NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Inbox = NewInbox(n, config.DataDir)
 	n.Brain = &Brain{
 		Store:      store,
