@@ -4,6 +4,8 @@ After=network-online.target
 
 [Service]
 ExecStart=%h/.local/bin/ygg vedrfolnir
+# Where every part lives; a replaced part is pointed at here.
+EnvironmentFile=-%h/.config/yggdrasil/parts.env
 EnvironmentFile=%h/.config/yggdrasil/vedrfolnir.env
 Restart=always
 RestartSec=5

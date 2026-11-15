@@ -61,6 +61,25 @@ YGG_CORS_ORIGINS=$origins
 EOF
 fi
 
+if [ ! -e "$config/parts.env" ]; then
+	umask 077
+	cat >"$config/parts.env" <<'EOF'
+# Where every part lives, read by every part. Leave a line commented to use
+# the built-in part on its default port. To replace a part with your own
+# program, set its URL here, stop the built-in one, and run
+# `ygg check <part>` (docs/replacing-a-part.md).
+#YGG_NORN_URL=http://127.0.0.1:8771
+#YGG_SINDRI_URL=http://127.0.0.1:8772
+#YGG_VEDRFOLNIR_URL=http://127.0.0.1:8773
+#YGG_GJALLAR_URL=http://127.0.0.1:8774
+#YGG_RATATOSKR_URL=http://127.0.0.1:8775
+#YGG_MUNIN_URL=http://127.0.0.1:8776
+
+# The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
+RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin
+EOF
+fi
+
 echo "Installing the systemd user units..."
 mkdir -p "$HOME/.config/systemd/user"
 for unit in deploy/systemd/*.service; do

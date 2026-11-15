@@ -18,7 +18,10 @@ services:
     <<: *part
     profiles: [gjallar]
     command: [gjallar]
-    env_file: ${HOME}/.config/yggdrasil/gjallar.env
+    env_file:
+      - path: ${HOME}/.config/yggdrasil/parts.env
+        required: false
+      - ${HOME}/.config/yggdrasil/gjallar.env
     environment:
       GJALLAR_DB: /data/gjallar.db
     volumes:
@@ -34,7 +37,10 @@ services:
     <<: *part
     profiles: [munin]
     command: [munin]
-    env_file: ${HOME}/.config/yggdrasil/munin.env
+    env_file:
+      - path: ${HOME}/.config/yggdrasil/parts.env
+        required: false
+      - ${HOME}/.config/yggdrasil/munin.env
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8776/health"]
       interval: 30s

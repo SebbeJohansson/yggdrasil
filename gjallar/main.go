@@ -10,6 +10,7 @@ import (
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/where"
 )
 
 // Main runs Gjallar until ctx ends. Settings:
@@ -59,5 +60,5 @@ func Main(ctx context.Context) error {
 
 	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))
 	g.Mount(p)
-	return p.Run(ctx, env.String("GJALLAR_ADDR", "127.0.0.1:8774"))
+	return p.Run(ctx, where.Addr(Name))
 }

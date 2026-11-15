@@ -9,6 +9,7 @@ import (
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/where"
 )
 
 // DefaultProbes are the local servers listed on the services page, with what
@@ -30,7 +31,7 @@ var DefaultProbes = strings.Join([]string{
 //	VEDRFOLNIR_HISTORY   where the hour of samples is kept (~/.local/state/yggdrasil/vedrfolnir-history.json)
 //	VEDRFOLNIR_UNIT_DIR  your systemd user units (~/.config/systemd/user)
 //	VEDRFOLNIR_PROBES    name=url of the local servers to list (DefaultProbes)
-//	GJALLAR_URL          Gjallar (http://127.0.0.1:8774); GJALLAR_TOKEN is Veðrfölnir's token there
+//	YGG_GJALLAR_URL      Gjallar (http://127.0.0.1:8774); GJALLAR_TOKEN is Veðrfölnir's token there
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("VEDRFOLNIR_TOKENS")
 	if err != nil {
@@ -44,8 +45,8 @@ func Main(ctx context.Context) error {
 	v := New(machine,
 		env.String("VEDRFOLNIR_UNIT_DIR", filepath.Join(home, ".config/systemd/user")),
 		ParseProbes(env.String("VEDRFOLNIR_PROBES", DefaultProbes)),
-		alert.NewClient(env.String("GJALLAR_URL", "http://127.0.0.1:8774"), env.String("GJALLAR_TOKEN", "")))
+		alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", "")))
 	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))
 	v.Mount(p)
-	return p.Run(ctx, env.String("VEDRFOLNIR_ADDR", "127.0.0.1:8773"))
+	return p.Run(ctx, where.Addr(Name))
 }

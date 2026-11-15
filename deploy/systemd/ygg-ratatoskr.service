@@ -4,6 +4,8 @@ After=network-online.target
 
 [Service]
 ExecStart=%h/.local/bin/ygg ratatoskr
+# Where every part lives; a replaced part is pointed at here.
+EnvironmentFile=-%h/.config/yggdrasil/parts.env
 EnvironmentFile=%h/.config/yggdrasil/ratatoskr.env
 Restart=always
 RestartSec=5
