@@ -81,11 +81,37 @@ knows the caller's name:
 
 ## Moving from my-agent
 
-my-agent keeps running while parts move over. Each part copies its piece of
-my-agent and keeps the same JSON shapes, so my-widget can switch one page at a
-time from my-agent's routes to the part's.
+my-agent keeps running while parts move over. Each part keeps my-agent's
+JSON shapes where it can, so my-widget can switch one page at a time from
+my-agent's routes to the part's.
 
-- Done: Veðrfölnir has the runner's `/system` and `/services` routes, under
-  `/v1/`. The runner's `POST /services/:id/stop` was left out, because
-  Veðrfölnir fixes nothing.
-- Next: Norn (the largest), then Sindri together with the runner's agent half.
+How Norn and Sindri split my-agent's message handling: Norn holds the
+conversation, decides what each message is, and builds the hand-over
+(your words, profile, memories, inbox). Sindri owns the agents, the coding
+prompts and tool rules, tasks, goals and approvals, and posts what agents
+say back into the conversation (`POST /v1/conversations/{session}/agent-turns`).
+
+Moved:
+- **Veðrfölnir**: the runner's `/system` and `/services` (without `stop`:
+  Veðrfölnir fixes nothing).
+- **Norn**: memory and learning, profile, jokes, widget settings, search,
+  the debug view, the Laya pass-through, the Microsoft, Google and Slack
+  sign-ins, both calendars, the inbox (Outlook, Teams, Slack, Gmail, the org
+  chart, the judge, the summaries), `/v1/ask` with the dispatcher and its
+  guard rails, chat, Needs you and decisions.
+- **Sindri**: the runner's agents (Claude Code and Copilot CLI, worktrees,
+  review, checks, screenshots, merge, pull requests, uploads, projects),
+  tasks, goals with pictures, parts across repos, automatic approvals,
+  follow-through on failed tests, waiting for room or for Claude usage, and
+  the coding-agent and automation settings.
+
+Not moved yet (still only in my-agent):
+- Norn: the writing tools (`/v1/write/*`, which import Pennvass), lookups
+  through MCP servers before handing a question over, the shadow Laya
+  dispatcher, answering ticket questions from Linear, the activity heatmap,
+  the `/part` command, and naming tasks with a model (Norn uses the first
+  line).
+- Sindri: Linear (goal candidates from Linear, and moving an issue as its
+  goal moves), your own Claude Code, OpenCode and herdr sessions
+  (`/v1/sessions`, which uses the agent-conduit npm package), herdr as a
+  place for question agents, and the runner's `/activity`.
