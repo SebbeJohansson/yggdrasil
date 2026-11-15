@@ -1,0 +1,12 @@
+[Unit]
+Description=Ratatoskr: watchdog for every part of Yggdrasil
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/ygg ratatoskr
+EnvironmentFile=%h/.config/yggdrasil/ratatoskr.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

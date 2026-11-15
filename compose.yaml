@@ -1,0 +1,42 @@
+# The parts that run in containers. Ratatoskr and Veðrfölnir run on the host
+# as systemd user units (deploy/systemd): Veðrfölnir has to see /proc, systemd
+# and docker, and Ratatoskr must not go down with a broken `compose up`.
+#
+# Each part has a profile, so a machine starts only what it needs:
+# COMPOSE_PROFILES=gjallar,munin in .env (see .env.example).
+#
+# Host networking, so 127.0.0.1 in here is 127.0.0.1 on this machine: the
+# parts listen on loopback only and reach each other there.
+x-part: &part
+  build: .
+  image: yggdrasil
+  restart: unless-stopped
+  network_mode: host
+
+services:
+  gjallar:
+    <<: *part
+    profiles: [gjallar]
+    command: [gjallar]
+    env_file: ${HOME}/.config/yggdrasil/gjallar.env
+    environment:
+      GJALLAR_DB: /data/gjallar.db
+    volumes:
+      # A plain folder, so the database is easy to find, back up, or open with sqlite3.
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8774/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  munin:
+    <<: *part
+    profiles: [munin]
+    command: [munin]
+    env_file: ${HOME}/.config/yggdrasil/munin.env
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8776/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

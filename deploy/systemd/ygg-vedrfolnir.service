@@ -1,0 +1,12 @@
+[Unit]
+Description=Veðrfölnir: reports on the machine (Yggdrasil)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/ygg vedrfolnir
+EnvironmentFile=%h/.config/yggdrasil/vedrfolnir.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
