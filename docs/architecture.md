@@ -98,20 +98,25 @@ Moved:
   the debug view, the Laya pass-through, the Microsoft, Google and Slack
   sign-ins, both calendars, the inbox (Outlook, Teams, Slack, Gmail, the org
   chart, the judge, the summaries), `/v1/ask` with the dispatcher and its
-  guard rails, chat, Needs you and decisions.
+  guard rails, chat, Needs you and decisions with the shadow Laya
+  dispatcher, Pennvass's writing checks (`/v1/write/*`), read-only lookups
+  through MCP servers (Linear) before an agent, ticket answers from Linear,
+  the activity heatmap, `/part`, and naming tasks with the dispatch model.
 - **Sindri**: the runner's agents (Claude Code and Copilot CLI, worktrees,
   review, checks, screenshots, merge, pull requests, uploads, projects),
   tasks, goals with pictures, parts across repos, automatic approvals,
   follow-through on failed tests, waiting for room or for Claude usage, and
-  the coding-agent and automation settings.
+  the coding-agent and automation settings, Linear goal candidates and
+  moving an issue as its goal moves, your own Claude Code sessions
+  (`/v1/sessions`) and `/v1/activity`.
 
-Not moved yet (still only in my-agent):
-- Norn: the writing tools (`/v1/write/*`, which import Pennvass), lookups
-  through MCP servers before handing a question over, the shadow Laya
-  dispatcher, answering ticket questions from Linear, the activity heatmap,
-  the `/part` command, and naming tasks with a model (Norn uses the first
-  line).
-- Sindri: Linear (goal candidates from Linear, and moving an issue as its
-  goal moves), your own Claude Code, OpenCode and herdr sessions
-  (`/v1/sessions`, which uses the agent-conduit npm package), herdr as a
-  place for question agents, and the runner's `/activity`.
+Not moved (still only in my-agent): OpenCode and herdr sessions, and herdr
+as a place for question agents. They need the agent-conduit npm package,
+and herdr is not installed on this machine. If they come back, they fit
+best as a separate program behind Sindri's `/v1/sessions` contract
+(docs/replacing-a-part.md), written in TypeScript on top of agent-conduit.
+
+Moving data between the two: `ygg migrate from-my-agent` copies my-agent's
+database, sign-ins and agents into Norn and Sindri; `ygg migrate
+to-my-agent` copies them back. Both back up the target first and refuse to
+write over data unless given `--replace`.

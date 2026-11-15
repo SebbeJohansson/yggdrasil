@@ -497,6 +497,9 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 				projects := append([]string{*d.Project}, without(MentionedProjects(question, input.Projects), *d.Project)...)
 				return a.code(projects[:min(4, len(projects))], "dispatcher: code"), nil
 			case d.Action == "delegate":
+				if local := a.lookedUp(); local != nil {
+					return *local, nil
+				}
 				n.learnLater(question)
 				response := a.handOver("dispatcher: delegate", inbox)
 				response.UsedInbox = inbox != nil
@@ -537,6 +540,11 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 				via := map[bool]string{true: "/claude", false: "rule: needs tools"}[route == "claude"]
 				if project != "" && route != "claude" {
 					via = "rule: names a project"
+				}
+				if route != "claude" && project == "" {
+					if local := a.lookedUp(); local != nil {
+						return *local, nil
+					}
 				}
 				response := a.handOver(via, inbox)
 				response.UsedInbox = inbox != nil

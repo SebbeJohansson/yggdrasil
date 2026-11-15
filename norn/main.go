@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"yggdrasil/internal/linear"
+	"yggdrasil/internal/mcp"
 
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/env"
@@ -97,6 +98,12 @@ func Main(ctx context.Context) error {
 		n.Sindri.URL, n.Sindri.Token = where.URL("sindri"), token
 	}
 	n.Linear = &linear.Client{Key: env.String("LINEAR_KEY", "")}
+	// Read-only lookups through your MCP servers, before an agent. LOOKUP=off turns them off.
+	if key := env.String("LINEAR_KEY", ""); key != "" && env.String("LOOKUP", "auto") != "off" {
+		n.Lookup = &Lookup{Chat: client.ToolChat, Model: env.String("LOOKUP_MODEL", "lookup"), Zone: n.Zone, Servers: []LookupServer{
+			{Name: "linear", Client: &mcp.Client{URL: env.String("LINEAR_MCP_URL", "https://mcp.linear.app/mcp"), Token: key}},
+		}}
+	}
 	n.WakeShadow()
 	n.Mount(p)
 	return p.Run(ctx, where.Addr(Name))

@@ -68,6 +68,9 @@ type Norn struct {
 	Zone     *time.Location
 	// Sindri is where coding work and questions that need tools go.
 	Sindri *SindriClient
+	// Lookup answers questions its MCP servers cover before an agent is
+	// started; nil is off.
+	Lookup *Lookup
 	// Linear answers "is AI-141 done?"; off without LINEAR_KEY.
 	Linear *linear.Client
 	// suggestions remembers what the improve check said about each sentence.
