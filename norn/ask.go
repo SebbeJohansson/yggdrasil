@@ -149,7 +149,7 @@ func (a *asker) rules() (string, string) {
 func (a *asker) handOver(via string, inbox []string) AskResponse {
 	communication, mode := a.rules()
 	agents, _ := a.n.Store.AgentsOf(a.ctx, a.session)
-	request := map[string]any{"session": a.session, "name": ShortName(a.question), "communication": communication, "mode": mode, "goal": a.question,
+	request := map[string]any{"session": a.session, "name": a.name(), "communication": communication, "mode": mode, "goal": a.question,
 		"prompt": HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, inbox, a.history, ""), "followUp": a.question}
 	if len(agents) > 0 {
 		request["agent"] = agents[0]
@@ -169,7 +169,7 @@ func (a *asker) handOver(via string, inbox []string) AskResponse {
 // code hands a coding task to Sindri: one agent per project.
 func (a *asker) code(projects []string, via string) AskResponse {
 	communication, mode := a.rules()
-	handed, err := a.n.Sindri.Code(a.ctx, map[string]any{"session": a.session, "name": ShortName(a.question), "projects": projects, "goal": a.question,
+	handed, err := a.n.Sindri.Code(a.ctx, map[string]any{"session": a.session, "name": a.name(), "projects": projects, "goal": a.question,
 		"communication": communication, "mode": mode, "prompt": HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, nil, ownWords(a.history), "")})
 	if err != nil {
 		return a.answered("Could not hand the coding over: "+err.Error(), nil, via)
@@ -214,6 +214,46 @@ func (a *asker) reply(agent *Agent, text, via string) AskResponse {
 }
 
 // ShortName is a task name from a message: its first line, cut at a word.
+// nameSystem names a task for the list of running jobs.
+const nameSystem = "Name the task in the newest message for a list of running jobs, using the conversation to see what it refers to. " +
+	"Say what the work is, starting with a verb; leave out greetings and \"I would like to\". " +
+	"Reply with the name only: 3 to 8 words, in the person's language, no quotes, no full stop. " +
+	"Example: conversation about a monitor setup display bug, newest message \"check it again\" -> Check the monitor setup display issue"
+
+// name is the task's name from the dispatcher's model (kept loaded, so a
+// second or two), else the question's first line.
+func (a *asker) name() string {
+	if a.n.Config.DispatchModel == "off" {
+		return ShortName(a.question)
+	}
+	var lines []string
+	for _, m := range a.history[max(0, len(a.history)-6):] {
+		who := "Assistant"
+		if m.Role == "user" {
+			who = "Person"
+		}
+		lines = append(lines, who+": "+clipRunes(m.Content, 300))
+	}
+	think := false
+	reply, err := a.n.LLM.Chat(a.ctx, []llm.Message{
+		{Role: "system", Content: nameSystem},
+		{Role: "user", Content: strings.Join(lines, "\n") + "\n\nNewest message: " + clipRunes(a.question, 1500)},
+	}, llm.Options{Purpose: "name", Model: a.n.Config.DispatchModel, Temperature: 0, TopP: 1, MaxTokens: 24, Think: &think,
+		KeepAlive: a.n.Config.DispatchKeepAlive, Timeout: 5 * time.Second})
+	name := strings.Trim(strings.TrimSpace(strings.SplitN(strings.TrimSpace(reply), "\n", 2)[0]), "\"'.")
+	if err != nil || name == "" || len([]rune(name)) > 80 {
+		return ShortName(a.question)
+	}
+	return name
+}
+
+func clipRunes(text string, n int) string {
+	if runes := []rune(text); len(runes) > n {
+		return string(runes[:n])
+	}
+	return text
+}
+
 func ShortName(text string) string {
 	line := strings.TrimSpace(strings.SplitN(strings.TrimSpace(text), "\n", 2)[0])
 	if runes := []rune(line); len(runes) > 50 {
@@ -314,6 +354,28 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		return a.code(strings.Split(match[1], ","), "/agent"), nil
 	} else if strings.HasPrefix(question, "/agent") {
 		return a.answered("Usage: /agent <project> <task>, e.g. /agent my-widget fix the DM titles", nil, "/agent"), nil
+	}
+
+	// /part <project> <task>: another repo's part of this conversation's
+	// code task, on the same branch name.
+	if match := partCmd.FindStringSubmatch(question); match != nil {
+		if !sindri {
+			return a.answered("Agents are off here (no Sindri).", nil, "/part"), nil
+		}
+		request := map[string]any{"session": session, "project": match[1], "task": strings.TrimSpace(match[2])}
+		if agents, _ := n.Store.AgentsOf(ctx, session); len(agents) > 0 {
+			request["agent"] = agents[0]
+		}
+		handed, err := n.Sindri.Part(ctx, request)
+		if err != nil {
+			return a.answered(err.Error(), nil, "/part"), nil
+		}
+		for _, p := range handed.Parts {
+			_ = n.Store.BindAgent(ctx, session, p.AgentID)
+		}
+		return a.answered(handed.Answer, nil, "/part"), nil
+	} else if strings.HasPrefix(question, "/part") {
+		return a.answered("Usage: /part <project> <task>, e.g. /part norn add the pull-request route", nil, "/part"), nil
 	}
 
 	var everyone []Agent

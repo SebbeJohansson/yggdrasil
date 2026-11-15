@@ -577,6 +577,37 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /v1/work/part:
+    post:
+      summary: Add another project's part to a conversation's code task, on the same branch name. The agent's own task first, else the conversation's latest code task.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session, project, task]
+              properties:
+                session: { type: string }
+                agent: { type: string, description: The conversation's own agent. }
+                project: { type: string }
+                task: { type: string }
+      responses:
+        "200":
+          description: What was started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer]
+                properties:
+                  answer: { type: string }
+                  parts: { type: array, items: { type: object } }
+                  busy: { type: array, items: { type: string } }
+                  failed: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
   /v1/work/tell:
     post:
       summary: Pass a message to an agent, after its current turn if it is busy.

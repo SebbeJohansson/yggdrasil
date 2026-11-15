@@ -375,6 +375,7 @@ func (w *Work) MountWork(p *part.Part) {
 	p.Handle("POST /v1/work/ask", w.askRoute)
 	p.Handle("POST /v1/work/reply", w.replyRoute)
 	p.Handle("POST /v1/work/tell", w.tellRoute)
+	p.Handle("POST /v1/work/part", w.partRoute)
 	p.Handle("GET /v1/tasks", func(rw http.ResponseWriter, r *http.Request) {
 		since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 		if since == 0 {
@@ -575,6 +576,40 @@ func (w *Work) tellRoute(rw http.ResponseWriter, r *http.Request) {
 	summary := Summarise(a)
 	w.Agents.mu.Unlock()
 	part.JSON(rw, http.StatusOK, summary)
+}
+
+// partRoute adds another project's part to a conversation's code task, on
+// the same branch name: the conversation's own agent's task first (a reply
+// can pick up a coding agent started elsewhere), else its latest.
+func (w *Work) partRoute(rw http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Session string `json:"session"`
+		Agent   string `json:"agent"`
+		Project string `json:"project"`
+		Task    string `json:"task"`
+	}
+	if err := part.Decode(r, &body); err != nil || body.Session == "" || body.Project == "" || strings.TrimSpace(body.Task) == "" {
+		part.Error(rw, http.StatusBadRequest, "send `session`, `project` and `task`")
+		return
+	}
+	var of *Task
+	if body.Agent != "" {
+		if t, _ := w.Store.TaskOfAgent(body.Agent); t != nil && t.Kind == "code" && t.Branch != nil {
+			of = t
+		}
+	}
+	if of == nil {
+		var err error
+		if of, err = w.Store.LatestCodeTask(body.Session); err != nil {
+			fail(rw, err)
+			return
+		}
+	}
+	if of == nil {
+		part.Error(rw, http.StatusNotFound, "No code task in this conversation to add a part to. Start one with /agent <project> <task>.")
+		return
+	}
+	part.JSON(rw, http.StatusOK, w.startPart(r.Context(), of, ProjectTask{Project: body.Project, Task: strings.TrimSpace(body.Task)}))
 }
 
 type goalBody struct {

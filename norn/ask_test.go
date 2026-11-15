@@ -38,6 +38,8 @@ func (f *fakeSindri) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		part.JSON(w, 200, f.agents[0])
 	case strings.HasPrefix(r.URL.Path, "/v1/agents/"):
 		part.JSON(w, 200, f.agents[0])
+	case r.URL.Path == "/v1/work/part":
+		part.JSON(w, 200, map[string]any{"answer": "Claude is coding the glim part on branch agent/x.", "parts": []map[string]string{{"agentId": "part-agent", "status": "starting", "project": "glim", "branch": "agent/x"}}})
 	case r.URL.Path == "/v1/work/code":
 		part.JSON(w, 200, map[string]any{"answer": "Claude is coding this in my-widget on branch agent/x.", "parts": []map[string]string{{"agentId": "new-agent", "status": "starting", "project": "my-widget", "branch": "agent/x"}}})
 	default:
@@ -192,5 +194,22 @@ func TestApprovalReply(t *testing.T) {
 		if got != want {
 			t.Errorf("%q: got %q, want %q", text, got, want)
 		}
+	}
+}
+
+func TestPartCommandAddsAProjectToTheTask(t *testing.T) {
+	n, _ := newNorn(t)
+	fake := withSindri(t, n)
+	_ = n.Store.BindAgent(context.Background(), "s4", "a1")
+	response, err := n.Ask(context.Background(), AskRequest{Question: "/part glim show the new badge", Session: "s4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Via != "/part" || !strings.Contains(response.Answer, "glim part") {
+		t.Fatalf("got %+v", response)
+	}
+	call := fake.called("POST /v1/work/part")
+	if !strings.Contains(call, `"agent":"a1"`) || !strings.Contains(call, `"project":"glim"`) || !strings.Contains(call, `"task":"show the new badge"`) {
+		t.Fatalf("Sindri got %q", call)
 	}
 }

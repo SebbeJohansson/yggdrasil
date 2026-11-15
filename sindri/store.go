@@ -539,3 +539,12 @@ func (s *Store) SetGoalLinearSynced(id int64, step string) error {
 	_, err := s.db.Exec(`UPDATE goals SET linear_synced = ? WHERE id = ?`, step, id)
 	return err
 }
+
+// LatestCodeTask is the conversation's latest code task that has a branch.
+func (s *Store) LatestCodeTask(session string) (*Task, error) {
+	t, err := scanTask(s.db.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE session = ? AND kind = 'code' AND branch IS NOT NULL ORDER BY id DESC LIMIT 1`, session))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return &t, err
+}

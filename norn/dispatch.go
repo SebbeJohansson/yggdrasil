@@ -386,6 +386,7 @@ var (
 	retry         = regexp.MustCompile(`(?i)^\s*(try (it |that )?again|retry|again|do it again|försök igen|igen)[.!]?\s*$`)
 	forced        = regexp.MustCompile(`^/(claude|local)\s+([\s\S]+)$`)
 	agentCmd      = regexp.MustCompile(`^/agent\s+(\S+)\s+([\s\S]+)$`)
+	partCmd       = regexp.MustCompile(`^/part\s+([\w.-]+)\s+([\s\S]+)$`)
 	statusAsk     = regexp.MustCompile(`(?i)\b(status|progress|done yet|finished yet|any news|how('?s| is| are) (it|that|things)( going)?|what('?s| is) (it|claude|the agent) doing|still (working|running)|hur går det|är (den|det) klar)\b`)
 	replyCmd      = regexp.MustCompile(`(?i)^(?:reply|answer|respond|tell|svara)\s+(?:to\s+|till\s+)?(?:the\s+)?([^:]+?)(?:\s+agent)?\s*:\s*([\s\S]+)$`)
 	promise       = regexp.MustCompile(`(?i)\b(let me|i'?ll|i will|i'?m going to|going to)\s+(go\s+)?(check|look|find|verify|search|investigate|re-?check|dig|see|take a look|get back)\b`)

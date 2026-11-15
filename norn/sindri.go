@@ -179,3 +179,9 @@ func (c *SindriClient) Answer(ctx context.Context, agent, requestID string, allo
 	return c.call(ctx, http.MethodPost, "/v1/agents/"+url.PathEscape(agent)+"/permissions/"+url.PathEscape(requestID),
 		map[string]any{"allow": allow, "message": message}, nil)
 }
+
+// Part adds another project's part to the conversation's code task.
+func (c *SindriClient) Part(ctx context.Context, request map[string]any) (Handed, error) {
+	var handed Handed
+	return handed, c.call(ctx, http.MethodPost, "/v1/work/part", request, &handed)
+}
