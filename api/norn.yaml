@@ -503,6 +503,233 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SlackStatus" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/ask:
+    post:
+      summary: A message. Norn answers it itself, or hands it to Sindri (a question that needs tools, a coding task, a reply to an agent). An answer has no fallback worth sending, so a model that fails is a 502.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string, maxLength: 4000 }
+                session: { type: string, pattern: "^[\\w-]{1,64}$" }
+                to: { type: string, description: "norn, or an agent id: who it goes to, picked by hand." }
+                images: { type: array, maxItems: 5, items: { type: string } }
+                communication: { type: string, enum: [concise, detailed, verbose] }
+                mode: { type: string, enum: [auto, manual] }
+      responses:
+        "200":
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer, session, recalled, usedInbox, via]
+                properties:
+                  answer: { type: string }
+                  session: { type: string }
+                  recalled: { type: array, items: { $ref: "#/components/schemas/Memory" } }
+                  usedInbox: { type: boolean }
+                  via: { type: string, description: "What handled it: dispatcher: delegate, rule: approval, local model…" }
+                  delegated:
+                    type: object
+                    required: [agentId, status]
+                    properties:
+                      agentId: { type: string }
+                      status: { type: string }
+                      project: { type: string }
+                      branch: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/chat:
+    get:
+      summary: One conversation as the chat shows it, the agents in it, and who "to:" should point at now.
+      parameters:
+        - { name: session, in: query, required: true, example: s1, schema: { type: string } }
+        - { name: after, in: query, schema: { type: integer, description: Only turns after this id. } }
+      responses:
+        "200":
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages, participants, to, projects]
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, role, content, at, author, label, decision, via]
+                      properties:
+                        id: { type: integer }
+                        role: { type: string, enum: [user, assistant] }
+                        content: { type: string }
+                        at: { type: integer }
+                        author: { type: [string, "null"] }
+                        label: { type: [string, "null"] }
+                        decision: { type: [integer, "null"] }
+                        via: { type: [string, "null"] }
+                  participants: { type: array, items: { type: object, required: [id, label, place, status, asksYou] } }
+                  to: { type: string }
+                  projects: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/conversations/{session}/agent-turns:
+    post:
+      summary: Sindri posts what an agent said into the conversation it works for (with agent), or a line of its own (without). Only the caller named sindri may.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                agent: { type: string }
+                label: { type: string }
+                content: { type: string }
+      responses:
+        "201":
+          description: Posted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Not Sindri.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/needs-you:
+    get:
+      summary: Everything waiting on you across every conversation, oldest first. An approval or question, a failed or finished result you have not read, a branch ready to review, an agent gone silent.
+      responses:
+        "200":
+          description: The needs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [needs]
+                properties:
+                  needs:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, agent, label, session, text, at]
+                      properties:
+                        kind: { type: string, enum: [approval, question, failed, result, stuck, ready] }
+                        agent: { type: string }
+                        label: { type: string }
+                        session: { type: [string, "null"] }
+                        text: { type: [string, "null"] }
+                        pending: { type: object }
+                        reviewable: { type: boolean }
+                        running: { type: boolean }
+                        at: { type: integer }
+                        overdue: { type: boolean }
+                        check: { type: string, enum: [running, passed, failed] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/needs-you/read:
+    post:
+      summary: You have read what that agent said.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent]
+              properties:
+                agent: { type: string }
+      responses:
+        "200":
+          description: Whether anything was unread.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [read]
+                properties:
+                  read: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/decisions:
+    get:
+      summary: Every dispatch decision, newest first, with the model's own before the guards and your corrections. The training data for a better dispatcher.
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 1000 } }
+      responses:
+        "200":
+          description: The decisions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [decisions]
+                properties:
+                  decisions:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, at, session, message, source, decision]
+                      properties:
+                        id: { type: integer }
+                        at: { type: integer }
+                        session: { type: string }
+                        message: { type: string }
+                        source: { type: string, enum: [model, fallback, person] }
+                        model: {}
+                        decision: { type: object }
+                        guards: { type: array, items: { type: string } }
+                        ms: { type: [integer, "null"] }
+                        correction: {}
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/decisions/{id}/correction:
+    post:
+      summary: Where a message should have gone.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: object
+                  required: [action]
+                  properties:
+                    action: { type: string, enum: [answer, delegate, code, reply_to_agent, status] }
+                    agent: { type: [string, "null"] }
+                    project: { type: [string, "null"] }
+      responses:
+        "200":
+          description: Kept.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [corrected]
+                properties:
+                  corrected: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     bearer:

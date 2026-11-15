@@ -24,7 +24,9 @@ import (
 //	MEMORY_LEARN     false keeps memory read-only (true)
 //	LAYA_URL, LAYA_KEY  Laya, for the judge, the tone badge and /v1/systemone
 //	TIME_ZONE        yours (Europe/Stockholm)
-//	SUMMARY_MODEL    phrases the inbox summary (llama3.2:1b)
+//	SUMMARY_MODEL    phrases the inbox summary (llama3.2:1b); ASK_MODEL answers (the summary model)
+//	DISPATCH_MODEL   decides what each message is (qwen2.5:7b); off: the older rules
+//	YGG_SINDRI_URL   Sindri, for coding and questions that need tools; SINDRI_TOKEN is Norn's token there (unset: agents off)
 //	INBOX_JUDGE      laya, typesafe, ollama or off (laya); INBOX_JUDGE_MODEL, TYPESAFE_KEY
 //	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  your own Google "Desktop app" OAuth client; unset is no Google
 //	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Norn's token there (a sign-in that ended is raised)
@@ -59,13 +61,16 @@ func Main(ctx context.Context) error {
 		},
 	}
 	n := New(Config{
-		ProfilePath:  env.String("PROFILE_PATH", "profile/profile.md"),
-		EmbedModel:   env.String("EMBED_MODEL", "nomic-embed-text"),
-		Learn:        env.String("MEMORY_LEARN", "true") == "true",
-		LayaURL:      env.String("LAYA_URL", "http://127.0.0.1:8000"),
-		LayaKey:      env.String("LAYA_KEY", ""),
-		TimeZone:     env.String("TIME_ZONE", "Europe/Stockholm"),
-		SummaryModel: env.String("SUMMARY_MODEL", "llama3.2:1b"),
+		ProfilePath:       env.String("PROFILE_PATH", "profile/profile.md"),
+		EmbedModel:        env.String("EMBED_MODEL", "nomic-embed-text"),
+		Learn:             env.String("MEMORY_LEARN", "true") == "true",
+		LayaURL:           env.String("LAYA_URL", "http://127.0.0.1:8000"),
+		LayaKey:           env.String("LAYA_KEY", ""),
+		TimeZone:          env.String("TIME_ZONE", "Europe/Stockholm"),
+		SummaryModel:      env.String("SUMMARY_MODEL", "llama3.2:1b"),
+		AskModel:          env.String("ASK_MODEL", env.String("SUMMARY_MODEL", "llama3.2:1b")),
+		DispatchModel:     env.String("DISPATCH_MODEL", "qwen2.5:7b"),
+		DispatchKeepAlive: env.String("DISPATCH_KEEP_ALIVE", "-1m"),
 		Judge: JudgeSettings{
 			Provider:    env.String("INBOX_JUDGE", "laya"),
 			LayaURL:     env.String("LAYA_URL", "http://127.0.0.1:8000"),
@@ -80,6 +85,9 @@ func Main(ctx context.Context) error {
 		GoogleClientSecret: env.String("GOOGLE_CLIENT_SECRET", ""),
 	}, store, client, p.Logf)
 	n.Gjallar = alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", ""))
+	if token := env.String("SINDRI_TOKEN", ""); token != "" {
+		n.Sindri.URL, n.Sindri.Token = where.URL("sindri"), token
+	}
 	n.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }

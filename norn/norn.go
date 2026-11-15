@@ -39,6 +39,9 @@ type Config struct {
 	TimeZone string
 	// SummaryModel phrases the inbox's one-line summaries.
 	SummaryModel string
+	// AskModel answers locally; DispatchModel decides what each message is
+	// ("off": the older rules), kept loaded for DispatchKeepAlive.
+	AskModel, DispatchModel, DispatchKeepAlive string
 	// Judge says who judges the inbox beside the four rules.
 	Judge JudgeSettings
 	// DataDir holds the sign-ins, beside the database.
@@ -58,7 +61,9 @@ type Norn struct {
 	Accounts *Accounts
 	Inbox    *Inbox
 	Zone     *time.Location
-	logf     func(format string, args ...any)
+	// Sindri is where coding work and questions that need tools go.
+	Sindri *SindriClient
+	logf   func(format string, args ...any)
 }
 
 // New makes Norn over its store and model client.
@@ -68,7 +73,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 		zone = time.UTC
 	}
 	n := &Norn{Config: config, Store: store, LLM: client, HTTP: &http.Client{Timeout: 60 * time.Second}, logf: logf,
-		Gjallar: alert.NewClient("", ""), Zone: zone,
+		Gjallar: alert.NewClient("", ""), Zone: zone, Sindri: &SindriClient{HTTP: &http.Client{Timeout: 60 * time.Second}},
 		Accounts: NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Inbox = NewInbox(n, config.DataDir)
 	n.Brain = &Brain{
@@ -98,6 +103,7 @@ func (n *Norn) Mount(p *part.Part) {
 	p.Handle("POST /v1/systemone", n.systemOne)
 	n.mountAccounts(p)
 	n.mountInbox(p)
+	n.mountChat(p)
 }
 
 func (n *Norn) fail(w http.ResponseWriter, err error) {
