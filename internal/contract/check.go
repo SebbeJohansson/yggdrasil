@@ -58,6 +58,11 @@ func Check(ctx context.Context, spec *Spec, base string, options Options) []Resu
 		if schema, contentType, _ := spec.Response(method, path, http.StatusOK); contentType != "application/json" || schema == nil {
 			continue
 		}
+		query, callable := spec.Query(method, path)
+		if !callable {
+			c.skip(route, "a required parameter has no example in the spec")
+			continue
+		}
 		if spec.Secured(method, path) {
 			c.call(ctx, "refuses no token: "+route, method, path, "", nil, http.StatusUnauthorized, nil)
 		}
@@ -65,7 +70,7 @@ func Check(ctx context.Context, spec *Spec, base string, options Options) []Resu
 			c.skip(route, "no owner token")
 			continue
 		}
-		c.call(ctx, route, method, path, options.OwnerToken, nil, http.StatusOK, nil)
+		c.call(ctx, route, method, path+query, options.OwnerToken, nil, http.StatusOK, nil)
 	}
 	if scenario, ok := scenarios[spec.Part]; ok {
 		scenario(ctx, c)

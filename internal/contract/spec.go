@@ -11,6 +11,7 @@ package contract
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -107,6 +108,38 @@ func (s *Spec) Response(method, path string, status int) (schema any, contentTyp
 		}
 	}
 	return nil, contentType, true
+}
+
+// Query is the query string an operation's required parameters need, from
+// each one's `example`. ok is false when a required one has no example, so
+// the check can't call it on its own.
+func (s *Spec) Query(method, path string) (query string, ok bool) {
+	operation, _ := s.operation(method, path)
+	parameters, _ := operation["parameters"].([]any)
+	values := url.Values{}
+	for _, raw := range parameters {
+		resolved, err := s.resolve(raw)
+		if err != nil {
+			return "", false
+		}
+		parameter, _ := resolved.(map[string]any)
+		if parameter["in"] != "query" || parameter["required"] != true {
+			continue
+		}
+		example, found := parameter["example"]
+		if !found {
+			schema, _ := parameter["schema"].(map[string]any)
+			example, found = schema["example"]
+		}
+		if !found {
+			return "", false
+		}
+		values.Set(fmt.Sprint(parameter["name"]), fmt.Sprint(example))
+	}
+	if len(values) == 0 {
+		return "", true
+	}
+	return "?" + values.Encode(), true
 }
 
 // Secured is whether an operation needs the bearer token.
