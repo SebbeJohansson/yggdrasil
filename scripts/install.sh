@@ -28,17 +28,38 @@ if [ ! -e "$config/gjallar.env" ]; then
 	ratatoskr=$(token)
 	munin=$(token)
 	vedrfolnir=$(token)
+	norn=$(token)
+	sindri=$(token)
 	origins="http://localhost:17420,http://127.0.0.1:17420"
 	umask 077
 	printf '%s\n' "$owner" >"$config/owner.token"
 	cat >"$config/gjallar.env" <<EOF
-GJALLAR_TOKENS=owner=$owner,ratatoskr=$ratatoskr,munin=$munin,vedrfolnir=$vedrfolnir
+GJALLAR_TOKENS=owner=$owner,ratatoskr=$ratatoskr,munin=$munin,vedrfolnir=$vedrfolnir,norn=$norn,sindri=$sindri
 # Senders that must beat, and how long a silence may last.
 GJALLAR_HEARTBEATS=ratatoskr=3m
 # Your phone push topic for critical alerts, e.g. https://ntfy.sh/<a secret topic>. Empty is off.
 NTFY_URL=
 NTFY_TOKEN=
 DASHBOARD_URL=http://localhost:17420
+YGG_CORS_ORIGINS=$origins
+EOF
+	cat >"$config/norn.env" <<EOF
+NORN_TOKENS=owner=$owner,sindri=$sindri
+GJALLAR_TOKEN=$norn
+# Norn's token at Sindri, to hand work to coding agents.
+SINDRI_TOKEN=$norn
+TIME_ZONE=Europe/Stockholm
+# Laya (judge, tone) and your own Google "Desktop app" OAuth client; empty is off.
+LAYA_KEY=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+YGG_CORS_ORIGINS=$origins
+EOF
+	cat >"$config/sindri.env" <<EOF
+SINDRI_TOKENS=owner=$owner,norn=$norn
+GJALLAR_TOKEN=$sindri
+# Sindri's token at Norn, to post what agents say into your conversations.
+NORN_TOKEN=$sindri
 YGG_CORS_ORIGINS=$origins
 EOF
 	cat >"$config/munin.env" <<EOF
@@ -86,8 +107,8 @@ for unit in deploy/systemd/*.service; do
 	install -m 0644 "$unit" "$HOME/.config/systemd/user/"
 done
 systemctl --user daemon-reload
-systemctl --user enable --now ygg-vedrfolnir.service ygg-ratatoskr.service
-systemctl --user restart ygg-vedrfolnir.service ygg-ratatoskr.service
+systemctl --user enable --now ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service
+systemctl --user restart ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service
 
 echo
 echo "Done. Your owner token (for the widget and curl) is in $config/owner.token."

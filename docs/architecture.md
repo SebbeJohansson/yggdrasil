@@ -50,8 +50,8 @@ hold it to its spec: the same routes, and every answer in the spec's shape.
 
 | Part | Port | Runs as | State | Status |
 | --- | --- | --- | --- | --- |
-| Norn: assistant (inbox, calendar, memory, ask) | 8771 | container | `norn.db` | not built yet; still in my-agent |
-| Sindri: coding (goals, agents, worktrees) | 8772 | host unit (it starts agents on the host) | `sindri.db` | not built yet; still in my-agent and its runner |
+| Norn: assistant (inbox, calendars, memory, ask) | 8771 | container | `norn.db`, the sign-ins | memory, sign-ins, calendars and inbox moved; ask, dispatch and writing next |
+| Sindri: coding (agents, worktrees, goals) | 8772 | host unit (it starts agents on the host) | the agents (JSON) | the runner's agent half moved; goals, approvals and Linear next |
 | Veðrfölnir: reports on the machine | 8773 | host unit | the hour of samples | built, ported from the runner |
 | Gjallar: alerts | 8774 | container | `gjallar.db` | built |
 | Ratatoskr: watchdog | 8775 | host unit, outside compose | none | built |

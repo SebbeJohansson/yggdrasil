@@ -1,0 +1,16 @@
+[Unit]
+Description=Sindri: coding agents in your repos (Yggdrasil)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/ygg sindri
+# Where every part lives; a replaced part is pointed at here.
+EnvironmentFile=-%h/.config/yggdrasil/parts.env
+EnvironmentFile=%h/.config/yggdrasil/sindri.env
+Restart=always
+RestartSec=5
+# Agents are stopped with Sindri; give them a moment.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

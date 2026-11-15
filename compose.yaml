@@ -1,6 +1,7 @@
-# The parts that run in containers. Ratatoskr and Veðrfölnir run on the host
-# as systemd user units (deploy/systemd): Veðrfölnir has to see /proc, systemd
-# and docker, and Ratatoskr must not go down with a broken `compose up`.
+# The parts that run in containers. Sindri, Veðrfölnir and Ratatoskr run on
+# the host as systemd user units (deploy/systemd): Sindri's agents need your
+# repos and toolchain, Veðrfölnir has to see /proc, systemd and docker, and
+# Ratatoskr must not go down with a broken `compose up`.
 #
 # Each part has a profile, so a machine starts only what it needs:
 # COMPOSE_PROFILES=gjallar,munin in .env (see .env.example).
@@ -14,6 +15,27 @@ x-part: &part
   network_mode: host
 
 services:
+  norn:
+    <<: *part
+    profiles: [norn]
+    command: [norn]
+    env_file:
+      - path: ${HOME}/.config/yggdrasil/parts.env
+        required: false
+      - ${HOME}/.config/yggdrasil/norn.env
+    environment:
+      NORN_DB: /data/norn.db
+      PROFILE_PATH: /profile/profile.md
+    volumes:
+      # The database and the sign-ins (Microsoft, Google, Slack), beside it.
+      - ./data:/data
+      - ./profile:/profile:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8771/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
   gjallar:
     <<: *part
     profiles: [gjallar]

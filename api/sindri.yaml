@@ -1,0 +1,702 @@
+openapi: 3.1.0
+info:
+  title: Sindri
+  version: "1"
+  description: |
+    Yggdrasil's coding orchestrator. Starts and tracks coding agents (Claude
+    Code or GitHub Copilot CLI) in your repos, each in its own worktree, and
+    reviews, checks, merges and publishes what they make. Any program that
+    serves this contract and passes `ygg check sindri <url>` can replace the
+    built-in one (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - Agents work only inside the configured project roots.
+    - A coding agent works in a worktree on its own branch, agent/<slug>,
+      never in your checkout. Merging into your checkout is refused while
+      either side has uncommitted work, and a conflict changes nothing.
+    - Nothing is pushed or merged unless asked through these routes.
+    - Switching an agent between Claude Code and Copilot happens only when
+      asked (handoff), never on its own.
+servers:
+  - url: http://127.0.0.1:8772
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/agents:
+    get:
+      summary: Every agent, the most recently active first, without logs.
+      responses:
+        "200":
+          description: The agents.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Agent" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Start an agent. With worktree, it works on a new branch agent/<slug> cut from the repo's checked-out branch.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cwd, prompt]
+              properties:
+                cwd: { type: string, description: A folder under the roots, or a project's name. }
+                prompt: { type: string }
+                label: { type: string }
+                permissionMode: { type: string, enum: [default, acceptEdits, plan, auto] }
+                model: { type: string }
+                addRoots: { type: boolean }
+                worktree: { type: boolean }
+                slug: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,59}$" }
+                allowedTools: { type: array, maxItems: 150, items: { type: string } }
+                disallowedTools: { type: array, maxItems: 150, items: { type: string } }
+                noTools: { type: boolean }
+                appendSystemPrompt: { type: string, maxLength: 8000 }
+                engine: { type: string, enum: [claude, copilot] }
+                session: { type: string, description: The Norn conversation the agent posts into. }
+      responses:
+        "201": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}:
+    get:
+      summary: One agent with its log, last result and pending permissions (with their input).
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: The agent.
+          content:
+            application/json:
+              schema:
+                allOf: [{ $ref: "#/components/schemas/Agent" }]
+                type: object
+                required: [log]
+                properties:
+                  log: { type: array, items: { $ref: "#/components/schemas/LogEntry" } }
+                  result: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/prompt:
+    post:
+      summary: A follow-up. A finished session resumes. With queue, a busy turn is waited out instead of refused.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+                images: { type: array, items: { type: string }, description: Paths /v1/uploads gave back for this agent. }
+                queue: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/handoff:
+    post:
+      summary: A stopped agent carries on in the other CLI, same id and folder. Only when asked.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string }
+                to: { type: string, enum: [claude, copilot] }
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/resume-scheduled:
+    post:
+      summary: Resume an agent parked after a Claude usage limit.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/label:
+    post:
+      summary: Rename an agent.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/permissions/{requestId}:
+    post:
+      summary: Allow or deny a tool call the agent is waiting on.
+      parameters:
+        - { $ref: "#/components/parameters/ID" }
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allow]
+              properties:
+                allow: { type: boolean }
+                message: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/abort:
+    post:
+      summary: Stop the agent's process.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/fix-conflicts:
+    post:
+      summary: Ask the agent to rebase its branch onto its base and resolve the conflicts.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/review:
+    get:
+      summary: The agent's branch, its commits, files and diff, with its screenshots. ?commit= for one commit.
+      parameters:
+        - { $ref: "#/components/parameters/ID" }
+        - { name: commit, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/screenshots/{name}:
+    get:
+      summary: A screenshot of the branch's changes, taken by an agent started when a turn ends.
+      parameters:
+        - { $ref: "#/components/parameters/ID" }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The picture.
+          content:
+            image/png: {}
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/checks:
+    get:
+      summary: The last result of each kind of check run in the agent's worktree.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: By kind.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: { $ref: "#/components/schemas/Check" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      summary: Run a check (package.json's test or check script, or the workflows with act), or get this commit's result.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: { type: string, enum: [script, workflows] }
+                script: { type: string, enum: [test, check] }
+                force: { type: boolean }
+      responses:
+        "200":
+          description: The check, running or done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Check" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/merge:
+    post:
+      summary: Merge the agent's branch into the branch it was cut from, in your checkout.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200": { $ref: "#/components/responses/Done" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/pull-request:
+    post:
+      summary: Push the agent's branch and open a GitHub pull request into its base, with gh.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200": { $ref: "#/components/responses/PullRequest" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/push-base:
+    post:
+      summary: Push the branch the agent's work merged into to the remote it tracks.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200": { $ref: "#/components/responses/Done" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/remove-worktree:
+    post:
+      summary: Remove the agent's worktree, and its branch once merged. force discards unmerged work.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Done" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/uploads:
+    post:
+      summary: Files sent with a message, saved where that session reads them without asking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cwd, sessionId, files]
+              properties:
+                cwd: { type: string }
+                sessionId: { type: string }
+                files:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  items:
+                    type: object
+                    required: [name, data]
+                    properties:
+                      name: { type: string }
+                      data: { type: string, description: Base64, at most 10 MB. }
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files]
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, path, bytes]
+                      properties:
+                        name: { type: string }
+                        path: { type: string }
+                        bytes: { type: integer }
+                        mediaType: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/Error" }
+  /v1/worktrees:
+    get:
+      summary: Every worktree of every project, with the agent working in it when one does.
+      responses:
+        "200":
+          description: The worktrees.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [project, repo, path, head, base, ahead, dirty, missing]
+                  properties:
+                    project: { type: string }
+                    repo: { type: string }
+                    path: { type: string }
+                    branch: { type: string }
+                    head: { type: string }
+                    base: { type: string }
+                    ahead: { type: integer }
+                    dirty: { type: boolean }
+                    missing: { type: boolean }
+                    merged: { type: boolean }
+                    checkout: { type: boolean, description: A branch in the project's own checkout, ahead of main. }
+                    agent:
+                      type: object
+                      required: [id, label, status]
+                      properties:
+                        id: { type: string }
+                        label: { type: string }
+                        status: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/worktrees/review:
+    get:
+      summary: The review of a worktree no agent owns.
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string } }
+        - { name: commit, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/worktrees/merge:
+    post: { $ref: "#/components/x-unowned" }
+  /v1/worktrees/remove:
+    post: { $ref: "#/components/x-unowned" }
+  /v1/worktrees/move:
+    post: { $ref: "#/components/x-unowned" }
+  /v1/worktrees/push-base:
+    post: { $ref: "#/components/x-unowned" }
+  /v1/worktrees/pull-request:
+    post:
+      summary: Push a worktree no agent owns and open a pull request.
+      requestBody: { $ref: "#/components/requestBodies/Path" }
+      responses:
+        "200": { $ref: "#/components/responses/PullRequest" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects:
+    get:
+      summary: The git repositories under the root.
+      responses:
+        "200":
+          description: The projects.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Project" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Make a new project (git init) under the root.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201":
+          description: Made.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{name}/docs:
+    get:
+      summary: The markdown files docs/docs.json lists, else README.md and TODO.md in the root. Read-only.
+      parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The documents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [configured, files]
+                properties:
+                  configured: { type: boolean }
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [file, title, content]
+                      properties:
+                        file: { type: string }
+                        title: { type: [string, "null"] }
+                        content: { type: [string, "null"] }
+                        error: { type: string }
+                  error: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  requestBodies:
+    Path:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [path]
+            properties:
+              path: { type: string }
+              force: { type: boolean, description: For remove, discard unmerged work. }
+  x-unowned:
+    summary: Merge, remove, move into a worktree, or push the base of a worktree no agent owns.
+    requestBody: { $ref: "#/components/requestBodies/Path" }
+    responses:
+      "200": { $ref: "#/components/responses/Done" }
+      "400": { $ref: "#/components/responses/Error" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "404": { $ref: "#/components/responses/Error" }
+      "409": { $ref: "#/components/responses/Error" }
+  responses:
+    Agent:
+      description: The agent.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Agent" }
+    Done:
+      description: What was done, in words.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [done]
+            properties:
+              done: { type: string }
+    PullRequest:
+      description: The pull request.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [url, done]
+            properties:
+              url: { type: string }
+              done: { type: string }
+    Error:
+      description: Refused, with why.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    LogEntry:
+      type: object
+      required: [at, kind, text]
+      properties:
+        at: { type: integer }
+        kind: { type: string, enum: [prompt, text, tool, permission, result, error, exit] }
+        text: { type: string }
+    Agent:
+      type: object
+      required: [id, label, cwd, permissionMode, status, pending, startedAt, lastActivity, costUsd, numTurns, asksYou, resumable]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        cwd: { type: string }
+        permissionMode: { type: string, enum: [default, acceptEdits, plan, auto] }
+        model: { type: string }
+        status: { type: string, enum: [starting, working, needs-approval, waiting, done, failed, aborted] }
+        tool: { type: string }
+        lastText: { type: string }
+        pending:
+          type: array
+          items:
+            type: object
+            required: [requestId, toolName, summary, at]
+            properties:
+              requestId: { type: string }
+              toolName: { type: string }
+              summary: { type: string }
+              at: { type: integer }
+              input: { type: object }
+        startedAt: { type: integer }
+        lastActivity: { type: integer }
+        costUsd: { type: number }
+        numTurns: { type: integer }
+        engine: { type: string, enum: [copilot], description: Absent for Claude Code. }
+        worktree:
+          type: object
+          required: [repo, path, branch, base, baseCommit]
+          properties:
+            repo: { type: string }
+            path: { type: string }
+            branch: { type: string }
+            base: { type: string }
+            baseCommit: { type: string }
+        session: { type: string }
+        asksYou: { type: boolean, description: The last turn ended on a question for you. }
+        resumable: { type: boolean }
+        lastError: { type: string }
+        merged: { type: boolean }
+        usageLimited: { type: boolean }
+    Review:
+      type: object
+      required: [repo, path, branch, base, baseCommit, worktreeExists, branchExists, merged, conflicts, commits, files, diff, diffTruncated, uncommitted, checkout]
+      properties:
+        repo: { type: string }
+        path: { type: string }
+        branch: { type: string }
+        base: { type: string }
+        baseCommit: { type: string }
+        worktreeExists: { type: boolean }
+        branchExists: { type: boolean }
+        merged: { type: boolean }
+        conflicts: { type: array, items: { type: string } }
+        commits:
+          type: array
+          items:
+            type: object
+            required: [hash, subject, at, merged]
+            properties:
+              hash: { type: string }
+              subject: { type: string }
+              at: { type: integer }
+              merged: { type: boolean }
+        files:
+          type: array
+          items:
+            type: object
+            required: [path, added, removed]
+            properties:
+              path: { type: string }
+              added: { type: [integer, "null"] }
+              removed: { type: [integer, "null"] }
+        diff: { type: string }
+        diffTruncated: { type: boolean }
+        uncommitted: { type: array, items: { type: string } }
+        checkout:
+          type: object
+          required: [branch, dirty]
+          properties:
+            branch: { type: string }
+            dirty: { type: boolean }
+        screenshots: { type: array, items: { type: object } }
+    Check:
+      type: object
+      required: [kind, status, head, command, startedAt, output]
+      properties:
+        kind: { type: string, enum: [script, workflows] }
+        script: { type: string }
+        status: { type: string, enum: [running, passed, failed, unavailable] }
+        head: { type: string }
+        command: { type: string }
+        startedAt: { type: integer }
+        durationMs: { type: integer }
+        exitCode: { type: integer }
+        output: { type: string }
+        reason: { type: string }
+    Project:
+      type: object
+      required: [name, path, branch, docs]
+      properties:
+        name: { type: string }
+        path: { type: string }
+        branch: { type: [string, "null"] }
+        docs: { type: boolean }

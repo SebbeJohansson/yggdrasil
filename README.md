@@ -10,8 +10,8 @@ Why one process per part: [docs/architecture.md](docs/architecture.md).
 | **Ratatoskr** | watchdog: is each part alive and doing its job | 8775 | host unit |
 | **Munin** | checks the systems outside Yggdrasil the parts depend on | 8776 | container |
 | **Veðrfölnir** | reports on the machine: CPU, GPU, disks, services, containers | 8773 | host unit |
-| **Norn** | assistant: inbox, calendar, memory | 8771 | not built yet |
-| **Sindri** | coding: goals, agents, worktrees | 8772 | not built yet |
+| **Norn** | assistant: inbox, calendars, sign-ins, memory, the front desk | 8771 | container |
+| **Sindri** | coding: agents, worktrees, review, checks | 8772 | host unit |
 
 None of them fixes anything. Everything listens on 127.0.0.1 only.
 

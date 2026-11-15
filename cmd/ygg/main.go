@@ -24,6 +24,7 @@ import (
 	"yggdrasil/munin"
 	"yggdrasil/norn"
 	"yggdrasil/ratatoskr"
+	"yggdrasil/sindri"
 	"yggdrasil/vedrfolnir"
 )
 
@@ -32,6 +33,7 @@ var parts = map[string]struct {
 	main  func(context.Context) error
 }{
 	"norn":       {"assistant: inbox, calendars, memory, the front desk", norn.Main},
+	"sindri":     {"coding: agents, worktrees, review", sindri.Main},
 	"gjallar":    {"alerts and warnings from every part", gjallar.Main},
 	"ratatoskr":  {"watchdog: is each part alive and doing its job", ratatoskr.Main},
 	"munin":      {"checks the systems outside Yggdrasil that the parts depend on", munin.Main},
