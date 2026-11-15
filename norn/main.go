@@ -24,6 +24,8 @@ import (
 //	MEMORY_LEARN     false keeps memory read-only (true)
 //	LAYA_URL, LAYA_KEY  Laya, for the judge, the tone badge and /v1/systemone
 //	TIME_ZONE        yours (Europe/Stockholm)
+//	SUMMARY_MODEL    phrases the inbox summary (llama3.2:1b)
+//	INBOX_JUDGE      laya, typesafe, ollama or off (laya); INBOX_JUDGE_MODEL, TYPESAFE_KEY
 //	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  your own Google "Desktop app" OAuth client; unset is no Google
 //	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Norn's token there (a sign-in that ended is raised)
 func Main(ctx context.Context) error {
@@ -57,13 +59,22 @@ func Main(ctx context.Context) error {
 		},
 	}
 	n := New(Config{
-		ProfilePath: env.String("PROFILE_PATH", "profile/profile.md"),
-		EmbedModel:  env.String("EMBED_MODEL", "nomic-embed-text"),
-		Learn:       env.String("MEMORY_LEARN", "true") == "true",
-		LayaURL:     env.String("LAYA_URL", "http://127.0.0.1:8000"),
-		LayaKey:     env.String("LAYA_KEY", ""),
-		TimeZone:    env.String("TIME_ZONE", "Europe/Stockholm"),
-		DataDir:     filepath.Dir(dbPath),
+		ProfilePath:  env.String("PROFILE_PATH", "profile/profile.md"),
+		EmbedModel:   env.String("EMBED_MODEL", "nomic-embed-text"),
+		Learn:        env.String("MEMORY_LEARN", "true") == "true",
+		LayaURL:      env.String("LAYA_URL", "http://127.0.0.1:8000"),
+		LayaKey:      env.String("LAYA_KEY", ""),
+		TimeZone:     env.String("TIME_ZONE", "Europe/Stockholm"),
+		SummaryModel: env.String("SUMMARY_MODEL", "llama3.2:1b"),
+		Judge: JudgeSettings{
+			Provider:    env.String("INBOX_JUDGE", "laya"),
+			LayaURL:     env.String("LAYA_URL", "http://127.0.0.1:8000"),
+			LayaKey:     env.String("LAYA_KEY", ""),
+			TypesafeKey: env.String("TYPESAFE_KEY", ""),
+			OllamaURL:   env.String("OLLAMA_URL", "http://127.0.0.1:11434"),
+			OllamaModel: env.String("INBOX_JUDGE_MODEL", ""),
+		},
+		DataDir: filepath.Dir(dbPath),
 		// Your own Google "Desktop app" OAuth client, for Gmail and Google Calendar.
 		GoogleClientID:     env.String("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: env.String("GOOGLE_CLIENT_SECRET", ""),

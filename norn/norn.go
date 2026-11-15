@@ -37,6 +37,10 @@ type Config struct {
 	LayaKey string
 	// TimeZone is the reader's, for times in answers and the activity heatmap.
 	TimeZone string
+	// SummaryModel phrases the inbox's one-line summaries.
+	SummaryModel string
+	// Judge says who judges the inbox beside the four rules.
+	Judge JudgeSettings
 	// DataDir holds the sign-ins, beside the database.
 	DataDir                            string
 	GoogleClientID, GoogleClientSecret string
@@ -52,6 +56,7 @@ type Norn struct {
 	// Gjallar is where Norn raises what is its to raise: a sign-in that ended.
 	Gjallar  *alert.Client
 	Accounts *Accounts
+	Inbox    *Inbox
 	Zone     *time.Location
 	logf     func(format string, args ...any)
 }
@@ -65,6 +70,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 	n := &Norn{Config: config, Store: store, LLM: client, HTTP: &http.Client{Timeout: 60 * time.Second}, logf: logf,
 		Gjallar: alert.NewClient("", ""), Zone: zone,
 		Accounts: NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
+	n.Inbox = NewInbox(n, config.DataDir)
 	n.Brain = &Brain{
 		Store:      store,
 		EmbedModel: config.EmbedModel,
@@ -91,6 +97,7 @@ func (n *Norn) Mount(p *part.Part) {
 	p.Handle("GET /v1/chat/llm-calls", n.llmCalls)
 	p.Handle("POST /v1/systemone", n.systemOne)
 	n.mountAccounts(p)
+	n.mountInbox(p)
 }
 
 func (n *Norn) fail(w http.ResponseWriter, err error) {

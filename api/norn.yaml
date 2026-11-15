@@ -322,6 +322,187 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Calendar" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/inbox:
+    get:
+      summary: The inbox, collected and ranked here every two minutes (Slack on its own sweep), with its two one-line summaries, the sources' statuses, the mutes and the sign-ins.
+      responses:
+        "200":
+          description: The inbox.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, justHidden, summary, fromModel, summaries, sources, at, graph, slack, judge, teams, mutes, signIn]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Ranked" } }
+                  justHidden: { type: array, items: { $ref: "#/components/schemas/Ranked" }, description: What a mute or a quiet chat just hid, said once. }
+                  summary: { type: [string, "null"], description: The work section's sentence. }
+                  fromModel: { type: boolean }
+                  summaries:
+                    type: object
+                    required: [work, personal]
+                    properties:
+                      work: { $ref: "#/components/schemas/Summary" }
+                      personal: { $ref: "#/components/schemas/Summary" }
+                  sources: { type: array, items: { $ref: "#/components/schemas/SourceStatus" } }
+                  at: { type: [integer, "null"] }
+                  graph:
+                    type: object
+                    required: [step, at]
+                    properties:
+                      step: { type: [string, "null"], description: "What the poll is doing now: fetching, judging 3/12…" }
+                      at: { type: [integer, "null"] }
+                  slack:
+                    type: object
+                    required: [state, progress, at]
+                    properties:
+                      state: { type: string, enum: [off, pending, done, failed] }
+                      progress:
+                        type: [object, "null"]
+                        required: [stage, done, total]
+                        properties:
+                          stage: { type: string, enum: [listing, details, history, threads, names] }
+                          done: { type: integer }
+                          total: { type: integer }
+                      at: { type: [integer, "null"] }
+                  error: { type: string }
+                  judge: { type: [string, "null"], description: Who judged, or null for the four rules alone. }
+                  teams: { type: array, items: { $ref: "#/components/schemas/Item" }, description: Every Teams item, hidden ones included, for the window's quiet check. }
+                  mutes: { type: array, items: { $ref: "#/components/schemas/Mute" } }
+                  signIn:
+                    type: object
+                    required: [slack, google]
+                    properties:
+                      slack: { $ref: "#/components/schemas/SlackStatus" }
+                      google: { type: object }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/inbox/refresh:
+    post:
+      summary: Poll now rather than at the next two minutes.
+      responses:
+        "202":
+          description: Polling.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [polling]
+                properties:
+                  polling: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/inbox/mutes:
+    post:
+      summary: Mute or unmute a chat. A muted chat's items are hidden unless they name you.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, muted]
+              properties:
+                id: { type: string, maxLength: 300 }
+                name: { type: string }
+                muted: { type: boolean }
+      responses:
+        "200":
+          description: Every mute.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Mute" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/inbox/quiet:
+    post:
+      summary: The chats Teams has gone quiet about, from the window's toasts. Hidden like mutes until the next call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chats]
+              properties:
+                chats: { type: array, maxItems: 1000, items: { type: string, maxLength: 300 } }
+      responses:
+        "204": { description: Noted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/inbox/feed:
+    get:
+      summary: The ranked items alone. Empty with at null when the inbox is stale (15 minutes).
+      responses:
+        "200":
+          description: The items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, at]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Ranked" } }
+                  total: { type: integer }
+                  at: { type: [integer, "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/inbox/summary:
+    post:
+      summary: Phrase a sentence for ranked items the caller collected. Never fails because of the model; falls back to the plain count, as it does when the model names someone the items don't hold.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [top, total]
+              properties:
+                top: { type: array, items: { $ref: "#/components/schemas/Ranked" } }
+                total: { type: integer, minimum: 0 }
+                now: { type: integer, description: Epoch ms. }
+                scope: { type: string, enum: [work, personal] }
+      responses:
+        "200":
+          description: The sentence.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, fromModel]
+                properties:
+                  text: { type: string }
+                  fromModel: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/slack/sign-in:
+    post:
+      summary: Start a Slack sign-in with your Slack app. Answers the page to open; Slack sends the browser back to localhost:42813.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId]
+              properties:
+                clientId: { type: string, pattern: "^[\\d.]{5,40}$" }
+      responses:
+        "200":
+          description: The sign-in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/slack/sign-out:
+    post:
+      summary: Forget the Slack sign-in.
+      responses:
+        "200":
+          description: Signed out.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 components:
   securitySchemes:
     bearer:
@@ -482,6 +663,69 @@ components:
         response: { type: string, enum: [accepted, tentativelyAccepted, declined, notResponded, organizer, none] }
         showAs: { type: string }
         online: { type: boolean }
+    Item:
+      type: object
+      required: [id, source, from, subject, preview, at, direct, mentionsMe, important]
+      properties:
+        id: { type: string }
+        source: { type: string, enum: [outlook, teams, slack, gmail] }
+        from: { type: string }
+        sender: { type: string }
+        relation: { type: string, enum: [manager, above, leadership, report, peer] }
+        recipients: { type: array, items: { type: string } }
+        subject: { type: string }
+        preview: { type: string }
+        context: { type: string }
+        at: { type: integer }
+        direct: { type: boolean }
+        mentionsMe: { type: boolean }
+        important: { type: boolean }
+        conversation: { type: string }
+        hidden: { type: string, description: Why it never reaches the panel. }
+        link: { type: string }
+    Ranked:
+      type: object
+      required: [item, score, band, reasons]
+      properties:
+        item: { $ref: "#/components/schemas/Item" }
+        score: { type: number }
+        band: { type: string, enum: [urgent, notable, quiet, hidden] }
+        reasons: { type: array, items: { type: string } }
+        judgement:
+          type: object
+          required: [awaited, consequence, confidence]
+          properties:
+            awaited: { type: number }
+            consequence: { type: number }
+            confidence: { type: number }
+    Summary:
+      type: object
+      required: [text, fromModel]
+      properties:
+        text: { type: [string, "null"] }
+        fromModel: { type: boolean }
+    SourceStatus:
+      type: object
+      required: [source, ok, count]
+      properties:
+        source: { type: string, enum: [outlook, teams, slack, gmail] }
+        ok: { type: boolean }
+        count: { type: integer }
+        error: { type: string }
+    Mute:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+    SlackStatus:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [signed-out, waiting, signed-in, error] }
+        authorizeUrl: { type: string }
+        handle: { type: string }
+        error: { type: string }
     LlmCall:
       type: object
       required: [at, session, exchange, purpose, backend, model, totalMs]

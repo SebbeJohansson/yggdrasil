@@ -1,6 +1,7 @@
 package norn
 
 import (
+	"context"
 	"net/http"
 	"slices"
 
@@ -75,5 +76,12 @@ func (n *Norn) setWidgetSettings(w http.ResponseWriter, r *http.Request) {
 		n.fail(w, err)
 		return
 	}
+	// A source switched on or off shows now, not at the next poll.
+	go func() {
+		ctx := context.Background()
+		_ = n.Inbox.SweepSlack(ctx)
+		_ = n.readWorkCalendar(ctx)
+		_ = n.readPersonalCalendar(ctx)
+	}()
 	part.JSON(w, http.StatusOK, settings)
 }
