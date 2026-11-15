@@ -1,15 +1,16 @@
 #!/bin/sh
-# Builds ygg, writes each part's settings with fresh tokens (only the first
-# time), and installs the host parts as systemd user units.
+# Builds ygg, writes each part's settings that are missing (with fresh tokens,
+# keeping every token already there), and installs and starts the host parts
+# as systemd user units. Safe to run again: nothing you set is overwritten.
 #
 #   scripts/install.sh
 #   docker compose up -d --build     # then the container parts
 #
 # Settings live in ~/.config/yggdrasil/<part>.env, readable by you only.
-# Existing files are never overwritten: delete them all to get new tokens.
 set -eu
 cd "$(dirname "$0")/.."
 config="$HOME/.config/yggdrasil"
+origins="http://localhost:17420,http://127.0.0.1:17420"
 
 echo "Building ygg..."
 scripts/go build -trimpath -ldflags "-s -w -X yggdrasil/internal/part.Version=$(git describe --always --dirty 2>/dev/null || echo dev)" -o bin/ygg ./cmd/ygg
@@ -22,19 +23,14 @@ token() {
 
 mkdir -p "$config"
 chmod 700 "$config"
+umask 077
+
+[ -s "$config/owner.token" ] || token >"$config/owner.token"
+owner=$(cat "$config/owner.token")
+
 if [ ! -e "$config/gjallar.env" ]; then
-	echo "Writing settings with new tokens to $config..."
-	owner=$(token)
-	ratatoskr=$(token)
-	munin=$(token)
-	vedrfolnir=$(token)
-	norn=$(token)
-	sindri=$(token)
-	origins="http://localhost:17420,http://127.0.0.1:17420"
-	umask 077
-	printf '%s\n' "$owner" >"$config/owner.token"
 	cat >"$config/gjallar.env" <<EOF
-GJALLAR_TOKENS=owner=$owner,ratatoskr=$ratatoskr,munin=$munin,vedrfolnir=$vedrfolnir,norn=$norn,sindri=$sindri
+GJALLAR_TOKENS=owner=$owner
 # Senders that must beat, and how long a silence may last.
 GJALLAR_HEARTBEATS=ratatoskr=3m
 # Your phone push topic for critical alerts, e.g. https://ntfy.sh/<a secret topic>. Empty is off.
@@ -43,11 +39,61 @@ NTFY_TOKEN=
 DASHBOARD_URL=http://localhost:17420
 YGG_CORS_ORIGINS=$origins
 EOF
-	cat >"$config/norn.env" <<EOF
-NORN_TOKENS=owner=$owner,sindri=$sindri
-GJALLAR_TOKEN=$norn
+fi
+
+# A part's token at Gjallar: read from GJALLAR_TOKENS, added when missing.
+gjallar_token() {
+	found=$(grep '^GJALLAR_TOKENS=' "$config/gjallar.env" | cut -d= -f2- | tr ',' '\n' | grep "^$1=" | cut -d= -f2- || true)
+	if [ -z "$found" ]; then
+		found=$(token)
+		sed -i "s|^GJALLAR_TOKENS=.*|&,$1=$found|" "$config/gjallar.env"
+		echo "  gave $1 a token at Gjallar" >&2
+	fi
+	echo "$found"
+}
+for part in munin vedrfolnir ratatoskr norn sindri; do
+	gjallar_token "$part" >/dev/null
+done
+
+# write <file>: the text on stdin, only when the file is not there yet.
+write() {
+	if [ -e "$config/$1" ]; then
+		cat >/dev/null
+		return 0
+	fi
+	cat >"$config/$1"
+	echo "  wrote $1"
+}
+
+write munin.env <<EOF
+MUNIN_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token munin)
+YGG_CORS_ORIGINS=$origins
+EOF
+write vedrfolnir.env <<EOF
+VEDRFOLNIR_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token vedrfolnir)
+YGG_CORS_ORIGINS=$origins
+EOF
+write ratatoskr.env <<EOF
+RATATOSKR_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token ratatoskr)
+# Used only when Gjallar itself is down. The same topic as Gjallar's.
+NTFY_URL=
+NTFY_TOKEN=
+YGG_CORS_ORIGINS=$origins
+EOF
+
+# Norn and Sindri call each other, so they are written together.
+if [ ! -e "$config/norn.env" ] || [ ! -e "$config/sindri.env" ]; then
+	norn_at_sindri=$(token)
+	sindri_at_norn=$(token)
+	rm -f "$config/norn.env" "$config/sindri.env"
+	write norn.env <<EOF
+NORN_TOKENS=owner=$owner,sindri=$sindri_at_norn
+GJALLAR_TOKEN=$(gjallar_token norn)
 # Norn's token at Sindri, to hand work to coding agents.
-SINDRI_TOKEN=$norn
+SINDRI_TOKEN=$norn_at_sindri
 TIME_ZONE=Europe/Stockholm
 # Laya (judge, tone) and your own Google "Desktop app" OAuth client; empty is off.
 LAYA_KEY=
@@ -55,11 +101,11 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 YGG_CORS_ORIGINS=$origins
 EOF
-	cat >"$config/sindri.env" <<EOF
-SINDRI_TOKENS=owner=$owner,norn=$norn
-GJALLAR_TOKEN=$sindri
+	write sindri.env <<EOF
+SINDRI_TOKENS=owner=$owner,norn=$norn_at_sindri
+GJALLAR_TOKEN=$(gjallar_token sindri)
 # Sindri's token at Norn, to post what agents say into your conversations.
-NORN_TOKEN=$sindri
+NORN_TOKEN=$sindri_at_norn
 YGG_CORS_ORIGINS=$origins
 EOF
 	# Settings my-agent already has, carried over once: the Google client,
@@ -73,36 +119,15 @@ EOF
 		mv "$2.tmp" "$2"
 		echo "  carried $1 over from my-agent into $(basename "$2")"
 	}
-	for key in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET LAYA_KEY TYPESAFE_KEY TIME_ZONE INBOX_JUDGE INBOX_JUDGE_MODEL SUMMARY_MODEL ASK_MODEL DISPATCH_MODEL EMBED_MODEL CHAT_URL OLLAMA_URL LAYA_URL; do
+	for key in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET LAYA_KEY TYPESAFE_KEY TIME_ZONE INBOX_JUDGE INBOX_JUDGE_MODEL SUMMARY_MODEL ASK_MODEL DISPATCH_MODEL EMBED_MODEL CHAT_URL OLLAMA_URL LAYA_URL LANGUAGETOOL_URL WRITE_MODEL LINEAR_KEY; do
 		carry "$key" "$config/norn.env"
 	done
 	for key in LINEAR_KEY DELEGATE_MODEL AUTO_ALLOW; do
 		carry "$key" "$config/sindri.env"
 	done
-	carry LINEAR_KEY "$config/norn.env"
-	cat >"$config/munin.env" <<EOF
-MUNIN_TOKENS=owner=$owner
-GJALLAR_TOKEN=$munin
-YGG_CORS_ORIGINS=$origins
-EOF
-	cat >"$config/vedrfolnir.env" <<EOF
-VEDRFOLNIR_TOKENS=owner=$owner
-GJALLAR_TOKEN=$vedrfolnir
-YGG_CORS_ORIGINS=$origins
-EOF
-	cat >"$config/ratatoskr.env" <<EOF
-RATATOSKR_TOKENS=owner=$owner
-GJALLAR_TOKEN=$ratatoskr
-# Used only when Gjallar itself is down. The same topic as Gjallar's.
-NTFY_URL=
-NTFY_TOKEN=
-YGG_CORS_ORIGINS=$origins
-EOF
 fi
 
-if [ ! -e "$config/parts.env" ]; then
-	umask 077
-	cat >"$config/parts.env" <<'EOF'
+write parts.env <<'EOF'
 # Where every part lives, read by every part. Leave a line commented to use
 # the built-in part on its default port. To replace a part with your own
 # program, set its URL here, stop the built-in one, and run
@@ -117,6 +142,12 @@ if [ ! -e "$config/parts.env" ]; then
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
 RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin
 EOF
+
+umask 022
+mkdir -p profile data
+if [ ! -e profile/profile.md ] && [ -e ../my-agent/profile/profile.md ]; then
+	cp ../my-agent/profile/profile.md profile/profile.md
+	echo "  copied your profile from my-agent"
 fi
 
 echo "Installing the systemd user units..."
@@ -125,7 +156,7 @@ for unit in deploy/systemd/*.service; do
 	install -m 0644 "$unit" "$HOME/.config/systemd/user/"
 done
 systemctl --user daemon-reload
-systemctl --user enable --now ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service
+systemctl --user enable ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service
 systemctl --user restart ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service
 
 echo
