@@ -83,6 +83,11 @@ func Main(ctx context.Context) error {
 		// Your own Google "Desktop app" OAuth client, for Gmail and Google Calendar.
 		GoogleClientID:     env.String("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: env.String("GOOGLE_CLIENT_SECRET", ""),
+		Write: WriteConfig{
+			LanguageToolURL: env.String("LANGUAGETOOL_URL", "http://127.0.0.1:8010"),
+			Model:           env.String("WRITE_MODEL", "qwen2.5:7b"),
+			RewriteModel:    env.String("REWRITE_MODEL", "sonnet"),
+		},
 	}, store, client, p.Logf)
 	n.Gjallar = alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", ""))
 	if token := env.String("SINDRI_TOKEN", ""); token != "" {

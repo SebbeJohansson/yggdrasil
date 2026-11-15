@@ -25,6 +25,7 @@ type Agent struct {
 	Status       string `json:"status"`
 	Tool         string `json:"tool"`
 	LastText     string `json:"lastText"`
+	Result       string `json:"result"`
 	LastActivity int64  `json:"lastActivity"`
 	AsksYou      bool   `json:"asksYou"`
 	Resumable    bool   `json:"resumable"`

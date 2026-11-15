@@ -59,9 +59,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [cwd, prompt]
+              required: [prompt]
               properties:
-                cwd: { type: string, description: A folder under the roots, or a project's name. }
+                cwd: { type: string, description: "A folder under the roots, or a project's name. Empty: where question agents run." }
                 prompt: { type: string }
                 label: { type: string }
                 permissionMode: { type: string, enum: [default, acceptEdits, plan, auto] }

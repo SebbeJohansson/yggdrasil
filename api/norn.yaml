@@ -242,6 +242,106 @@ paths:
               schema: { type: object }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/write/check:
+    post:
+      summary: Spelling and grammar (LanguageTool), each line in its own language. Offsets are UTF-16 code units.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/WriteText" }
+                - type: object
+                  properties:
+                    languages: { type: array, maxItems: 10, items: { type: string }, description: The writer's languages, primary first. }
+      responses:
+        "200":
+          description: The issues found, and the language of most of the text.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [language, issues]
+                properties:
+                  language: { type: string }
+                  issues: { type: array, items: { $ref: "#/components/schemas/WriteIssue" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/write/tone:
+    post:
+      summary: The text's tone (Laya), from its last 1500 characters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WriteText" }
+      responses:
+        "200":
+          description: The tone.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tone, probabilities]
+                properties:
+                  tone: { type: string, enum: [formal, friendly, casual, confident, frustrated] }
+                  probabilities: { type: object, additionalProperties: { type: number } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/write/improve:
+    post:
+      summary: Clearer versions of the text's sentences, from a local model. It reads three new sentences per call; ask again for the pending ones.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WriteText" }
+      responses:
+        "200":
+          description: The suggestions, and how many sentences wait.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [issues, pending]
+                properties:
+                  issues: { type: array, items: { $ref: "#/components/schemas/WriteIssue" } }
+                  pending: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/write/rewrite:
+    post:
+      summary: The text rewritten in a style, by a Claude agent with no tools that Sindri runs. Takes up to two minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/WriteText" }
+                - type: object
+                  required: [style]
+                  properties:
+                    style: { type: string, enum: [clearer, shorter, formal, friendly, confident, english, swedish] }
+      responses:
+        "200":
+          description: The rewritten text.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text]
+                properties:
+                  text: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v1/microsoft:
     get:
       summary: The Microsoft sign-in (Teams, Outlook, the work calendar), and the calendar's last read.
@@ -829,7 +929,28 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    Unavailable:
+      description: Turned off here; the message says what to set.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    WriteText:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 20000 }
+    WriteIssue:
+      type: object
+      required: [offset, length, message, replacements, kind, source]
+      properties:
+        offset: { type: integer, description: In UTF-16 code units. }
+        length: { type: integer }
+        message: { type: string }
+        replacements: { type: array, items: { type: string } }
+        kind: { type: string, enum: [spelling, grammar, style, clarity] }
+        source: { type: string, enum: [languagetool, ollama] }
+        rule: { type: string }
     Health:
       type: object
       required: [ok, part, version, startedAt, loops]

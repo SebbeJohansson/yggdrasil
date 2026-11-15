@@ -47,6 +47,8 @@ type Config struct {
 	// DataDir holds the sign-ins, beside the database.
 	DataDir                            string
 	GoogleClientID, GoogleClientSecret string
+	// Write is where Pennvass's writing checks run.
+	Write WriteConfig
 }
 
 // Norn is the running assistant.
@@ -63,6 +65,8 @@ type Norn struct {
 	Zone     *time.Location
 	// Sindri is where coding work and questions that need tools go.
 	Sindri *SindriClient
+	// suggestions remembers what the improve check said about each sentence.
+	suggestions *SuggestionCache
 	logf   func(format string, args ...any)
 }
 
@@ -74,6 +78,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 	}
 	n := &Norn{Config: config, Store: store, LLM: client, HTTP: &http.Client{Timeout: 60 * time.Second}, logf: logf,
 		Gjallar: alert.NewClient("", ""), Zone: zone, Sindri: &SindriClient{HTTP: &http.Client{Timeout: 60 * time.Second}},
+		suggestions: NewSuggestionCache(1000),
 		Accounts: NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Inbox = NewInbox(n, config.DataDir)
 	n.Brain = &Brain{
@@ -104,6 +109,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountAccounts(p)
 	n.mountInbox(p)
 	n.mountChat(p)
+	n.mountWrite(p)
 }
 
 func (n *Norn) fail(w http.ResponseWriter, err error) {

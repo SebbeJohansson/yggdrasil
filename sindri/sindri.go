@@ -150,6 +150,10 @@ func (s *Sindri) start(w http.ResponseWriter, r *http.Request) {
 		part.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// No folder: a plain agent (a rewrite, a question) runs where question agents do.
+	if body.Cwd == "" && s.Work != nil {
+		body.Cwd = s.Work.AskCwd
+	}
 	a, err := s.Agents.Start(body)
 	if err != nil {
 		fail(w, err)
