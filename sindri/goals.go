@@ -376,21 +376,37 @@ func (w *Work) MountWork(p *part.Part) {
 	p.Handle("POST /v1/work/reply", w.replyRoute)
 	p.Handle("POST /v1/work/tell", w.tellRoute)
 	p.Handle("POST /v1/work/part", w.partRoute)
-	p.Handle("GET /v1/tasks", func(rw http.ResponseWriter, r *http.Request) {
-		since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
-		if since == 0 {
-			since = w.Store.now().Add(-7 * 24 * time.Hour).UnixMilli()
+	// A day back by default, at most a year: my-agent's shapes, {tasks} and {enabled, calls}.
+	since := func(r *http.Request) int64 {
+		asked, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+		now := w.Store.now()
+		if asked == 0 {
+			asked = now.Add(-24 * time.Hour).UnixMilli()
 		}
-		tasks, err := w.Store.TasksSince(since)
+		return max(asked, now.Add(-365*24*time.Hour).UnixMilli())
+	}
+	p.Handle("GET /v1/tasks", func(rw http.ResponseWriter, r *http.Request) {
+		tasks, err := w.Store.TasksSince(since(r))
 		if err != nil {
 			fail(rw, err)
 			return
 		}
-		part.JSON(rw, http.StatusOK, w.TaskViews(tasks))
+		views := w.TaskViews(tasks)
+		if views == nil {
+			views = []TaskView{}
+		}
+		part.JSON(rw, http.StatusOK, map[string]any{"tasks": views})
 	})
 	p.Handle("GET /v1/auto-allowed", func(rw http.ResponseWriter, r *http.Request) {
-		since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
-		answer(rw)(w.Store.AutoAllowedSince(since))
+		calls, err := w.Store.AutoAllowedSince(since(r))
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		if calls == nil {
+			calls = []AutoAllowed{}
+		}
+		part.JSON(rw, http.StatusOK, map[string]any{"enabled": w.Automation().AutoAllow, "calls": calls})
 	})
 	p.Handle("GET /v1/settings/coding-agent", func(rw http.ResponseWriter, _ *http.Request) {
 		part.JSON(rw, http.StatusOK, w.CodingAgent())

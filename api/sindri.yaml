@@ -82,6 +82,17 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
+  /v1/agents/close-idle:
+    post:
+      summary: Make room when every slot is taken. Closes the waiting agent quiet the longest; its session stays resumable.
+      responses:
+        "200":
+          description: The agent closed.
+          content:
+            application/json:
+              schema: { type: object }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/agents/{id}:
     get:
       summary: One agent with its log, last result and pending permissions (with their input).
@@ -628,7 +639,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
   /v1/tasks:
     get:
-      summary: The task ledger. Every task started since then (a week by default), or still open, with its live status.
+      summary: The task ledger. Every task started since then (a day by default, a year at most), or still open, with its live status.
       parameters:
         - { name: since, in: query, schema: { type: integer, description: Epoch ms. } }
       responses:
@@ -636,7 +647,11 @@ paths:
           description: The tasks, newest first.
           content:
             application/json:
-              schema: { type: array, items: { $ref: "#/components/schemas/TaskView" } }
+              schema:
+                type: object
+                required: [tasks]
+                properties:
+                  tasks: { type: array, items: { $ref: "#/components/schemas/TaskView" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/auto-allowed:
     get:
@@ -645,22 +660,27 @@ paths:
         - { name: since, in: query, schema: { type: integer } }
       responses:
         "200":
-          description: The calls.
+          description: Whether automatic approvals are on, and the calls (a day back by default).
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
-                  required: [id, at, agent, taskId, tool, summary, rule]
-                  properties:
-                    id: { type: integer }
-                    at: { type: integer }
-                    agent: { type: string }
-                    taskId: { type: [integer, "null"] }
-                    tool: { type: string }
-                    summary: { type: string }
-                    rule: { type: string, enum: [read, tests, git read] }
+                type: object
+                required: [enabled, calls]
+                properties:
+                  enabled: { type: boolean }
+                  calls:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, at, agent, taskId, tool, summary, rule]
+                      properties:
+                        id: { type: integer }
+                        at: { type: integer }
+                        agent: { type: string }
+                        taskId: { type: [integer, "null"] }
+                        tool: { type: string }
+                        summary: { type: string }
+                        rule: { type: string, enum: [read, tests, git read] }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/settings/coding-agent:
     get:

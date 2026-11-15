@@ -186,3 +186,31 @@ func TestProfile(t *testing.T) {
 		t.Fatalf("not cut: %d", len([]rune(got)))
 	}
 }
+
+func TestDecisionsView(t *testing.T) {
+	n, _ := newNorn(t)
+	ctx := context.Background()
+	id, _ := n.Store.LogDecision(ctx, "s1", "is the build done?", "", "model", &Decision{Action: "answer"},
+		map[string]any{"action": "status", "agent": "build", "project": nil, "agentId": "a1"}, []string{"answer needs tools"}, 300)
+	_ = n.Store.SetShadow(ctx, id, ShadowDecision{Action: "status", AgentID: strPtr("a1"), MS: 40,
+		Probabilities: struct {
+			Action map[string]float64 `json:"action"`
+			Agent  map[string]float64 `json:"agent"`
+		}{map[string]float64{"status": 0.9}, map[string]float64{"build": 0.8, "none": 0.1}}})
+	_, _ = n.Store.Correct(ctx, id, "status:a1")
+	rows, _ := n.Store.Decisions(ctx, 10)
+	view := ViewDecision(rows[0])
+	if view.Live.Action != "status" || *view.Live.Target != "build" || view.BeforeGuards == nil || view.BeforeGuards.Action != "answer" {
+		t.Errorf("live %+v before %+v", view.Live, view.BeforeGuards)
+	}
+	if view.Shadow == nil || *view.Shadow.Target != "build" || view.Shadow.Confidence != 0.9 || !*view.Agrees || !*view.ShadowRight {
+		t.Errorf("shadow %+v", view.Shadow)
+	}
+	if view.Correction.Action != "status" || *view.Correction.Target != "a1" || *view.LiveRef != "status:a1" || *view.ShadowRef != "status:a1" {
+		t.Errorf("correction %+v refs %v %v", view.Correction, *view.LiveRef, *view.ShadowRef)
+	}
+	summary := SummariseDecisions([]DecisionView{view})
+	if summary.Shadowed != 1 || summary.Agree != 1 || summary.ShadowRightOnCorrected != 1 || *summary.MedianMS.Live != 300 {
+		t.Errorf("summary %+v", summary)
+	}
+}

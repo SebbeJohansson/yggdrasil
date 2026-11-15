@@ -39,6 +39,16 @@ func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("GET /v1/sessions/recent", s.sessions)
 	p.Handle("GET /v1/activity", s.activity)
 	p.Handle("POST /v1/agents", s.start)
+	p.Handle("POST /v1/agents/close-idle", func(w http.ResponseWriter, _ *http.Request) {
+		a, err := s.Agents.CloseOldestIdle()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		s.Agents.mu.Lock()
+		defer s.Agents.mu.Unlock()
+		part.JSON(w, http.StatusOK, Summarise(a))
+	})
 	p.Handle("GET /v1/agents/{id}", s.get)
 	p.Handle("POST /v1/agents/{id}/prompt", s.prompt)
 	p.Handle("POST /v1/agents/{id}/handoff", s.handoff)

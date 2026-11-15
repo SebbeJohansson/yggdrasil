@@ -258,11 +258,12 @@ func Error(w http.ResponseWriter, status int, message string) {
 // MaxBody is the most a request body may be.
 const MaxBody = 1 << 20
 
-// Decode reads a JSON body into v, refusing unknown fields and bodies over
-// MaxBody. The error is fit to send back as a 400.
+// Decode reads a JSON body into v, refusing bodies over MaxBody. Fields it
+// does not know are ignored, as my-agent did: a client that sends a whole
+// object back (the widget's settings) or a few extra keys still works. The
+// error is fit to send back as a 400.
 func Decode(r *http.Request, v any) error {
 	decoder := json.NewDecoder(io.LimitReader(r.Body, MaxBody))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(v); err != nil {
 		return fmt.Errorf("bad body: %w", err)
 	}

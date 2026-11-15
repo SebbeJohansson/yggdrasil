@@ -795,39 +795,53 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/decisions:
     get:
-      summary: Every dispatch decision, newest first, with the model's own before the guards and your corrections. The training data for a better dispatcher.
+      summary: Every dispatch decision, newest first, beside the shadow Laya's pick and your corrections, with a summary over all of them. The training data for a better dispatcher.
       parameters:
-        - { name: limit, in: query, schema: { type: integer, maximum: 1000 } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 1000, default: 200 } }
       responses:
         "200":
-          description: The decisions.
+          description: The summary over every decision, and the latest decisions.
           content:
             application/json:
               schema:
                 type: object
-                required: [decisions]
+                required: [summary, decisions]
                 properties:
+                  summary:
+                    type: object
+                    required: [decisions, shadowed, agree, corrected, shadowRightOnCorrected, shadowedCorrected, medianMs]
+                    properties:
+                      decisions: { type: integer }
+                      shadowed: { type: integer }
+                      agree: { type: integer }
+                      corrected: { type: integer }
+                      shadowRightOnCorrected: { type: integer }
+                      shadowedCorrected: { type: integer }
+                      medianMs: { type: object, properties: { live: { type: [integer, "null"] }, shadow: { type: [integer, "null"] } } }
                   decisions:
                     type: array
                     items:
                       type: object
-                      required: [id, at, session, message, source, decision]
+                      required: [id, at, message, source, live, guards, ms, shadow, correction, agrees, shadowRight, liveRef, shadowRef]
                       properties:
                         id: { type: integer }
                         at: { type: integer }
-                        session: { type: string }
                         message: { type: string }
                         source: { type: string, enum: [model, fallback, person] }
-                        model: {}
-                        decision: { type: object }
+                        live: { type: object, required: [action, target], properties: { action: { type: string, enum: [answer, delegate, code, reply, status] }, target: { type: [string, "null"] } } }
+                        beforeGuards: { type: object, required: [action, target], properties: { action: { type: string, enum: [answer, delegate, code, reply, status] }, target: { type: [string, "null"] } } }
                         guards: { type: array, items: { type: string } }
                         ms: { type: [integer, "null"] }
-                        correction: {}
-                        shadow: { description: "What the shadow Laya dispatcher would have done: action, agentId, probabilities, ms; null without one." }
+                        shadow: { type: [object, "null"], description: "The shadow's pick, with ms and confidence." }
+                        correction: { type: [object, "null"], description: "{ action, target, at }: where you said it belonged." }
+                        agrees: { type: [boolean, "null"] }
+                        shadowRight: { type: [boolean, "null"] }
+                        liveRef: { type: [string, "null"], description: The live pick as the correction route takes it. }
+                        shadowRef: { type: [string, "null"] }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/decisions/{id}/correction:
     post:
-      summary: Where a message should have gone.
+      summary: Where a message belonged, kept as the training label. With redo, the message is also sent there now, and the answer comes back as /v1/ask's.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
@@ -838,23 +852,14 @@ paths:
               type: object
               required: [decision]
               properties:
-                decision:
-                  type: object
-                  required: [action]
-                  properties:
-                    action: { type: string, enum: [answer, delegate, code, reply_to_agent, status] }
-                    agent: { type: [string, "null"] }
-                    project: { type: [string, "null"] }
+                decision: { type: string, description: "answer, delegate, code:<project>, reply_to_agent:<agent id> or status:<agent id>." }
+                redo: { type: boolean }
       responses:
         "200":
-          description: Kept.
+          description: Corrected; with redo, also the answer.
           content:
             application/json:
-              schema:
-                type: object
-                required: [corrected]
-                properties:
-                  corrected: { type: integer }
+              schema: { type: object, required: [corrected], properties: { corrected: { type: integer } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }

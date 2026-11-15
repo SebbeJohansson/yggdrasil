@@ -37,6 +37,13 @@ type AskRequest struct {
 	Images        []string `json:"images,omitempty"`
 	Communication string   `json:"communication,omitempty"`
 	Mode          string   `json:"mode,omitempty"`
+	// Force sends the message where a correction said it belonged; never from a request body.
+	Force *Forced `json:"-"`
+}
+
+// Forced is a corrected route: the action, and its project (code) or agent id (reply_to_agent, status).
+type Forced struct {
+	Action, Target string
 }
 
 // Delegated is the agent a message went to.
@@ -115,15 +122,15 @@ func newSessionID() string {
 
 // asker is one message being handled.
 type asker struct {
-	n          *Norn
-	ctx        context.Context
-	request    AskRequest
-	session    string
-	question   string
-	recalled   []Memory
-	history    []llm.Message
+	n        *Norn
+	ctx      context.Context
+	request  AskRequest
+	session  string
+	question string
+	recalled []Memory
+	history  []llm.Message
 	// yours is your own Claude Code sessions from the last day.
-	yours []OwnSession
+	yours      []OwnSession
 	decisionID *int64
 }
 
@@ -303,6 +310,28 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		a.history = append(a.history, llm.Message{Role: t.Role, Content: t.Content})
 	}
 	sindri := n.Sindri.On()
+	if request.Force != nil && request.Force.Action == "answer" {
+		route = "local"
+	}
+
+	// A corrected message, re-sent where you said it belonged.
+	if f := request.Force; f != nil && f.Action != "answer" && sindri {
+		via := "correction: " + f.Action
+		switch f.Action {
+		case "reply_to_agent", "status":
+			target, err := n.Sindri.Agent(ctx, f.Target)
+			if err != nil {
+				return a.answered("That agent is gone.", nil, via), nil
+			}
+			if f.Action == "status" {
+				return a.answered(StatusAnswer(target), nil, via), nil
+			}
+			return a.reply(target, question, via), nil
+		case "code":
+			return a.code([]string{f.Target}, via), nil
+		}
+		return a.handOver(via, n.Inbox.InboxForQuestion(question, now)), nil
+	}
 
 	// "yes" or "no" to an agent waiting on a tool.
 	if allow, message, ok := ApprovalReply(question); sindri && ok {

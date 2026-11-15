@@ -7,7 +7,9 @@ package norn
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"strconv"
@@ -324,6 +326,16 @@ func (s *Store) Decisions(ctx context.Context, limit int) ([]DecisionRow, error)
 }
 
 // Correct keeps what a decision should have been.
+// Decision is one decision's message and conversation; nil when there is none.
+func (s *Store) Decision(ctx context.Context, id int64) (*DecisionRow, error) {
+	var d DecisionRow
+	err := s.db.QueryRowContext(ctx, `SELECT id, session, message FROM decisions WHERE id = ?`, id).Scan(&d.ID, &d.Session, &d.Message)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return &d, err
+}
+
 func (s *Store) Correct(ctx context.Context, id int64, decision any) (bool, error) {
 	encoded, _ := json.Marshal(map[string]any{"decision": decision, "at": s.ms()})
 	result, err := s.db.ExecContext(ctx, `UPDATE decisions SET correction = ? WHERE id = ?`, string(encoded), id)
@@ -366,32 +378,58 @@ func (n *Norn) mountChat(p *part.Part) {
 		if limit <= 0 {
 			limit = 200
 		}
-		decisions, err := n.Store.Decisions(r.Context(), min(limit, 1000))
+		rows, err := n.Store.Decisions(r.Context(), 1_000_000)
 		if err != nil {
 			n.fail(w, err)
 			return
 		}
-		part.JSON(w, http.StatusOK, map[string]any{"decisions": decisions})
+		views := make([]DecisionView, len(rows))
+		for i, row := range rows {
+			views[i] = ViewDecision(row)
+		}
+		part.JSON(w, http.StatusOK, map[string]any{"summary": SummariseDecisions(views), "decisions": views[:min(len(views), limit, 1000)]})
 	})
+	// Where a message belonged, as the training label for the next
+	// dispatcher; with redo, the message is also sent there now.
 	p.Handle("POST /v1/decisions/{id}/correction", func(w http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		var body struct {
-			Decision map[string]any `json:"decision"`
+			Decision string `json:"decision"`
+			Redo     bool   `json:"redo"`
 		}
-		if err := part.Decode(r, &body); err != nil || !slices.Contains(Actions, stringOf(body.Decision["action"])) {
-			part.Error(w, http.StatusBadRequest, "`decision` must be { action, agent?, project? } with one of the dispatcher's actions")
+		err := part.Decode(r, &body)
+		match := CorrectionPattern.FindStringSubmatch(body.Decision)
+		if err != nil || match == nil || (match[2] == "" && (match[1] == "code" || match[1] == "reply_to_agent" || match[1] == "status")) {
+			part.Error(w, http.StatusBadRequest, "`decision` must be answer, delegate, code:<project>, reply_to_agent:<agent id> or status:<agent id>")
 			return
 		}
-		corrected, err := n.Store.Correct(r.Context(), id, body.Decision)
+		decision, err := n.Store.Decision(r.Context(), id)
 		if err != nil {
 			n.fail(w, err)
 			return
 		}
-		if !corrected {
-			part.Error(w, http.StatusNotFound, "no decision "+r.PathValue("id"))
+		if decision == nil {
+			part.Error(w, http.StatusNotFound, "no decision #"+r.PathValue("id"))
 			return
 		}
-		part.JSON(w, http.StatusOK, map[string]any{"corrected": id})
+		if _, err := n.Store.Correct(r.Context(), id, body.Decision); err != nil {
+			n.fail(w, err)
+			return
+		}
+		if !body.Redo {
+			part.JSON(w, http.StatusOK, map[string]any{"corrected": id})
+			return
+		}
+		response, err := n.Ask(r.Context(), AskRequest{Question: decision.Message, Session: decision.Session, Force: &Forced{Action: match[1], Target: match[2]}})
+		if err != nil {
+			n.fail(w, err)
+			return
+		}
+		encoded, _ := json.Marshal(response)
+		var merged map[string]any
+		_ = json.Unmarshal(encoded, &merged)
+		merged["corrected"] = id
+		part.JSON(w, http.StatusOK, merged)
 	})
 }
 

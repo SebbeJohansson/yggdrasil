@@ -800,6 +800,25 @@ func (m *Manager) Abort(id string) (*Agent, error) {
 	return a, nil
 }
 
+// CloseOldestIdle makes room: closes the waiting agent quiet the longest and
+// returns once its process is gone. Its session stays resumable. Refuses
+// when none waits: every slot is at work.
+func (m *Manager) CloseOldestIdle() (*Agent, error) {
+	m.mu.Lock()
+	var oldest *Agent
+	for id := range m.live {
+		if a := m.agents[id]; a != nil && a.Status == Waiting && (oldest == nil || a.LastActivity < oldest.LastActivity) {
+			oldest = a
+		}
+	}
+	m.mu.Unlock()
+	if oldest == nil {
+		return nil, httpErr(409, "no idle agent to close; every running agent is at work")
+	}
+	m.close(oldest.ID)
+	return oldest, nil
+}
+
 // ReapIdle closes processes idle past the idle time; a follow-up resumes them.
 func (m *Manager) ReapIdle() {
 	m.mu.Lock()
