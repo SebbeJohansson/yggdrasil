@@ -734,6 +734,29 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/sessions:
     get:
+      summary: Every coding-agent session on this machine, each source on its own. Claude Code's running sessions (registry and live sockets), OpenCode's (a running opencode serve), and herdr's panes. A source that is off or down has sessions null and says why.
+      responses:
+        "200":
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [claude, opencode, herdr, at]
+                properties:
+                  claude:
+                    allOf:
+                      - { $ref: "#/components/schemas/SessionSource" }
+                      - type: object
+                        required: [degraded]
+                        properties:
+                          degraded: { type: boolean, description: No socket directory, so liveness is a guess from recent activity. }
+                  opencode: { $ref: "#/components/schemas/SessionSource" }
+                  herdr: { $ref: "#/components/schemas/SessionSource" }
+                  at: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/sessions/recent:
+    get:
       summary: Your own Claude Code sessions from the last day, newest first, read from their transcripts. Sindri's agents are left out.
       responses:
         "200":
@@ -756,6 +779,148 @@ paths:
                     lastText: { type: string }
                     working: { type: boolean, description: Changed in the last two minutes and the turn has not ended. }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/sessions/opencode/permissions/{id}:
+    post:
+      summary: Allow once, or reject, a permission an OpenCode session asks for.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allow]
+              properties:
+                allow: { type: boolean }
+      responses:
+        "200":
+          description: Answered.
+          content:
+            application/json:
+              schema: { type: object, required: [answered], properties: { answered: { type: boolean } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/sessions/herdr:
+    post:
+      summary: Start an agent in a new, unfocused herdr workspace. With resume, it picks up that session instead, which is how a session started elsewhere is taken over into herdr.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, cwd]
+              properties:
+                kind: { type: string, description: "claude, opencode, codex…" }
+                cwd: { type: string, description: An absolute path. }
+                name: { type: string }
+                resume: { type: string, description: A session id to resume (claude or opencode). }
+      responses:
+        "200":
+          description: The agent, ready for input.
+          content:
+            application/json:
+              schema: { type: object, required: [agent], properties: { agent: { $ref: "#/components/schemas/HerdrAgent" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+  /v1/sessions/herdr/{target}/prompt:
+    post:
+      summary: Type a prompt into the agent's pane and press Enter. Refused (agent_blocked) while a dialog shows.
+      parameters:
+        - { name: target, in: path, required: true, schema: { type: string }, description: "An agent's herdr name, or its pane's id (w1:p2)." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [text], properties: { text: { type: string } } }
+      responses:
+        "200":
+          description: The agent.
+          content:
+            application/json:
+              schema: { type: object, required: [agent], properties: { agent: { $ref: "#/components/schemas/HerdrAgent" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+  /v1/sessions/herdr/{target}/keys:
+    post:
+      summary: Press keys in the agent's pane (enter, esc, 1, ctrl+c…).
+      parameters:
+        - { name: target, in: path, required: true, schema: { type: string }, description: "An agent's herdr name, or its pane's id (w1:p2)." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [keys], properties: { keys: { type: array, minItems: 1, items: { type: string } } } }
+      responses:
+        "200":
+          description: Sent.
+          content:
+            application/json:
+              schema: { type: object, required: [sent], properties: { sent: { type: array, items: { type: string } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+  /v1/sessions/herdr/{target}/choose:
+    post:
+      summary: Pick a choice in the pane's dialog, only while that same dialog is on screen; dialog_changed (409) when it has moved on, and nothing is pressed.
+      parameters:
+        - { name: target, in: path, required: true, schema: { type: string }, description: "An agent's herdr name, or its pane's id (w1:p2)." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question, key, label]
+              properties:
+                question: { type: string }
+                key: { type: string }
+                label: { type: string }
+      responses:
+        "200":
+          description: Sent.
+          content:
+            application/json:
+              schema: { type: object, required: [sent], properties: { sent: { type: array, items: { type: string } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+  /v1/sessions/herdr/{target}/read:
+    get:
+      summary: The pane's recent output as plain text.
+      parameters:
+        - { name: target, in: path, required: true, schema: { type: string }, description: "An agent's herdr name, or its pane's id (w1:p2)." }
+        - { name: lines, in: query, schema: { type: integer, minimum: 1, maximum: 2000, default: 120 } }
+      responses:
+        "200":
+          description: The text.
+          content:
+            application/json:
+              schema: { type: object, required: [text], properties: { text: { type: string } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
   /v1/activity:
     get:
       summary: Per day, sessions started, agents started and branches merged.
@@ -1040,6 +1205,30 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    SessionSource:
+      type: object
+      required: [sessions, from]
+      properties:
+        sessions: { type: [array, "null"], items: { type: object } }
+        error: { type: string }
+        from: { type: string, description: Where it reads from, or off. }
+    HerdrAgent:
+      type: object
+      required: [paneId, workspaceId, tabId, status, focused]
+      properties:
+        paneId: { type: string }
+        workspaceId: { type: string }
+        tabId: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        status: { type: string, enum: [idle, working, blocked, done, unknown] }
+        cwd: { type: string }
+        title: { type: string }
+        sessionId: { type: string }
+        focused: { type: boolean }
+        pids: { type: array, items: { type: integer } }
+        dialog: { type: string, enum: [permission, other] }
+        dialogScreen: { type: object }
     Started:
       type: object
       required: [agentId]

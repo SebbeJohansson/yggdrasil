@@ -606,10 +606,11 @@ func IsOverviewQuestion(question string) bool {
 }
 
 // OverviewAnswer lists the recent agents, said without a model.
-func OverviewAnswer(agents []Agent, now time.Time) string {
+func OverviewAnswer(agents []Agent, sessions []OwnSession, now time.Time) string {
 	lines := OverviewLines(agents, now)
-	if len(lines) == 0 {
-		return "No agents in the last day."
+	own := OwnSessionsOverview(sessions)
+	if len(lines) == 0 && len(own) == 0 {
+		return "No agents or Claude Code sessions in the last day."
 	}
 	asking := 0
 	for _, a := range RecentAgents(agents, now) {
@@ -628,11 +629,11 @@ func OverviewAnswer(agents []Agent, now time.Time) string {
 	for i := range lines {
 		lines[i] = "• " + lines[i]
 	}
-	return strings.Join(append([]string{lead}, lines...), "\n")
+	return strings.Join(append(append([]string{lead}, lines...), own...), "\n")
 }
 
 // HandoverPrompt is a question with the background an agent needs.
-func HandoverPrompt(question, profile string, recalled []Memory, inbox []string, history []llm.Message, rules string) string {
+func HandoverPrompt(question, profile string, recalled []Memory, inbox []string, sessions []OwnSession, history []llm.Message, rules string) string {
 	parts := []string{question, "", "---", "Context from Norn, their assistant (background; may be stale):"}
 	if profile != "" {
 		parts = append(parts, "", "About the person, in their words:", profile)
@@ -652,6 +653,7 @@ func HandoverPrompt(question, profile string, recalled []Memory, inbox []string,
 			parts = append(parts, "- "+line)
 		}
 	}
+	parts = append(parts, SessionsSection(sessions)...)
 	if rules != "" {
 		parts = append(parts, "", rules)
 	}

@@ -376,7 +376,7 @@ func copySignIns(fromDir, toDir string, report *Report) error {
 
 // moveAgents copies the agents' state file (the same shape on both sides)
 // with their screenshots, setting each agent's conversation.
-func moveAgents(from, to string, sessions map[string]string, replace bool, report *Report) error {
+func moveAgents(from, to string, sessions map[string]string, replace bool, report *Report, keep func(map[string]any) bool) error {
 	data, err := os.ReadFile(from)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -384,9 +384,14 @@ func moveAgents(from, to string, sessions map[string]string, replace bool, repor
 	if err != nil {
 		return err
 	}
-	var agents []map[string]any
-	if err := json.Unmarshal(data, &agents); err != nil {
+	var all, agents []map[string]any
+	if err := json.Unmarshal(data, &all); err != nil {
 		return fmt.Errorf("%s is not a list of agents: %w", from, err)
+	}
+	for _, agent := range all {
+		if keep == nil || keep(agent) {
+			agents = append(agents, agent)
+		}
 	}
 	var existing []map[string]any
 	if current, err := os.ReadFile(to); err == nil {
@@ -494,7 +499,10 @@ func FromMyAgent(paths Paths, options Options) (*Report, error) {
 	}
 	sessions := sessionsOf(source, `SELECT agent, session FROM agent_sessions`)
 	source.Close()
-	if err := moveAgents(paths.RunnerState, paths.SindriState, sessions, options.Replace, report); err != nil {
+	if err := moveAgents(paths.RunnerState, paths.SindriState, sessions, options.Replace, report, nil); err != nil {
+		return nil, err
+	}
+	if err := herdrToSindri(filepath.Join(paths.AgentData, herdrAgentsFile), paths.SindriState, sessions, report); err != nil {
 		return nil, err
 	}
 	return report, nil
@@ -550,7 +558,10 @@ func ToMyAgent(paths Paths, options Options) (*Report, error) {
 	if err := copySignIns(paths.NornData, paths.AgentData, report); err != nil {
 		return nil, err
 	}
-	if err := moveAgents(paths.SindriState, paths.RunnerState, nil, options.Replace, report); err != nil {
+	if err := moveAgents(paths.SindriState, paths.RunnerState, nil, options.Replace, report, func(a map[string]any) bool { return a["engine"] != "herdr" }); err != nil {
+		return nil, err
+	}
+	if err := herdrToMyAgent(paths.SindriState, filepath.Join(paths.AgentData, herdrAgentsFile), options.Replace, report); err != nil {
 		return nil, err
 	}
 	return report, nil
@@ -579,4 +590,151 @@ func into(target, source string, work func(*sql.Tx) error) error {
 	}
 	_, err = db.Exec(`DETACH DATABASE src`)
 	return err
+}
+
+// herdrAgentsFile is where my-agent keeps the question agents it started in herdr panes.
+const herdrAgentsFile = "herdr-agents.json"
+
+// myAgentHerdr is one of my-agent's herdr agents (herdrRunner.ts).
+type myAgentHerdr struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Cwd        string   `json:"cwd"`
+	Label      string   `json:"label"`
+	Args       []string `json:"args"`
+	StartedAt  int64    `json:"startedAt"`
+	PromptedAt int64    `json:"promptedAt,omitempty"`
+	Queued     *string  `json:"queued,omitempty"`
+	LastError  string   `json:"lastError,omitempty"`
+}
+
+// herdrToSindri adds my-agent's herdr agents to Sindri's agents, as agents
+// with the herdr engine; Sindri's herdr loop reads their state again.
+func herdrToSindri(from, to string, sessions map[string]string, report *Report) error {
+	data, err := os.ReadFile(from)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var started []myAgentHerdr
+	if err := json.Unmarshal(data, &started); err != nil {
+		return fmt.Errorf("%s is not a list of herdr agents: %w", from, err)
+	}
+	var agents []map[string]any
+	if current, err := os.ReadFile(to); err == nil {
+		_ = json.Unmarshal(current, &agents)
+	}
+	known := map[string]bool{}
+	for _, a := range agents {
+		id, _ := a["id"].(string)
+		known[id] = true
+	}
+	moved := 0
+	for _, h := range started {
+		if known[h.ID] {
+			continue
+		}
+		last := max(h.PromptedAt, h.StartedAt)
+		status, log := "done", []map[string]any{}
+		if h.LastError != "" {
+			status = "failed"
+			log = append(log, map[string]any{"at": last, "kind": "error", "text": h.LastError})
+		}
+		place := map[string]any{"name": h.Name, "args": h.Args, "started": true}
+		if h.PromptedAt > 0 {
+			place["promptedAt"] = h.PromptedAt
+		}
+		if h.Queued != nil {
+			place["queued"] = *h.Queued
+		}
+		agent := map[string]any{"id": h.ID, "label": h.Label, "cwd": h.Cwd, "permissionMode": "default", "status": status,
+			"pending": []any{}, "startedAt": h.StartedAt, "lastActivity": last, "costUsd": 0, "numTurns": 0, "log": log,
+			"engine": "herdr", "herdr": place}
+		if session, ok := sessions[h.ID]; ok {
+			agent["session"] = session
+		}
+		agents = append(agents, agent)
+		moved++
+	}
+	if moved == 0 {
+		return nil
+	}
+	out, _ := json.MarshalIndent(agents, "", " ")
+	if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(to, out, 0o600); err != nil {
+		return err
+	}
+	report.count("herdr agents", int64(moved))
+	return nil
+}
+
+// herdrToMyAgent writes Sindri's herdr agents as my-agent's herdr-agents.json.
+func herdrToMyAgent(from, to string, replace bool, report *Report) error {
+	data, err := os.ReadFile(from)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var agents []struct {
+		ID           string `json:"id"`
+		Label        string `json:"label"`
+		Cwd          string `json:"cwd"`
+		Engine       string `json:"engine"`
+		Status       string `json:"status"`
+		StartedAt    int64  `json:"startedAt"`
+		Log          []struct {
+			Kind, Text string
+		} `json:"log"`
+		Herdr *struct {
+			Name       string   `json:"name"`
+			Args       []string `json:"args"`
+			PromptedAt int64    `json:"promptedAt"`
+			Queued     *string  `json:"queued"`
+		} `json:"herdr"`
+	}
+	if err := json.Unmarshal(data, &agents); err != nil {
+		return fmt.Errorf("%s is not a list of agents: %w", from, err)
+	}
+	out := []myAgentHerdr{}
+	for _, a := range agents {
+		if a.Engine != "herdr" || a.Herdr == nil {
+			continue
+		}
+		h := myAgentHerdr{ID: a.ID, Name: a.Herdr.Name, Cwd: a.Cwd, Label: a.Label, Args: a.Herdr.Args, StartedAt: a.StartedAt, PromptedAt: a.Herdr.PromptedAt, Queued: a.Herdr.Queued}
+		if a.Status == "failed" {
+			for i := len(a.Log) - 1; i >= 0; i-- {
+				if a.Log[i].Kind == "error" {
+					h.LastError = a.Log[i].Text
+					break
+				}
+			}
+		}
+		out = append(out, h)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	if current, err := os.ReadFile(to); err == nil {
+		var existing []any
+		_ = json.Unmarshal(current, &existing)
+		if len(existing) > 0 && !replace {
+			return fmt.Errorf("%s already holds %d herdr agents; run with --replace to overwrite it (it is backed up)", to, len(existing))
+		}
+		if err := backup(to, report); err != nil {
+			return err
+		}
+	}
+	encoded, _ := json.MarshalIndent(out, "", "  ")
+	if err := os.WriteFile(to, encoded, 0o600); err != nil {
+		return err
+	}
+	report.count("herdr agents", int64(len(out)))
+	report.Files = append(report.Files, to)
+	return nil
 }

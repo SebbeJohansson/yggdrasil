@@ -87,6 +87,7 @@ func Main(ctx context.Context) error {
 		GoogleClientSecret: env.String("GOOGLE_CLIENT_SECRET", ""),
 		LayaShadowURL:      env.String("LAYA_SHADOW_URL", "http://127.0.0.1:8000"),
 		LayaShadowKey:      env.String("LAYA_SHADOW_KEY", ""),
+		DashboardURL:  env.String("DASHBOARD_URL", "http://localhost:17420"),
 		Write: WriteConfig{
 			LanguageToolURL: env.String("LANGUAGETOOL_URL", "http://127.0.0.1:8010"),
 			Model:           env.String("WRITE_MODEL", "qwen2.5:7b"),

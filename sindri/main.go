@@ -24,6 +24,10 @@ import (
 //	SINDRI_MAX_RUNNING  how many agent processes at once (4)
 //	SINDRI_IDLE         how long an idle agent's process is kept (30m)
 //	CLAUDE_BIN          Claude Code (~/.local/bin/claude)
+//	CLAUDE_DIR          Claude Code's state (~/.claude); CLAUDE_SOCKET_DIR its live sockets
+//	OPENCODE_URL        a running `opencode serve` (http://127.0.0.1:4096); off turns it off
+//	HERDR_SOCKET        herdr's socket (herdr's own default); off turns herdr off
+//	DELEGATE_IN         herdr: question agents run in herdr panes while it answers; sindri: here
 //	COPILOT_BIN         GitHub Copilot CLI (~/.local/bin/copilot)
 //	SINDRI_DB           tasks, goals, approvals (~/.local/state/yggdrasil/sindri.db)
 //	DELEGATE_MODEL      the model agents run on (sonnet)
@@ -66,8 +70,27 @@ func Main(ctx context.Context) error {
 		AskCwd:           env.String("SINDRI_ASK_CWD", filepath.Join(roots[0], "yggdrasil", "workspace")),
 		AutoAllowDefault: env.String("AUTO_ALLOW", "true") == "true",
 	}
+	claudeDir := env.String("CLAUDE_DIR", filepath.Join(home, ".claude"))
+	socketDir := env.String("CLAUDE_SOCKET_DIR", fmt.Sprintf("/run/user/%d/cc-socks", os.Getuid()))
+	if _, err := os.Stat(socketDir); err != nil {
+		socketDir = "" // no sockets: liveness is a guess from recent activity
+	}
+	var opencode *OpencodeClient
+	if u := env.String("OPENCODE_URL", "http://127.0.0.1:4096"); u != "off" {
+		opencode = &OpencodeClient{BaseURL: u, Authorization: env.String("OPENCODE_AUTHORIZATION", ""), HTTP: &http.Client{Timeout: 10 * time.Second}}
+	}
+	var herdr *Herdr
+	if socket := env.String("HERDR_SOCKET", DefaultHerdrSocket()); socket != "off" {
+		herdr = &Herdr{Socket: socket}
+		// Question agents run in herdr panes while herdr answers; DELEGATE_IN=sindri keeps them here.
+		if env.String("DELEGATE_IN", "herdr") == "herdr" {
+			agents.UseHerdr(herdr, claudeDir)
+		}
+	}
+	work.Transcripts = filepath.Join(claudeDir, "projects")
 	s := &Sindri{Agents: agents, Root: agents.roots[0], Work: work,
-		ClaudeProjects: env.String("CLAUDE_PROJECTS", filepath.Join(home, ".claude", "projects"))}
+		ClaudeProjects: env.String("CLAUDE_PROJECTS", filepath.Join(claudeDir, "projects")),
+		Sessions:       NewAgentSessions(ClaudeRoot{ClaudeDir: claudeDir, SocketDir: socketDir}, opencode, herdr)}
 	s.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }

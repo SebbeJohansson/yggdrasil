@@ -140,6 +140,8 @@ type Agent struct {
 	Task               string        `json:"task,omitempty"`
 	// Session is the Norn conversation the agent posts into; empty when none.
 	Session string `json:"session,omitempty"`
+	// Herdr is set for an agent running in a herdr pane (Engine "herdr").
+	Herdr *HerdrPlace `json:"herdr,omitempty"`
 }
 
 // Limits on what an agent keeps.

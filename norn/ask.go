@@ -122,6 +122,8 @@ type asker struct {
 	question   string
 	recalled   []Memory
 	history    []llm.Message
+	// yours is your own Claude Code sessions from the last day.
+	yours []OwnSession
 	decisionID *int64
 }
 
@@ -150,7 +152,7 @@ func (a *asker) handOver(via string, inbox []string) AskResponse {
 	communication, mode := a.rules()
 	agents, _ := a.n.Store.AgentsOf(a.ctx, a.session)
 	request := map[string]any{"session": a.session, "name": a.name(), "communication": communication, "mode": mode, "goal": a.question,
-		"prompt": HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, inbox, a.history, ""), "followUp": a.question}
+		"prompt": HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, inbox, a.yours, a.history, ""), "followUp": a.question}
 	if len(agents) > 0 {
 		request["agent"] = agents[0]
 	}
@@ -170,7 +172,7 @@ func (a *asker) handOver(via string, inbox []string) AskResponse {
 func (a *asker) code(projects []string, via string) AskResponse {
 	communication, mode := a.rules()
 	handed, err := a.n.Sindri.Code(a.ctx, map[string]any{"session": a.session, "name": a.name(), "projects": projects, "goal": a.question,
-		"communication": communication, "mode": mode, "prompt": HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, nil, ownWords(a.history), "")})
+		"communication": communication, "mode": mode, "prompt": HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, nil, nil, ownWords(a.history), "")})
 	if err != nil {
 		return a.answered("Could not hand the coding over: "+err.Error(), nil, via)
 	}
@@ -381,9 +383,18 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 	var everyone []Agent
 	if sindri {
 		everyone, _ = n.Sindri.Agents(ctx)
+		a.yours = n.Sindri.Sessions(ctx)
 	}
 	if sindri && route != "claude" && IsOverviewQuestion(question) && !Change.MatchString(question) {
-		return a.answered(OverviewAnswer(everyone, now), nil, "rule: overview"), nil
+		return a.answered(OverviewAnswer(everyone, a.yours, now), nil, "rule: overview"), nil
+	}
+	// A status question that names one of your own sessions better than any
+	// agent is about that session. Before the dispatcher, which is not shown
+	// your sessions and would pick the agent sharing one word with it.
+	if route != "claude" && statusAsk.MatchString(question) {
+		if own := LikelySession(question, a.yours, everyone, now); own != nil {
+			return a.answered(SessionStatus(*own, now)+ReadLink(n.Config.DashboardURL, own.ID, own.Cwd, own.Title, ""), nil, "rule: your session"), nil
+		}
 	}
 	if match := replyCmd.FindStringSubmatch(question); match != nil && sindri && route != "local" {
 		if target := LikelyAgent(match[1], everyone, now); target != nil {
@@ -563,7 +574,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 			agentLines = append(agentLines, "Its last message: "+clipText(agent.LastText, 400))
 		}
 	}
-	messages := append([]llm.Message{{Role: "system", Content: AskSystemPrompt(LoadProfile(n.Config.ProfilePath), a.recalled, inbox, agentLines, OverviewLines(everyone, now), calendar)}}, a.history...)
+	messages := append([]llm.Message{{Role: "system", Content: AskSystemPrompt(LoadProfile(n.Config.ProfilePath), a.recalled, inbox, agentLines, append(OverviewLines(everyone, now), SessionLines(a.yours)...), calendar)}}, a.history...)
 	messages = append(messages, llm.Message{Role: "user", Content: question})
 	options := llm.Options{Purpose: "answer", Model: n.Config.AskModel, Temperature: 0.5, TopP: 0.9, MaxTokens: 400}
 	if calendar != nil {
@@ -595,6 +606,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		n.learnLater(question)
 		return a.handOver("local model: promised to look", inbox), nil
 	}
+	answer += NamedReadLinks(answer, a.yours, everyone, n.Config.DashboardURL)
 	via := "local model"
 	switch {
 	case a.decisionID != nil && decidedLocal:

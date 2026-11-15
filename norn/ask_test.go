@@ -213,3 +213,33 @@ func TestPartCommandAddsAProjectToTheTask(t *testing.T) {
 		t.Fatalf("Sindri got %q", call)
 	}
 }
+
+func TestYourOwnSessions(t *testing.T) {
+	now := time.Now()
+	sessions := []OwnSession{
+		{ID: "s1", Title: "Add a one-line config comment", Project: "glim", Cwd: "/home/me/glim", LastActivity: now.Add(-5 * time.Minute).UnixMilli(), LastText: "Done: the comment is in."},
+		{ID: "s2", Title: "Refactor the DM titles", Project: "my-widget", Working: true},
+	}
+	agents := []Agent{{ID: "a1", Label: "my-widget: Fix the login", LastActivity: now.UnixMilli()}}
+	own := LikelySession("how is the config comment going?", sessions, agents, now)
+	if own == nil || own.ID != "s1" {
+		t.Fatalf("picked %+v", own)
+	}
+	if got := SessionStatus(*own, now); got != `Your Claude Code session "Add a one-line config comment" in glim last answered 5 min ago. Its last message: Done: the comment is in.` {
+		t.Errorf("status %q", got)
+	}
+	if LikelySession("how is the login going?", sessions, agents, now) != nil {
+		t.Error("a question about an agent went to a session")
+	}
+	overview := OverviewAnswer(agents, sessions, now)
+	if !strings.Contains(overview, "Your own Claude Code sessions: 2, 1 working.") {
+		t.Errorf("overview %q", overview)
+	}
+	links := NamedReadLinks(`Your "Add a one-line config comment" session is done.`, sessions, agents, "http://localhost:17420")
+	if links != "\n[Read the session](http://localhost:17420/dashboard/sessions/s1?dir=%2Fhome%2Fme%2Fglim&name=Add+a+one-line+config+comment)" {
+		t.Errorf("links %q", links)
+	}
+	if !strings.Contains(HandoverPrompt("q", "", nil, nil, sessions, nil, ""), `- "Refactor the DM titles" (my-widget, working)`) {
+		t.Error("the hand-over leaves out your sessions")
+	}
+}

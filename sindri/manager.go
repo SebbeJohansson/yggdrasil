@@ -82,6 +82,11 @@ type Manager struct {
 	live   map[string]*live
 	checks map[string]map[string]CheckResult
 	saving *time.Timer
+	// herdr runs question agents in its panes while herdrUp; nil is off.
+	herdr      *Herdr
+	herdrUp    bool
+	claudeDir  string
+	delivering map[string]bool
 	logf   func(string, ...any)
 	now    func() time.Time
 	// OnChange is told when an agent changes, so its messages reach Norn soon.
@@ -257,8 +262,11 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	if engine == "copilot" && request.NoTools {
 		return nil, httpErr(400, "`noTools` is for Claude only: Copilot has no way to start without its built-in tools and MCP servers")
 	}
-	if err := m.ensureCapacityLocked(); err != nil {
-		return nil, err
+	toHerdr := m.herdrTakes(request)
+	if !toHerdr {
+		if err := m.ensureCapacityLocked(); err != nil {
+			return nil, err
+		}
 	}
 	label := strings.TrimSpace(request.Label)
 	if label == "" {
@@ -303,6 +311,10 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	}
 	if len(a.AllowedTools) == 0 {
 		a.AllowedTools = nil
+	}
+	if toHerdr {
+		m.startHerdrLocked(a, prompt)
+		return a, nil
 	}
 	m.agents[a.ID] = a
 	if err := m.beginLocked(a, prompt, false, nil, false); err != nil {
@@ -603,6 +615,16 @@ func (m *Manager) Prompt(id, text string, images []string, queue bool) (*Agent, 
 	if text == "" {
 		return nil, httpErr(400, "`text` must be a non-empty string")
 	}
+	if a.Herdr != nil {
+		if busy(a.Status) && !queue {
+			return nil, httpErr(409, "agent is %s; wait for the turn to end", a.Status)
+		}
+		if m.herdr == nil {
+			return nil, httpErr(503, "this agent runs in herdr, and herdr is off here")
+		}
+		m.promptHerdrLocked(a, text, images)
+		return a, nil
+	}
 	_, running := m.live[id]
 	if busy(a.Status) || (a.Engine == "copilot" && running) {
 		if !queue {
@@ -662,6 +684,9 @@ func (m *Manager) Handoff(id, note, to string) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	if a.Herdr != nil {
+		return nil, httpErr(409, "this agent runs in a herdr pane: carry it on there")
+	}
 	from := engineOf(a)
 	if to == "" {
 		to = map[string]string{"claude": "copilot", "copilot": "claude"}[from]
@@ -716,8 +741,15 @@ func (m *Manager) Rename(id, label string) (*Agent, error) {
 // Answer allows or denies a pending tool call.
 func (m *Manager) Answer(id, requestID string, allow bool, message string) (*Agent, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	a, err := m.getLocked(id)
+	if err == nil && a.Herdr != nil {
+		m.mu.Unlock()
+		if m.herdr == nil {
+			return nil, httpErr(503, "this agent runs in herdr, and herdr is off here")
+		}
+		return m.answerHerdr(id, requestID, allow, message)
+	}
+	defer m.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -757,6 +789,9 @@ func (m *Manager) Abort(id string) (*Agent, error) {
 	a, err := m.getLocked(id)
 	if err != nil {
 		return nil, err
+	}
+	if a.Herdr != nil {
+		return nil, httpErr(409, "this agent runs in a herdr pane: stop it there")
 	}
 	if process, ok := m.live[id]; ok {
 		process.aborted = true

@@ -107,16 +107,18 @@ Moved:
   tasks, goals with pictures, parts across repos, automatic approvals,
   follow-through on failed tests, waiting for room or for Claude usage, and
   the coding-agent and automation settings, Linear goal candidates and
-  moving an issue as its goal moves, your own Claude Code sessions
-  (`/v1/sessions`) and `/v1/activity`.
+  moving an issue as its goal moves, `/v1/activity`, and every coding-agent
+  session on the machine (`/v1/sessions`: Claude Code's live sessions,
+  OpenCode's, herdr's panes, with prompts, keys and dialog answers). Question
+  agents run in herdr panes while herdr runs, as my-agent's did. The
+  agent-conduit npm package these used is ported into Sindri
+  (`sindri/conduit_*.go`).
 
-Not moved (still only in my-agent): OpenCode and herdr sessions, and herdr
-as a place for question agents. They need the agent-conduit npm package,
-and herdr is not installed on this machine. If they come back, they fit
-best as a separate program behind Sindri's `/v1/sessions` contract
-(docs/replacing-a-part.md), written in TypeScript on top of agent-conduit.
+Everything in my-agent now has a place in Yggdrasil.
 
 Moving data between the two: `ygg migrate from-my-agent` copies my-agent's
 database, sign-ins and agents into Norn and Sindri; `ygg migrate
 to-my-agent` copies them back. Both back up the target first and refuse to
-write over data unless given `--replace`.
+write over data unless given `--replace`. my-agent's herdr question agents
+(`data/herdr-agents.json`) become Sindri agents with the herdr engine, and
+go back the same way.

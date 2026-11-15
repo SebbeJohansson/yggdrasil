@@ -279,6 +279,8 @@ func safeName(name string) string {
 type HTTPError struct {
 	Status  int
 	Message string
+	// Code is a machine-readable reason, such as herdr's agent_blocked; empty for most.
+	Code string
 }
 
 func (e *HTTPError) Error() string { return e.Message }

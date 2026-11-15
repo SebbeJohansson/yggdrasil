@@ -47,6 +47,7 @@ func seed(t *testing.T, p Paths) {
 	os.WriteFile(filepath.Join(p.AgentData, "google.json"), []byte(`{"refreshToken":"r","scope":"x"}`), 0o600)
 	os.MkdirAll(filepath.Dir(p.RunnerState), 0o700)
 	os.WriteFile(p.RunnerState, []byte(`[{"id":"a1","label":"demo: Fix titles","cwd":"/x","permissionMode":"auto","status":"waiting","pending":[],"startedAt":1,"lastActivity":2,"costUsd":0,"numTurns":1,"log":[]}]`), 0o600)
+	os.WriteFile(filepath.Join(p.AgentData, "herdr-agents.json"), []byte(`[{"id":"h1","name":"ask-h1","cwd":"/home/me/projects/yggdrasil/workspace","label":"ask: readme","args":["--model","sonnet"],"startedAt":5,"promptedAt":6}]`), 0o600)
 	os.MkdirAll(filepath.Join(filepath.Dir(p.RunnerState), "screenshots", "a1"), 0o700)
 	os.WriteFile(filepath.Join(filepath.Dir(p.RunnerState), "screenshots", "a1", "view.png"), []byte("png"), 0o600)
 }
@@ -108,7 +109,7 @@ func TestEverythingMovesToYggdrasilAndBack(t *testing.T) {
 	agents, _ := os.ReadFile(p.SindriState)
 	var list []map[string]any
 	json.Unmarshal(agents, &list)
-	if len(list) != 1 || list[0]["session"] != "s1" {
+	if len(list) != 2 || list[0]["session"] != "s1" || list[1]["engine"] != "herdr" {
 		t.Fatalf("agents: %s", agents)
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(p.SindriState), "screenshots", "a1", "view.png")); err != nil {
@@ -154,5 +155,15 @@ func TestEverythingMovesToYggdrasilAndBack(t *testing.T) {
 	}
 	if _, err := os.Stat(back.RunnerState); err != nil {
 		t.Fatalf("the agents did not go back: %v", err)
+	}
+	// The herdr agent is one of Sindri's agents here, and my-agent's herdr agent again there.
+	sindriAgents, _ := os.ReadFile(p.SindriState)
+	if !strings.Contains(string(sindriAgents), `"engine": "herdr"`) || !strings.Contains(string(sindriAgents), `"name": "ask-h1"`) {
+		t.Errorf("sindri agents: %s", sindriAgents)
+	}
+	runner, _ := os.ReadFile(back.RunnerState)
+	herdr, _ := os.ReadFile(filepath.Join(back.AgentData, "herdr-agents.json"))
+	if strings.Contains(string(runner), "h1") || !strings.Contains(string(herdr), `"promptedAt": 6`) {
+		t.Errorf("runner %s\nherdr %s", runner, herdr)
 	}
 }

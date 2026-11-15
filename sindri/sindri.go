@@ -27,6 +27,8 @@ type Sindri struct {
 	Root   string
 	// ClaudeProjects is where Claude Code keeps transcripts (~/.claude/projects).
 	ClaudeProjects string
+	// Sessions reads every coding-agent session on the machine: Claude Code, OpenCode, herdr.
+	Sessions *AgentSessions
 	// Work hands work to agents and follows them; nil serves the agents alone.
 	Work *Work
 }
@@ -34,7 +36,7 @@ type Sindri struct {
 // Mount adds Sindri's routes and loops to the part.
 func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("GET /v1/agents", s.list)
-	p.Handle("GET /v1/sessions", s.sessions)
+	p.Handle("GET /v1/sessions/recent", s.sessions)
 	p.Handle("GET /v1/activity", s.activity)
 	p.Handle("POST /v1/agents", s.start)
 	p.Handle("GET /v1/agents/{id}", s.get)
@@ -94,6 +96,21 @@ func (s *Sindri) Mount(p *part.Part) {
 			p.Loop("linear", 30*time.Second, s.Work.SyncLinear)
 		}
 	}
+	if s.Sessions == nil {
+		s.Sessions = NewAgentSessions(ClaudeRoot{}, nil, nil)
+	}
+	{
+		s.mountSessions(p)
+		if s.Sessions.Opencode != nil {
+			p.Loop("opencode", 3*time.Second, s.Sessions.ReadOpencode)
+		}
+		if s.Sessions.Herdr != nil {
+			p.Loop("herdr", 2*time.Second, func(ctx context.Context) error {
+				_ = s.Sessions.ReadHerdr(ctx)
+				return s.Agents.RefreshHerdr(ctx)
+			})
+		}
+	}
 	p.Loop("reap", time.Minute, func(context.Context) error {
 		s.Agents.ReapIdle()
 		return nil
@@ -104,6 +121,10 @@ func (s *Sindri) Mount(p *part.Part) {
 func fail(w http.ResponseWriter, err error) {
 	var refused *HTTPError
 	if errors.As(err, &refused) {
+		if refused.Code != "" {
+			part.JSON(w, refused.Status, map[string]string{"error": refused.Message, "code": refused.Code})
+			return
+		}
 		part.Error(w, refused.Status, refused.Message)
 		return
 	}

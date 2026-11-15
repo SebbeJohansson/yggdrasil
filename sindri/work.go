@@ -80,6 +80,8 @@ type Work struct {
 	Model string
 	// AskCwd is where question agents run.
 	AskCwd string
+	// Transcripts is where your Claude Code transcripts are, which question agents may read without asking.
+	Transcripts string
 	// AutoAllowDefault is automation.autoAllow before it is set.
 	AutoAllowDefault bool
 	logf             func(string, ...any)
@@ -330,7 +332,7 @@ func (w *Work) Ask(request AskRequest) (*Agent, error) {
 	}
 	a, err := w.start(StartRequest{
 		Cwd: w.AskCwd, Prompt: prompt, Label: "ask: " + request.Name, Model: w.Model, AddRoots: true,
-		AllowedTools: append(append([]string{}, AskAllowed...), ReadOnlyMCPTools()...), DisallowedTools: AskDenied, Session: request.Session,
+		AllowedTools: w.askAllowed(), DisallowedTools: AskDenied, Session: request.Session,
 	}, request.Communication, request.Mode)
 	if err != nil {
 		return nil, err
@@ -832,4 +834,14 @@ func deref(n *int64) int64 {
 		return 0
 	}
 	return *n
+}
+
+// askAllowed are the tools a question agent uses without asking: reading,
+// your services read-only, and your Claude Code transcripts.
+func (w *Work) askAllowed() []string {
+	allowed := append(append([]string{}, AskAllowed...), ReadOnlyMCPTools()...)
+	if w.Transcripts != "" {
+		allowed = append(allowed, "Read("+w.Transcripts+"/**)")
+	}
+	return allowed
 }

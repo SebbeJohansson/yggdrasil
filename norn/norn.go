@@ -50,6 +50,8 @@ type Config struct {
 	GoogleClientID, GoogleClientSecret string
 	// LayaShadowURL and LayaShadowKey are the shadow dispatcher's Laya; no key, no shadow.
 	LayaShadowURL, LayaShadowKey string
+	// DashboardURL is my-widget's dashboard, for links to read a session; off is none.
+	DashboardURL string
 	// Write is where Pennvass's writing checks run.
 	Write WriteConfig
 }
