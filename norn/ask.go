@@ -448,6 +448,19 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		}
 		id, _ := n.Store.LogDecision(ctx, session, question, DispatchPrompt(input), source, result.Model, decision, result.Guards, result.MS)
 		a.decisionID = &id
+		shadowInput := ShadowInput{Message: question, Agents: candidates, Projects: input.Projects}
+		if len(chat) > 0 {
+			t := chat[len(chat)-1]
+			who := "Norn"
+			switch {
+			case t.Author != nil:
+				who = *t.Author
+			case t.Role == "user":
+				who = "person"
+			}
+			shadowInput.Last = &[2]string{who, t.Content}
+		}
+		n.shadow(id, shadowInput)
 		// "Is the Linear task marked as done?": read from Linear, not from an
 		// agent's last message. The key is in the message, in the task of the
 		// agent it is about, or earlier in the conversation.

@@ -823,6 +823,7 @@ paths:
                         guards: { type: array, items: { type: string } }
                         ms: { type: [integer, "null"] }
                         correction: {}
+                        shadow: { description: "What the shadow Laya dispatcher would have done: action, agentId, probabilities, ms; null without one." }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/decisions/{id}/correction:
     post:

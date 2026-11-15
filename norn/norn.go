@@ -48,6 +48,8 @@ type Config struct {
 	// DataDir holds the sign-ins, beside the database.
 	DataDir                            string
 	GoogleClientID, GoogleClientSecret string
+	// LayaShadowURL and LayaShadowKey are the shadow dispatcher's Laya; no key, no shadow.
+	LayaShadowURL, LayaShadowKey string
 	// Write is where Pennvass's writing checks run.
 	Write WriteConfig
 }

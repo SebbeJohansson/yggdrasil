@@ -298,11 +298,13 @@ type DecisionRow struct {
 	Guards     json.RawMessage `json:"guards"`
 	MS         *int64          `json:"ms"`
 	Correction json.RawMessage `json:"correction"`
+	// Shadow is what the shadow Laya dispatcher would have done; null without one.
+	Shadow json.RawMessage `json:"shadow"`
 }
 
 // Decisions is the latest decisions, newest first.
 func (s *Store) Decisions(ctx context.Context, limit int) ([]DecisionRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, at, session, message, source, coalesce(model, 'null'), decision, coalesce(guards, '[]'), ms, coalesce(correction, 'null') FROM decisions ORDER BY id DESC LIMIT ?`, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, at, session, message, source, coalesce(model, 'null'), decision, coalesce(guards, '[]'), ms, coalesce(correction, 'null'), coalesce(shadow, 'null') FROM decisions ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -310,11 +312,12 @@ func (s *Store) Decisions(ctx context.Context, limit int) ([]DecisionRow, error)
 	list := []DecisionRow{}
 	for rows.Next() {
 		var d DecisionRow
-		var model, decision, guards, correction string
-		if err := rows.Scan(&d.ID, &d.At, &d.Session, &d.Message, &d.Source, &model, &decision, &guards, &d.MS, &correction); err != nil {
+		var model, decision, guards, correction, shadow string
+		if err := rows.Scan(&d.ID, &d.At, &d.Session, &d.Message, &d.Source, &model, &decision, &guards, &d.MS, &correction, &shadow); err != nil {
 			return nil, err
 		}
 		d.Model, d.Decision, d.Guards, d.Correction = json.RawMessage(model), json.RawMessage(decision), json.RawMessage(guards), json.RawMessage(correction)
+		d.Shadow = json.RawMessage(shadow)
 		list = append(list, d)
 	}
 	return list, rows.Err()

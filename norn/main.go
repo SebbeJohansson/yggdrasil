@@ -84,6 +84,8 @@ func Main(ctx context.Context) error {
 		// Your own Google "Desktop app" OAuth client, for Gmail and Google Calendar.
 		GoogleClientID:     env.String("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: env.String("GOOGLE_CLIENT_SECRET", ""),
+		LayaShadowURL:      env.String("LAYA_SHADOW_URL", "http://127.0.0.1:8000"),
+		LayaShadowKey:      env.String("LAYA_SHADOW_KEY", ""),
 		Write: WriteConfig{
 			LanguageToolURL: env.String("LANGUAGETOOL_URL", "http://127.0.0.1:8010"),
 			Model:           env.String("WRITE_MODEL", "qwen2.5:7b"),
@@ -95,6 +97,7 @@ func Main(ctx context.Context) error {
 		n.Sindri.URL, n.Sindri.Token = where.URL("sindri"), token
 	}
 	n.Linear = &linear.Client{Key: env.String("LINEAR_KEY", "")}
+	n.WakeShadow()
 	n.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }
