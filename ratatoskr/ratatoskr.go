@@ -259,7 +259,7 @@ type Status struct {
 
 // Snapshot is the status now.
 func (r *Ratatoskr) Snapshot() Status {
-	status := Status{Checks: r.watch.States(), GjallarUp: true}
+	status := Status{Parts: []Seen{}, Checks: r.watch.States(), GjallarUp: true}
 	r.mu.Lock()
 	for _, target := range r.Targets {
 		if seen, ok := r.seen[target.Name]; ok {

@@ -1,0 +1,120 @@
+openapi: 3.1.0
+info:
+  title: Ratatoskr
+  version: "1"
+  description: |
+    Yggdrasil's watchdog. Checks that every part is alive and that its loops
+    run on time. Fixes nothing. Any program that serves this contract and
+    passes `ygg check ratatoskr <url>` can replace the built-in one
+    (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - Read every watched part's GET /health. Down after 2 failures in a row,
+      up after 2 passes. Down raises `down:<part>` (critical) on Gjallar.
+    - A loop on a part's /health that has not run within three of its
+      intervals and a minute raises `stalled:<part>:<loop>` (warning). Loops
+      of a part that is down are not checked.
+    - Gjallar being down is never sent to Gjallar: push to the phone directly,
+      and report it here as gjallarUp false.
+    - Beat to Gjallar (POST /v1/heartbeat) every minute.
+    - Run outside the compose project.
+servers:
+  - url: http://127.0.0.1:8775
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/status:
+    get:
+      summary: Every watched part as last seen, and every check. The widget reads this directly, so it can say Gjallar is down without Gjallar.
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [parts, checks, gjallarUp]
+                properties:
+                  parts:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, url, up, checkedAt]
+                      properties:
+                        name: { type: string }
+                        url: { type: string }
+                        up: { type: boolean }
+                        error: { type: string }
+                        health: { $ref: "#/components/schemas/Health" }
+                        checkedAt: { type: string, format: date-time }
+                  checks: { type: array, items: { $ref: "#/components/schemas/Check" } }
+                  gjallarUp: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Check:
+      type: object
+      required: [key, down, fails, passes, since, checkedAt, raised]
+      properties:
+        key: { type: string }
+        down: { type: boolean }
+        severity: { type: string, enum: [info, warning, critical] }
+        title: { type: string }
+        detail: { type: string }
+        fails: { type: integer }
+        passes: { type: integer }
+        since: { type: string, format: date-time }
+        checkedAt: { type: string, format: date-time }
+        raised: { type: boolean, description: Whether Gjallar holds an open alert for it. }

@@ -1,0 +1,347 @@
+openapi: 3.1.0
+info:
+  title: Gjallar
+  version: "1"
+  description: |
+    Yggdrasil's alerts service. Every part sends its warnings here, and
+    Gjallar decides how loudly to tell you. Any program that serves this
+    contract and passes `ygg check gjallar <url>` can replace the built-in
+    one (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - An alert is identified by its source and key. The source is the name
+      on the caller's token, never a field in the body, so no part can raise
+      or resolve another part's alerts.
+    - Raising the same source and key again updates that alert (count, last
+      seen). A resolved one opens again, history kept. An acknowledged one
+      opens again when its severity goes up.
+    - Only the owner acknowledges, snoozes and mutes. The owner never raises
+      or resolves.
+    - Senders named in its "limited" list (glim) may not send critical.
+    - info: dashboard only. warning: widget badge. critical: widget toast and
+      a phone push, at most once per alert per 15 minutes, never while muted
+      or snoozed.
+    - Gjallar never acts on an alert.
+servers:
+  - url: http://127.0.0.1:8774
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran. Read by Ratatoskr.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/alerts:
+    get:
+      summary: Alerts, the most recently seen first.
+      parameters:
+        - name: state
+          in: query
+          schema: { type: string, enum: [active, open, acknowledged, resolved, all], default: active }
+          description: active is open and acknowledged.
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        "200":
+          description: The alerts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alerts]
+                properties:
+                  alerts: { type: array, items: { $ref: "#/components/schemas/Alert" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Raise an alert, or update the one with the same source and key. Parts only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Raise" }
+      responses:
+        "201":
+          description: Opened.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RaiseResult" }
+        "200":
+          description: Updated, opened again, or escalated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RaiseResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/alerts/resolve:
+    post:
+      summary: The condition is gone. Resolves the caller's own alert with that key; resolving again is fine.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: { type: string }
+      responses:
+        "200":
+          description: Whether an open alert was resolved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [resolved]
+                properties:
+                  resolved: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/alerts/stream:
+    get:
+      summary: "Every change, as server-sent events (`event: alert`, data is an Alert). Needs the token, so read it with fetch, not EventSource."
+      responses:
+        "200":
+          description: The stream.
+          content:
+            text/event-stream: {}
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/alerts/{id}:
+    get:
+      summary: One alert and its history.
+      parameters:
+        - { $ref: "#/components/parameters/ID" }
+      responses:
+        "200":
+          description: The alert.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alert, events]
+                properties:
+                  alert: { $ref: "#/components/schemas/Alert" }
+                  events: { type: array, items: { $ref: "#/components/schemas/Event" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/alerts/{id}/ack:
+    post:
+      summary: Seen it. Owner only.
+      parameters:
+        - { $ref: "#/components/parameters/ID" }
+      responses:
+        "200": { $ref: "#/components/responses/OneAlert" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/alerts/{id}/snooze:
+    post:
+      summary: No push until then. Owner only.
+      parameters:
+        - { $ref: "#/components/parameters/ID" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [until]
+              properties:
+                until: { type: string, format: date-time, description: At most 30 days ahead. }
+      responses:
+        "200": { $ref: "#/components/responses/OneAlert" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/mutes:
+    get:
+      summary: Every mute. Owner only.
+      responses:
+        "200": { $ref: "#/components/responses/Mutes" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Mute or unmute a source and key. A muted alert is listed, never pushed. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source, key, muted]
+              properties:
+                source: { type: string }
+                key: { type: string }
+                muted: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Mutes" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/heartbeat:
+    post:
+      summary: The caller is alive. A part expected to beat that goes silent is raised as `silent:<name>`, source gjallar.
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "204": { description: Noted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: A named token. `owner` is you; any other name is a part, and is the source of what it raises.
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+  responses:
+    OneAlert:
+      description: The alert.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [alert]
+            properties:
+              alert: { $ref: "#/components/schemas/Alert" }
+    Mutes:
+      description: Every mute, newest first.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [mutes]
+            properties:
+              mutes: { type: array, items: { $ref: "#/components/schemas/Mute" } }
+    BadRequest:
+      description: The request was not valid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: This caller may not do this.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such alert.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: The alert is resolved.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Severity:
+      type: string
+      enum: [info, warning, critical]
+    Raise:
+      type: object
+      required: [key, severity, title]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 200, description: "Names the problem within the source, e.g. down:norn." }
+        severity: { $ref: "#/components/schemas/Severity" }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        detail: { type: string, maxLength: 2000 }
+        link: { type: string, maxLength: 1000 }
+        traceId: { type: string }
+        expiresAt: { type: string, format: date-time, description: Resolved by Gjallar once this passes. }
+    RaiseResult:
+      type: object
+      required: [alert, change]
+      properties:
+        alert: { $ref: "#/components/schemas/Alert" }
+        change: { type: string, enum: [opened, reopened, escalated, updated] }
+    Alert:
+      type: object
+      required: [id, source, key, severity, title, state, count, firstSeenAt, lastSeenAt, muted]
+      properties:
+        id: { type: integer }
+        source: { type: string }
+        key: { type: string }
+        severity: { $ref: "#/components/schemas/Severity" }
+        title: { type: string }
+        detail: { type: string }
+        link: { type: string }
+        traceId: { type: string }
+        state: { type: string, enum: [open, acknowledged, resolved] }
+        count: { type: integer }
+        firstSeenAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        acknowledgedAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time }
+        snoozedUntil: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        muted: { type: boolean }
+    Event:
+      type: object
+      required: [at, kind, by]
+      properties:
+        at: { type: string, format: date-time }
+        kind: { type: string, description: "opened, reopened, escalated, resolved, acknowledged, snoozed" }
+        by: { type: string }
+        note: { type: string }
+    Mute:
+      type: object
+      required: [source, key, at]
+      properties:
+        source: { type: string }
+        key: { type: string }
+        at: { type: string, format: date-time }

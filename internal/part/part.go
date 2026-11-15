@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"yggdrasil/api"
 )
 
 // Owner is the caller name for you: the widget, the dashboard, the CLI.
@@ -37,6 +39,7 @@ type Part struct {
 	loops   []*Loop
 	started time.Time
 	logger  *log.Logger
+	routes  []string
 }
 
 // New makes a part. tokens maps a token to its caller's name; origins are the
@@ -51,6 +54,14 @@ func New(name string, tokens map[string]string, origins []string) *Part {
 		logger:  log.New(log.Writer(), "["+name+"] ", log.LstdFlags),
 	}
 	p.mux.HandleFunc("GET /health", p.health)
+	p.routes = append(p.routes, "GET /health")
+	if spec := api.Spec(name); spec != nil {
+		p.mux.HandleFunc("GET /openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/yaml")
+			_, _ = w.Write(spec)
+		})
+		p.routes = append(p.routes, "GET /openapi.yaml")
+	}
 	return p
 }
 
@@ -70,6 +81,7 @@ func Caller(r *http.Request) string {
 // Handle adds a route that needs a token. pattern is a net/http pattern,
 // e.g. "POST /v1/alerts/{id}/ack".
 func (p *Part) Handle(pattern string, handler http.HandlerFunc) {
+	p.routes = append(p.routes, pattern)
 	p.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 		caller, ok := p.authenticate(r)
 		if !ok {
@@ -91,6 +103,12 @@ func (p *Part) authenticate(r *http.Request) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Routes is every route the part serves, as "METHOD /path" patterns. A test
+// holds them against the part's contract.
+func (p *Part) Routes() []string {
+	return append([]string{}, p.routes...)
 }
 
 // ServeHTTP answers CORS for the allowed origins, then routes.

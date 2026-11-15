@@ -1,0 +1,268 @@
+openapi: 3.1.0
+info:
+  title: Veðrfölnir
+  version: "1"
+  description: |
+    Reports on the machine: CPU, memory, disks, GPUs, and the services and
+    containers running on it. Fixes nothing. The shapes are those of
+    my-agent's runner, so my-widget's system and services pages read either.
+    Any program that serves this contract and passes
+    `ygg check vedrfolnir <url>` can replace the built-in one
+    (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - Raise on Gjallar: `disk:<mount>` (warning at 90 %, critical at 95 %),
+      `failed:<service id>` for a failed unit or a container that crashed or
+      keeps restarting. Down after 2 failures in a row, up after 2 passes.
+    - Leave out Yggdrasil's own containers (compose project `yggdrasil`) and
+      units (`ygg-*`): Ratatoskr watches those. Leave out HTTP servers that
+      don't answer: that is Munin's.
+servers:
+  - url: http://127.0.0.1:8773
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/system:
+    get:
+      summary: What answers at once. CPU, memory, disks and pressure, with an hour of 5 s samples.
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [kernel, cores, uptimeSeconds, memTotalBytes, swapTotalBytes, load, disks, history]
+                properties:
+                  kernel: { type: string }
+                  cores: { type: integer }
+                  uptimeSeconds: { type: integer }
+                  memTotalBytes: { type: number }
+                  swapTotalBytes: { type: number }
+                  load: { type: array, items: { type: number }, minItems: 3, maxItems: 3 }
+                  disks: { type: array, items: { $ref: "#/components/schemas/Disk" } }
+                  history: { type: array, items: { $ref: "#/components/schemas/Sample" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/system/windows:
+    get:
+      summary: The host as Windows sees it. Empty without Windows interop. Takes a second the first time.
+      responses:
+        "200":
+          description: The host, or nothing.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  windows:
+                    type: object
+                    required: [at, totalBytes, freeBytes, vmBytes]
+                    properties:
+                      at: { type: integer, description: Epoch ms. }
+                      totalBytes: { type: integer }
+                      freeBytes: { type: integer }
+                      vmBytes: { type: integer, description: What Task Manager shows the WSL VM using. }
+                      cpu: { type: number, description: The whole host, 100 is every core. }
+                      cores: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/system/gpu:
+    get:
+      summary: GPU use, from Windows' counters and from WSL (nvidia-smi, or Windows' count for the VM).
+      responses:
+        "200":
+          description: The GPUs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [wslGpu]
+                properties:
+                  windowsGpus: { type: array, items: { $ref: "#/components/schemas/GPU" } }
+                  wslGpu:
+                    type: object
+                    required: [source, gpus]
+                    properties:
+                      source: { type: string, enum: [nvidia-smi, windows, none] }
+                      gpus: { type: array, items: { $ref: "#/components/schemas/GPU" } }
+                      reason: { type: string }
+                      vms: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/system/consumers:
+    get:
+      summary: The 12 biggest consumers, by CPU then memory, grouped by the service they belong to. Takes a second the first time.
+      responses:
+        "200":
+          description: The consumers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [consumers]
+                properties:
+                  consumers:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, processes, cpu, memoryBytes]
+                      properties:
+                        serviceId: { type: string, description: The services page's id; absent for a plain process. }
+                        name: { type: string }
+                        processes: { type: integer }
+                        cpu: { type: number, description: Percent of one core, like top. }
+                        memoryBytes: { type: number }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/services:
+    get:
+      summary: Your systemd user units, compose containers and local HTTP servers, with what each uses.
+      responses:
+        "200":
+          description: The services.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Service" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/services/{id}/logs:
+    get:
+      summary: The last lines a unit or container logged. An HTTP server has none.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, example: "systemd:planlab" }
+        - name: lines
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 60 }
+      responses:
+        "200":
+          description: The lines, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lines]
+                properties:
+                  lines: { type: array, items: { type: string } }
+        "400":
+          description: Not a service name, or the log could not be read.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Disk:
+      type: object
+      required: [mount, label, side, sizeBytes, freeBytes]
+      properties:
+        mount: { type: string }
+        label: { type: string }
+        side: { type: string, enum: [wsl, windows] }
+        sizeBytes: { type: number }
+        freeBytes: { type: number }
+    Sample:
+      type: object
+      required: [at, cpu, load, memUsedBytes, memCacheBytes, swapUsedBytes, pressure]
+      properties:
+        at: { type: integer, description: Epoch ms. }
+        cpu: { type: number, description: Percent of all cores. }
+        load: { type: number }
+        memUsedBytes: { type: number }
+        memCacheBytes: { type: number }
+        swapUsedBytes: { type: number }
+        pressure:
+          type: object
+          required: [cpu, memory, io]
+          properties:
+            cpu: { type: number }
+            memory: { type: number }
+            io: { type: number }
+    GPU:
+      type: object
+      required: [name, utilization, memoryUsedBytes]
+      properties:
+        name: { type: string }
+        utilization: { type: number, description: The busiest engine, 0-100. }
+        memoryUsedBytes: { type: number }
+        memoryTotalBytes: { type: number }
+    Use:
+      type: object
+      required: [utilization, memoryBytes]
+      properties:
+        utilization: { type: number }
+        memoryBytes: { type: number }
+    Service:
+      type: object
+      required: [id, kind, name, description, state, detail]
+      properties:
+        id: { type: string, description: "systemd:<unit>, docker:<container> or http:<name>" }
+        kind: { type: string, enum: [systemd, docker, http] }
+        name: { type: string }
+        description: { type: string }
+        state: { type: string, enum: [running, stopped, failed, starting, unknown] }
+        detail: { type: string }
+        since: { type: integer, description: Epoch ms it entered its current state. }
+        memoryBytes: { type: integer }
+        cpuSeconds: { type: integer }
+        group: { type: string, description: The compose project. }
+        usage:
+          type: object
+          required: [cpu, memoryBytes, processes]
+          properties:
+            cpu: { type: number }
+            memoryBytes: { type: number }
+            processes: { type: integer }
+        gpu: { $ref: "#/components/schemas/Use" }
+        host: { type: string, enum: [windows, wsl], description: For an HTTP server, which side listens on its port. }
+        serviceId: { type: string, description: For an HTTP server in WSL, the unit or container it is. }

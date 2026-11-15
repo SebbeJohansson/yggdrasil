@@ -332,7 +332,7 @@ type Status struct {
 }
 
 func (m *Munin) status(w http.ResponseWriter, _ *http.Request) {
-	status := Status{Checks: m.watch.States()}
+	status := Status{Targets: []Seen{}, Checks: m.watch.States()}
 	m.mu.Lock()
 	for _, target := range m.Targets {
 		if seen, ok := m.seen[target.Name]; ok {

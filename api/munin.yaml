@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: Munin
+  version: "1"
+  description: |
+    Checks the systems outside Yggdrasil that the parts depend on. Fixes
+    nothing and holds no one's credentials. Any program that serves this
+    contract and passes `ygg check munin <url>` can replace the built-in one
+    (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - Down after 2 failures in a row, up after 2 passes, raised on Gjallar as
+      `down:<name>`, `models:<name>`, `incident:<name>` (warning, or info for a
+      minor incident).
+    - When this machine is offline, raise one `offline` alert and leave the
+      internet targets as they were.
+    - Reachability only. An expired sign-in belongs to the part holding it,
+      resource levels to Veðrfölnir, Yggdrasil's own parts to Ratatoskr.
+servers:
+  - url: http://127.0.0.1:8776
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/status:
+    get:
+      summary: Every target as last seen, and every check.
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [targets, checks]
+                properties:
+                  targets:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, kind, url, local, up]
+                      properties:
+                        name: { type: string }
+                        kind: { type: string, enum: [http, ollama, statuspage] }
+                        url: { type: string }
+                        local: { type: boolean, description: On this machine; checked every minute, the rest every 5. }
+                        up: { type: boolean }
+                        detail: { type: string }
+                        checkedAt: { type: string, format: date-time }
+                  checks: { type: array, items: { $ref: "#/components/schemas/Check" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Check:
+      type: object
+      required: [key, down, fails, passes, since, checkedAt, raised]
+      properties:
+        key: { type: string }
+        down: { type: boolean }
+        severity: { type: string, enum: [info, warning, critical] }
+        title: { type: string }
+        detail: { type: string }
+        fails: { type: integer }
+        passes: { type: integer }
+        since: { type: string, format: date-time }
+        checkedAt: { type: string, format: date-time }
+        raised: { type: boolean }
