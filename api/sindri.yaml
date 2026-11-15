@@ -701,6 +701,52 @@ paths:
         "201": { $ref: "#/components/responses/Goal" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/sessions:
+    get:
+      summary: Your own Claude Code sessions from the last day, newest first, read from their transcripts. Sindri's agents are left out.
+      responses:
+        "200":
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, path, title, lastActivity, working]
+                  properties:
+                    id: { type: string }
+                    path: { type: string, description: The transcript. }
+                    title: { type: string }
+                    cwd: { type: string }
+                    project: { type: string }
+                    lastActivity: { type: integer }
+                    lastPrompt: { type: string }
+                    lastText: { type: string }
+                    working: { type: boolean, description: Changed in the last two minutes and the turn has not ended. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/activity:
+    get:
+      summary: Per day, sessions started, agents started and branches merged.
+      parameters:
+        - { name: tz, in: query, schema: { type: string }, description: An IANA time zone; the machine's by default. }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 800, default: 365 } }
+      responses:
+        "200":
+          description: The days, keyed 2026-11-15.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  required: [sessions, agents, merges]
+                  properties:
+                    sessions: { type: integer }
+                    agents: { type: integer }
+                    merges: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/goals/candidates:
     get:
       summary: The open "- [ ]" lines of a project's TODO.md, or your open Linear issues, each ready to post as a goal. A goal from Linear moves its issue along as the goal moves.

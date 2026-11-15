@@ -25,6 +25,8 @@ const Name = "sindri"
 type Sindri struct {
 	Agents *Manager
 	Root   string
+	// ClaudeProjects is where Claude Code keeps transcripts (~/.claude/projects).
+	ClaudeProjects string
 	// Work hands work to agents and follows them; nil serves the agents alone.
 	Work *Work
 }
@@ -32,6 +34,8 @@ type Sindri struct {
 // Mount adds Sindri's routes and loops to the part.
 func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("GET /v1/agents", s.list)
+	p.Handle("GET /v1/sessions", s.sessions)
+	p.Handle("GET /v1/activity", s.activity)
 	p.Handle("POST /v1/agents", s.start)
 	p.Handle("GET /v1/agents/{id}", s.get)
 	p.Handle("POST /v1/agents/{id}/prompt", s.prompt)

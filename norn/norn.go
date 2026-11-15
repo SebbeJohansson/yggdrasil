@@ -107,6 +107,7 @@ func (n *Norn) Mount(p *part.Part) {
 	p.Handle("PATCH /v1/settings/widgets", n.setWidgetSettings)
 	p.Handle("GET /v1/conversations", n.conversations)
 	p.Handle("GET /v1/search", n.search)
+	p.Handle("GET /v1/activity", n.activity)
 	p.Handle("GET /v1/chat/llm-calls", n.llmCalls)
 	p.Handle("POST /v1/systemone", n.systemOne)
 	n.mountAccounts(p)

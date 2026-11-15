@@ -66,7 +66,8 @@ func Main(ctx context.Context) error {
 		AskCwd:           env.String("SINDRI_ASK_CWD", filepath.Join(roots[0], "yggdrasil", "workspace")),
 		AutoAllowDefault: env.String("AUTO_ALLOW", "true") == "true",
 	}
-	s := &Sindri{Agents: agents, Root: agents.roots[0], Work: work}
+	s := &Sindri{Agents: agents, Root: agents.roots[0], Work: work,
+		ClaudeProjects: env.String("CLAUDE_PROJECTS", filepath.Join(home, ".claude", "projects"))}
 	s.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }
