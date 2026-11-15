@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"yggdrasil/api"
 	"yggdrasil/gjallar"
 	"yggdrasil/internal/contract"
+	"yggdrasil/internal/migrate"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/where"
 	"yggdrasil/munin"
@@ -43,6 +45,7 @@ var parts = map[string]struct {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ygg <part>    run one part of Yggdrasil")
 	fmt.Fprintln(os.Stderr, "       ygg check <part> [url]   check a running part, built-in or not, against its contract")
+	fmt.Fprintln(os.Stderr, "       ygg migrate from-my-agent|to-my-agent [--replace]   move your data between my-agent and Yggdrasil")
 	fmt.Fprintln(os.Stderr, "       ygg version")
 	fmt.Fprintln(os.Stderr, "\nparts:")
 	names := make([]string, 0, len(parts))
@@ -56,6 +59,9 @@ func usage() {
 }
 
 func main() {
+	if len(os.Args) >= 3 && os.Args[1] == "migrate" {
+		os.Exit(migrateCommand(os.Args[2:]))
+	}
 	if len(os.Args) >= 3 && os.Args[1] == "check" {
 		os.Exit(check(os.Args[2:]))
 	}
@@ -125,5 +131,56 @@ func check(args []string) int {
 		return 1
 	}
 	fmt.Println("Meets the contract.")
+	return 0
+}
+
+// migrateCommand moves your data between my-agent and Yggdrasil. Stop both
+// first: the databases must not change while they move.
+func migrateCommand(args []string) int {
+	direction := args[0]
+	home, _ := os.UserHomeDir()
+	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	myAgent := flags.String("my-agent", filepath.Join(home, "projects/my-agent"), "my-agent's checkout (its data/ folder holds agent.db and the sign-ins)")
+	runner := flags.String("runner", filepath.Join(home, ".local/state/my-agent-runner/agents.json"), "the runner's agents")
+	ygg := flags.String("yggdrasil", filepath.Join(home, "projects/yggdrasil"), "Yggdrasil's checkout (its data/ folder holds norn.db and the sign-ins)")
+	state := flags.String("state", filepath.Join(home, ".local/state/yggdrasil"), "where Sindri keeps sindri.db and its agents")
+	replace := flags.Bool("replace", false, "empty what the target already holds first (it is backed up)")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	paths := migrate.Paths{
+		AgentDB: filepath.Join(*myAgent, "data", "agent.db"), AgentData: filepath.Join(*myAgent, "data"), RunnerState: *runner,
+		NornDB: filepath.Join(*ygg, "data", "norn.db"), NornData: filepath.Join(*ygg, "data"),
+		SindriDB: filepath.Join(*state, "sindri.db"), SindriState: filepath.Join(*state, "sindri-agents.json"),
+	}
+	var report *migrate.Report
+	var err error
+	switch direction {
+	case "from-my-agent":
+		report, err = migrate.FromMyAgent(paths, migrate.Options{Replace: *replace})
+	case "to-my-agent":
+		report, err = migrate.ToMyAgent(paths, migrate.Options{Replace: *replace})
+	default:
+		usage()
+		return 2
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ygg migrate:", err)
+		return 1
+	}
+	for _, path := range report.Backup {
+		fmt.Println("backed up", path)
+	}
+	names := make([]string, 0, len(report.Rows))
+	for name := range report.Rows {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Printf("%-22s %d\n", name, report.Rows[name])
+	}
+	for _, file := range report.Files {
+		fmt.Println("wrote", file)
+	}
 	return 0
 }

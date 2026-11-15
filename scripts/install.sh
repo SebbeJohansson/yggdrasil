@@ -62,6 +62,24 @@ GJALLAR_TOKEN=$sindri
 NORN_TOKEN=$sindri
 YGG_CORS_ORIGINS=$origins
 EOF
+	# Settings my-agent already has, carried over once: the Google client,
+	# Laya, Linear and the models. Values are copied, never printed.
+	legacy="${MY_AGENT_ENV:-$(dirname "$PWD")/my-agent/.env}"
+	carry() {
+		value=$(grep -E "^$1=" "$legacy" 2>/dev/null | tail -1 | cut -d= -f2-)
+		[ -n "$value" ] || return 0
+		grep -vE "^$1=" "$2" >"$2.tmp" || true
+		printf '%s=%s\n' "$1" "$value" >>"$2.tmp"
+		mv "$2.tmp" "$2"
+		echo "  carried $1 over from my-agent into $(basename "$2")"
+	}
+	for key in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET LAYA_KEY TYPESAFE_KEY TIME_ZONE INBOX_JUDGE INBOX_JUDGE_MODEL SUMMARY_MODEL ASK_MODEL DISPATCH_MODEL EMBED_MODEL CHAT_URL OLLAMA_URL LAYA_URL; do
+		carry "$key" "$config/norn.env"
+	done
+	for key in LINEAR_KEY DELEGATE_MODEL AUTO_ALLOW; do
+		carry "$key" "$config/sindri.env"
+	done
+	carry LINEAR_KEY "$config/norn.env"
 	cat >"$config/munin.env" <<EOF
 MUNIN_TOKENS=owner=$owner
 GJALLAR_TOKEN=$munin
