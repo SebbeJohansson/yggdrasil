@@ -101,7 +101,7 @@ type Reaction struct {
 }
 
 // Events are the events a trigger can name.
-var Events = []string{"inbox.arrived", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "alert.opened", "alert.escalated", "alert.resolved"}
+var Events = []string{"inbox.arrived", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo"}
 
 var (
 	yes      = true
@@ -123,6 +123,8 @@ func BuiltIn() []Rule {
 			Action: Action{Kind: "ask", Text: briefAsk}, Deliver: both, Hold: true},
 		{ID: "alert-impact", Name: "Critical alert", On: Trigger{Event: "alert.opened", Severity: []string{"critical"}},
 			Action: Action{Kind: "alert-impact"}, Deliver: both},
+		{ID: "linear-todo", Name: "Linear ticket with no goal", On: Trigger{Event: "linear.todo"},
+			Action: Action{Kind: "notify", Text: "{key} is in {state} and no goal has it: {title}. Add it as a goal?"}, Deliver: both, Hold: true},
 	}
 }
 
@@ -133,8 +135,10 @@ type Huginn struct {
 	Sindri  *call.Part
 	Gjallar *alert.Client
 	// Tell carries reactions to you (Hermóðr).
-	Tell    tell.Teller
-	Zone    *time.Location
+	Tell tell.Teller
+	Zone *time.Location
+	// DashboardURL is where a suggestion links to (the Goals page).
+	DashboardURL string
 	// Streams are Norn's and Gjallar's; nil in tests.
 	Streams []*sse.Stream
 
@@ -142,9 +146,9 @@ type Huginn struct {
 	logf    func(string, ...any)
 	mu      sync.Mutex
 	started bool
-	alerts   map[int64]alertSeen
-	told     map[string]string
-	raised   map[string]bool
+	alerts  map[int64]alertSeen
+	told    map[string]string
+	raised  map[string]bool
 }
 
 type alertSeen struct {
@@ -184,6 +188,7 @@ func (h *Huginn) Mount(p *part.Part) {
 	p.Handle("GET /v1/reactions", h.reactions)
 	p.Loop("streams", 30*time.Second, h.watchStreams)
 	p.Loop("forget", time.Hour, h.forget)
+	p.Loop("linear", LinearEvery, h.watchLinear)
 }
 
 // --- routes ---

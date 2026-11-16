@@ -14,9 +14,9 @@ import (
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/call"
 	"yggdrasil/internal/contract/contracttest"
-	"yggdrasil/internal/tell"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/sse"
+	"yggdrasil/internal/tell"
 )
 
 type fakeParts struct {

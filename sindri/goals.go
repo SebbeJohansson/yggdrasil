@@ -313,6 +313,9 @@ type Candidate struct {
 	Repos   []string `json:"repos"`
 	URL     string   `json:"url,omitempty"`
 	Goal    *int64   `json:"goal,omitempty"`
+	// State and StateType are a Linear issue's: "Todo", "unstarted".
+	State     string `json:"state,omitempty"`
+	StateType string `json:"stateType,omitempty"`
 }
 
 var (

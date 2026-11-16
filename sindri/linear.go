@@ -44,7 +44,8 @@ func LinearCandidates(ctx context.Context, client *linear.Client, filter linear.
 		if issue.Description != nil && *issue.Description != "" {
 			context = *issue.Description + "\n\n" + issue.URL
 		}
-		c := Candidate{Source: source, Title: clip(issue.Title, 200), Context: clip(context, MaxGoalContext), Repos: []string{}, URL: issue.URL}
+		c := Candidate{Source: source, Title: clip(issue.Title, 200), Context: clip(context, MaxGoalContext), Repos: []string{}, URL: issue.URL,
+			State: issue.State.Name, StateType: issue.State.Type}
 		if id, ok := known[source]; ok {
 			c.Goal = &id
 		}

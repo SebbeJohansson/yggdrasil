@@ -178,6 +178,11 @@ type Listed struct {
 	Title       string  `json:"title"`
 	URL         string  `json:"url"`
 	Description *string `json:"description"`
+	State       struct {
+		Name string `json:"name"`
+		// Type is triage, backlog, unstarted (Todo), started, completed or canceled.
+		Type string `json:"type"`
+	} `json:"state"`
 }
 
 // Assignees are whose issues to list: the key owner's, nobody's, or everyone's.
@@ -209,7 +214,7 @@ func (c *Client) Open(ctx context.Context, filter Filter) ([]Listed, error) {
 		} `json:"issues"`
 	}
 	err := c.query(ctx, 8*time.Second,
-		`query($filter: IssueFilter) { issues(filter: $filter, first: 50, orderBy: updatedAt) { nodes { identifier title url description } } }`,
+		`query($filter: IssueFilter) { issues(filter: $filter, first: 50, orderBy: updatedAt) { nodes { identifier title url description state { name type } } } }`,
 		map[string]any{"filter": where}, &data)
 	return data.Issues.Nodes, err
 }

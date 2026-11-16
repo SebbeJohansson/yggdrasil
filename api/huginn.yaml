@@ -5,8 +5,10 @@ info:
   description: |
     Reacts to what just happened, so you hear about it without asking:
     an important message, a meeting that just landed in the next hour, an
-    alert that stops your agents. It follows Norn's and Gjallar's event
-    streams and runs a rule for each event that matches one. Time-based jobs
+    alert that stops your agents, a Linear ticket in Todo that no goal has.
+    It follows Norn's and Gjallar's event streams, looks at your Linear
+    tickets through Sindri every 5 minutes, and runs a rule for each event
+    that matches one. Time-based jobs
     belong to Dellingr. Any program that serves this contract and passes
     `ygg check huginn <url>` can replace the built-in one
     (docs/replacing-a-part.md).
@@ -25,6 +27,10 @@ info:
       and only the owner can enable it.
     - Missed events are fetched again with `Last-Event-ID` after a
       reconnect. An event older than an hour is recorded, not delivered.
+    - linear.todo: one of your Linear tickets is in Todo (state type
+      unstarted), no goal has it (Sindri's `GET /v1/goals/candidates`), and
+      Norn, asked with `/local`, says it is development work. Each ticket is
+      judged once. Huginn only suggests: the goal is added by you.
     - A stream that stays down for 5 minutes is raised on Gjallar as
       `stream:<part>` (warning).
 servers:
@@ -228,7 +234,7 @@ components:
       properties:
         id: { type: string }
         enabled: { type: boolean }
-        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact." }
+        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact, linear-todo." }
         createdBy: { type: string, description: owner, or the name of the part or agent that made it. }
         lastFiredAt: { type: string, format: date-time }
         lastResult: { type: string, enum: [delivered, failed, skipped] }
@@ -239,7 +245,7 @@ components:
       properties:
         event:
           type: string
-          enum: [inbox.arrived, calendar.added, calendar.moved, calendar.removed, calendar.ended, alert.opened, alert.escalated, alert.resolved]
+          enum: [inbox.arrived, calendar.added, calendar.moved, calendar.removed, calendar.ended, alert.opened, alert.escalated, alert.resolved, linear.todo]
         relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived only. }
         band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived only. }
         direct: { type: boolean, description: inbox.arrived only. }

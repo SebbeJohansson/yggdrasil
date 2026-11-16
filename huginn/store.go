@@ -23,6 +23,11 @@ CREATE TABLE IF NOT EXISTS reactions (
 	body  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS reactions_at ON reactions (at);
+CREATE TABLE IF NOT EXISTS linear_judged (
+	key TEXT PRIMARY KEY,
+	dev INTEGER NOT NULL,
+	at  INTEGER NOT NULL
+);
 `
 
 // Store keeps the rules and the last week of reactions.
@@ -126,6 +131,22 @@ func (s *Store) Reactions(ctx context.Context, state string, limit int) ([]React
 		}
 	}
 	return reactions, rows.Err()
+}
+
+// Judged is whether Norn already judged the Linear ticket, and what it said.
+func (s *Store) Judged(ctx context.Context, key string) (dev, judged bool, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT dev FROM linear_judged WHERE key = ?`, key).Scan(&dev)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	return dev, err == nil, err
+}
+
+// Judge keeps Norn's judgement of a ticket, so it is asked once.
+func (s *Store) Judge(ctx context.Context, key string, dev bool) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO linear_judged (key, dev, at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET dev = excluded.dev`,
+		key, dev, time.Now().UnixMilli())
+	return err
 }
 
 // Forget removes reactions older than before.

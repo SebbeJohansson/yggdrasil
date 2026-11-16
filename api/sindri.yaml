@@ -993,6 +993,8 @@ paths:
                         repos: { type: array, items: { type: string } }
                         url: { type: string }
                         goal: { type: integer, description: The goal that already has this source. }
+                        state: { type: string, description: "linear: the issue's state, e.g. Todo." }
+                        stateType: { type: string, description: "linear: triage, backlog, unstarted, started, completed or canceled." }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }

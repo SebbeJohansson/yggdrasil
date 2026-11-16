@@ -23,9 +23,10 @@ import (
 //	HUGINN_DB        the SQLite file (data/huginn.db)
 //	YGG_NORN_URL     Norn; NORN_TOKEN is Huginn's token there (its events and /v1/ask)
 //	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Huginn's token there (its alert stream, and stream:<part>)
-//	YGG_SINDRI_URL   Sindri; SINDRI_TOKEN is Huginn's token there (reads the agents)
+//	YGG_SINDRI_URL   Sindri; SINDRI_TOKEN is Huginn's token there (reads the agents and your Linear tickets)
 //	YGG_HERMODR_URL  Hermóðr, which holds and carries reactions to you; HERMODR_TOKEN is Huginn's token there
 //	TIME_ZONE        yours (Europe/Stockholm)
+//	DASHBOARD_URL    where a Linear suggestion links to (http://localhost:17420); off for no link
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("HUGINN_TOKENS")
 	if err != nil {
@@ -59,6 +60,7 @@ func Main(ctx context.Context) error {
 		return err
 	}
 	now := time.Now()
+	h.DashboardURL = env.String("DASHBOARD_URL", "http://localhost:17420")
 	h.Streams = []*sse.Stream{
 		sse.New("norn", where.URL("norn")+"/v1/events/stream", nornToken, now),
 		sse.New("gjallar", where.URL("gjallar")+"/v1/alerts/stream", gjallarToken, now),
