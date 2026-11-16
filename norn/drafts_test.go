@@ -39,7 +39,7 @@ func TestDraftPromptCarriesWhoAndWhereAndOnlyWhatIsKnown(t *testing.T) {
 	item := Item{Source: "teams", From: "Anna Berg", Subject: "Q4", Preview: "Can you look at the numbers?", Text: "Can you look at the numbers before Friday? The sheet is in the channel."}
 	messages := DraftMessages(item, "manager", "I lead the AI team.", []Memory{{Text: "Anna owns the Q4 budget"}}, []string{"Tue 14:00-15:00 Sprint review"})
 	system, user := messages[0].Content, messages[1].Content
-	for _, want := range []string{"Teams chat", "language of the message", "[square brackets]", "I lead the AI team.", "Anna owns the Q4 budget", "Sprint review"} {
+	for _, want := range []string{"Teams chat", "language of the message", "[square brackets]", "Never add a signature", "I lead the AI team.", "Anna owns the Q4 budget", "Sprint review"} {
 		if !strings.Contains(system, want) {
 			t.Errorf("system prompt lacks %q", want)
 		}
@@ -53,6 +53,23 @@ func TestDraftPromptCarriesWhoAndWhereAndOnlyWhatIsKnown(t *testing.T) {
 	mail := DraftMessages(Item{Source: "gmail", From: "x", Preview: strings.Repeat("a", PreviewChars)}, "", "", nil, nil)
 	if !strings.Contains(mail[0].Content, "an email") || !strings.Contains(mail[1].Content, "Only the start") {
 		t.Errorf("mail prompt: %v", mail)
+	}
+}
+
+func TestDraftsEndWithoutASignature(t *testing.T) {
+	cases := map[string]string{
+		"Hej Sanna\n\nDet låter bra.\n\nSebastian":                                 "Hej Sanna\n\nDet låter bra.",
+		"Hej Sanna,\n\nDet låter bra.\n\nVänliga hälsningar,\nSebastian":           "Hej Sanna,\n\nDet låter bra.",
+		"Hi Anna,\n\nSure, I'll look today.\n\nBest regards,\nSebastian Johansson": "Hi Anna,\n\nSure, I'll look today.",
+		"Mvh\nSebastian":                     "Mvh",
+		"Ja, jag tittar på det.\nSes då":     "Ja, jag tittar på det.\nSes då",
+		"Kan du skicka filen?\nTack!":        "Kan du skicka filen?",
+		"Okej, jag fixar det i eftermiddag.": "Okej, jag fixar det i eftermiddag.",
+	}
+	for in, want := range cases {
+		if got := cleanDraft(in); got != want {
+			t.Errorf("%q: got %q, want %q", in, got, want)
+		}
 	}
 }
 

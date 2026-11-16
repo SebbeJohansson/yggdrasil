@@ -72,8 +72,8 @@ func messageText(item Item) string {
 var channelStyle = map[string]string{
 	"teams":   "a Teams chat: short and plain, no greeting line or sign-off",
 	"slack":   "a Slack message: short and plain, no greeting line or sign-off",
-	"outlook": "an email: a short greeting with their first name, the reply, and a short sign-off",
-	"gmail":   "an email: a short greeting with their first name, the reply, and a short sign-off",
+	"outlook": "an email: a short greeting with their first name, then the reply",
+	"gmail":   "an email: a short greeting with their first name, then the reply",
 }
 
 // DraftMessages is the prompt for one reply.
@@ -83,6 +83,7 @@ func DraftMessages(item Item, relation, profile string, memories []Memory, calen
 	system.WriteString("Write only the reply text: no subject line, no quotes, no notes about the reply.\n")
 	system.WriteString("Write in the language of the message (Swedish to Swedish, English to English).\n")
 	system.WriteString("Reply as " + channelStyle[item.Source] + ". At most 120 words.\n")
+	system.WriteString("Never add a signature or sign-off: no closing line (Mvh, Vänliga hälsningar, Best regards, Thanks), and not the owner's name at the end. The reply ends with its last sentence.\n")
 	system.WriteString("Do not promise, decide or state anything the owner has not told you. Where they must fill something in, write it in [square brackets], like [time] or [yes/no].\n")
 	if profile != "" {
 		system.WriteString("\nAbout the owner:\n" + profile + "\n")
@@ -118,6 +119,26 @@ func DraftMessages(item Item, relation, profile string, memories []Memory, calen
 	return []llm.Message{{Role: "system", Content: system.String()}, {Role: "user", Content: user.String()}}
 }
 
+var (
+	// signOff is a closing line: what a model ends a reply with although told not to.
+	signOff = regexp.MustCompile(`(?i)^(mvh|med vänlig(a)? hälsning(ar)?|vänlig(a)? hälsning(ar)?|hälsningar|hälsning|tack( på förhand)?|tack igen|thanks( again| in advance)?|thank you|best( regards| wishes)?|kind regards|regards|cheers|all the best)[!.,]*$`)
+	// nameLine is a line of one to three capitalised words and nothing else: a name signed under a reply.
+	nameLine = regexp.MustCompile(`^\p{Lu}[\p{L}'-]*( \p{Lu}[\p{L}'-]*){0,2}$`)
+)
+
+// dropSignature takes a sign-off and a signed name off the end of a reply.
+func dropSignature(text string) string {
+	lines := strings.Split(strings.TrimRight(text, " \n"), "\n")
+	for len(lines) > 1 {
+		last := strings.TrimSpace(lines[len(lines)-1])
+		if last != "" && !signOff.MatchString(last) && !nameLine.MatchString(last) {
+			break
+		}
+		lines = lines[:len(lines)-1]
+	}
+	return strings.TrimRight(strings.Join(lines, "\n"), " \n,")
+}
+
 // cleanDraft takes off what a model puts around a reply despite being told not to.
 func cleanDraft(raw string) string {
 	text := strings.TrimSpace(raw)
@@ -126,7 +147,7 @@ func cleanDraft(raw string) string {
 			text = strings.TrimSpace(text[len(lead):])
 		}
 	}
-	return strings.Trim(text, "\"“”")
+	return dropSignature(strings.Trim(text, "\"“”"))
 }
 
 // WriteDraft writes, checks and keeps a reply for `item`.
