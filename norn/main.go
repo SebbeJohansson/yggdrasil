@@ -21,8 +21,9 @@ import (
 //	NORN_TOKENS      who may call it: owner=…,sindri=…
 //	NORN_DB          the SQLite file (data/norn.db)
 //	PROFILE_PATH     your profile, markdown (profile/profile.md)
-//	OLLAMA_URL       Ollama (http://127.0.0.1:11434)
+//	OLLAMA_URL       Ollama (http://127.0.0.1:11434); off: no Ollama at all, so no fallback, no Ollama judge and no embeddings (memory recall by recency)
 //	CHAT_URL         an OpenAI-compatible server asked first (XeStrata, http://127.0.0.1:8095/v1); off: Ollama only
+//	OLLAMA_FALLBACK  off: never ask Ollama when XeStrata fails; the call fails instead (on). Embeddings still use Ollama
 //	EMBED_MODEL      for memory recall (nomic-embed-text)
 //	MEMORY_LEARN     false keeps memory read-only (true)
 //	LAYA_URL, LAYA_KEY  Laya, for the judge, the tone badge and /v1/systemone
@@ -32,7 +33,7 @@ import (
 //	DISPATCH_KEEP_ALIVE  how long Ollama keeps it loaded after a call (unset: Ollama's own 5m)
 //	WARM_EVERY       how long XeStrata may sit idle before Norn asks it for a token (2m); off: never
 //	YGG_SINDRI_URL   Sindri, for coding and questions that need tools; SINDRI_TOKEN is Norn's token there (unset: agents off)
-//	INBOX_JUDGE      laya, typesafe, ollama or off (laya); INBOX_JUDGE_MODEL, TYPESAFE_KEY
+//	INBOX_JUDGE      laya, typesafe, xestrata, ollama or off (laya; when Laya doesn't answer, Ollama, or XeStrata with Ollama off); INBOX_JUDGE_MODEL, TYPESAFE_KEY
 //	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  your own Google "Desktop app" OAuth client; unset is no Google
 //	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Norn's token there (a sign-in that ended is raised)
 func Main(ctx context.Context) error {
@@ -55,9 +56,14 @@ func Main(ctx context.Context) error {
 	if chatURL == "off" {
 		chatURL = ""
 	}
+	ollamaURL := env.String("OLLAMA_URL", "http://127.0.0.1:11434")
+	if ollamaURL == "off" {
+		ollamaURL = ""
+	}
 	client := &llm.Client{
 		PrimaryURL: chatURL,
-		OllamaURL:  env.String("OLLAMA_URL", "http://127.0.0.1:11434"),
+		OllamaURL:  ollamaURL,
+		NoFallback: chatURL != "" && env.String("OLLAMA_FALLBACK", "on") == "off",
 		Warn:       p.Logf,
 		Record: func(call llm.Call) {
 			if err := store.AddCall(context.Background(), call); err != nil {
@@ -81,7 +87,7 @@ func Main(ctx context.Context) error {
 			LayaURL:     env.String("LAYA_URL", "http://127.0.0.1:8000"),
 			LayaKey:     env.String("LAYA_KEY", ""),
 			TypesafeKey: env.String("TYPESAFE_KEY", ""),
-			OllamaURL:   env.String("OLLAMA_URL", "http://127.0.0.1:11434"),
+			OllamaURL:   ollamaURL,
 			OllamaModel: env.String("INBOX_JUDGE_MODEL", ""),
 		},
 		DataDir: filepath.Dir(dbPath),
@@ -97,6 +103,13 @@ func Main(ctx context.Context) error {
 			RewriteModel:    env.String("REWRITE_MODEL", "sonnet"),
 		},
 	}, store, client, p.Logf)
+	if chatURL != "" {
+		n.Config.Judge.Chat = client.Chat
+	}
+	if ollamaURL == "" {
+		// Embeddings come from Ollama only: without it, memory recall is by recency.
+		n.Brain.Embed = nil
+	}
 	n.Gjallar = alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", ""))
 	if token := env.String("SINDRI_TOKEN", ""); token != "" {
 		n.Sindri.URL, n.Sindri.Token = where.URL("sindri"), token

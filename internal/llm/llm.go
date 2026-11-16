@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -119,25 +120,38 @@ func WithExchange(ctx context.Context, session string, at time.Time) context.Con
 type Client struct {
 	// PrimaryURL is the OpenAI-compatible base URL, ending in /v1. Empty: Ollama only.
 	PrimaryURL string
-	OllamaURL  string
+	// OllamaURL is Ollama's base URL. Empty: no Ollama at all, for answers or embeddings.
+	OllamaURL string
 	// Record is handed every attempt.
 	Record func(Call)
 	Warn   func(format string, args ...any)
 	HTTP   *http.Client
+	// NoFallback never asks Ollama when XeStrata fails, whatever a call's
+	// options say: a failed answer beats a 5 GB model loading on the CPU.
+	NoFallback bool
 	// lastAnswer is when XeStrata last answered, in Unix ms, for KeepWarm.
 	lastAnswer atomic.Int64
 }
 
+// ErrNoModel is a client with neither XeStrata nor Ollama.
+var ErrNoModel = errors.New("no model server: CHAT_URL and OLLAMA_URL are both off")
+
+// ErrNoEmbeddings is a client without Ollama, which is what embeds.
+var ErrNoEmbeddings = errors.New("embeddings need Ollama, which is off")
+
 // Chat answers, from XeStrata or, when it fails, from Ollama.
 func (c *Client) Chat(ctx context.Context, messages []Message, options Options) (string, error) {
 	if c.PrimaryURL == "" {
+		if c.OllamaURL == "" {
+			return "", ErrNoModel
+		}
 		return c.attempt(ctx, "ollama", messages, options)
 	}
 	content, err := c.attempt(ctx, "xestrata", messages, options)
 	if err == nil {
 		return content, nil
 	}
-	if options.NoFallback {
+	if options.NoFallback || c.NoFallback || c.OllamaURL == "" {
 		return "", err
 	}
 	if c.Warn != nil {
@@ -375,6 +389,9 @@ func (c *Client) openaiChat(ctx context.Context, messages []Message, options Opt
 
 // Embed is one vector per input, in order, from Ollama.
 func (c *Client) Embed(ctx context.Context, model string, inputs []string) ([][]float64, error) {
+	if c.OllamaURL == "" {
+		return nil, ErrNoEmbeddings
+	}
 	var body struct {
 		Embeddings [][]float64 `json:"embeddings"`
 	}

@@ -789,7 +789,7 @@ var affects = []struct{ word, what string }{
 	{"anthropic", "Claude Code agents can't get answers"},
 	{"github", "pushes, pull requests and checks"},
 	{"ollama", "Norn's dispatch, asks and inbox summaries"},
-	{"xestrata", "Norn's answers (it falls back to Ollama)"},
+	{"xestrata", "Norn's answers, summaries and the inbox judge"},
 	{"laya", "the inbox judge and the tone badge"},
 	{"microsoft-graph", "Outlook, Teams and the work calendar"},
 	{"slack", "Slack in the inbox"},

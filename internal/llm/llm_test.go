@@ -68,3 +68,21 @@ func TestKeepWarmAsksOnlyWhenIdle(t *testing.T) {
 		t.Fatal("no XeStrata: KeepWarm should do nothing")
 	}
 }
+
+func TestNoFallbackNeverAsksOllama(t *testing.T) {
+	ollama := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/chat" {
+			ollama++
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	c := &Client{PrimaryURL: server.URL + "/v1", OllamaURL: server.URL, NoFallback: true}
+	if _, err := c.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, Options{Model: "qwen2.5:7b"}); err == nil {
+		t.Fatal("no error")
+	}
+	if ollama != 0 {
+		t.Fatalf("asked Ollama %d times", ollama)
+	}
+}

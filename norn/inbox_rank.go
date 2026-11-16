@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"yggdrasil/internal/llm"
 )
 
 // Weights of each rule in the score.
@@ -259,13 +261,15 @@ func ReadJudgement(body []byte) (Judgement, bool) {
 	return Judgement{Awaited: awaited, Consequence: math.Min(1, math.Max(0, level/top)), Confidence: confidence}, true
 }
 
-// JudgeBackend is who answers: Laya or TypeSafe (SystemOne), or Ollama.
+// JudgeBackend is who answers: Laya or TypeSafe (SystemOne), XeStrata or Ollama.
 type JudgeBackend struct {
 	ID    string
 	Label string
 	URL   string
 	Model string
 	Key   string
+	// Chat asks XeStrata (Norn's model client), for ID xestrata.
+	Chat func(context.Context, []llm.Message, llm.Options) (string, error)
 	// NeutralLabels hides "true"/"false" behind A/B, which Laya answers better.
 	NeutralLabels bool
 }
@@ -329,25 +333,59 @@ func (j *Judge) post(ctx context.Context, target, key string, payload any) ([]by
 	return data, nil
 }
 
+// judgePrompt is the system prompt and the message, for a judge that is a
+// plain model (XeStrata, Ollama) rather than SystemOne.
+func judgePrompt(item Item, reader string, now time.Time) (system, state string) {
+	levels := make([]string, len(ConsequenceLevels))
+	for i, level := range ConsequenceLevels {
+		levels[i] = fmt.Sprintf("%d: %s", i, level)
+	}
+	system = strings.Join([]string{
+		"You judge one unread message for its reader. Answer only with JSON.", "",
+		"awaited: " + awaitedInstructions, "Yes means: " + awaitedTrue, "No means: " + awaitedFalse,
+		"Give the probability (0 to 1) that the answer is yes.", "",
+		"consequence: " + consequenceText + " Pick the level that fits:", strings.Join(levels, "\n"),
+	}, "\n")
+	encoded, _ := json.Marshal(JudgeState(item, reader, now))
+	return system, string(encoded)
+}
+
+// judgeFormat is the JSON a plain model answers with.
+func judgeFormat() map[string]any {
+	return map[string]any{"type": "object", "required": []string{"awaited", "consequence"}, "properties": map[string]any{
+		"awaited":     map[string]any{"type": "number", "minimum": 0, "maximum": 1},
+		"consequence": map[string]any{"type": "integer", "minimum": 0, "maximum": len(ConsequenceLevels) - 1}}}
+}
+
+// readPlainJudgement reads a plain model's {awaited, consequence} as SystemOne's shape.
+func readPlainJudgement(content string) (Judgement, bool) {
+	var answer struct {
+		Awaited     any `json:"awaited"`
+		Consequence any `json:"consequence"`
+	}
+	if json.Unmarshal([]byte(content), &answer) != nil {
+		return Judgement{}, false
+	}
+	wrapped, _ := json.Marshal(map[string]any{"answers": map[string]any{"awaited": map[string]any{"noul": answer.Awaited}, "consequence": map[string]any{"score": answer.Consequence, "confidence": 0}}})
+	return ReadJudgement(wrapped)
+}
+
 func (j *Judge) one(ctx context.Context, backend JudgeBackend, item Item, reader string, now time.Time) (Judgement, bool) {
-	if backend.ID == "ollama" {
-		levels := make([]string, len(ConsequenceLevels))
-		for i, level := range ConsequenceLevels {
-			levels[i] = fmt.Sprintf("%d: %s", i, level)
+	if backend.ID == "xestrata" {
+		system, state := judgePrompt(item, reader, now)
+		content, err := backend.Chat(ctx, []llm.Message{{Role: "system", Content: system}, {Role: "user", Content: state}},
+			llm.Options{Purpose: "judge", Model: backend.Model, Temperature: 0, TopP: 1, MaxTokens: 60, Format: judgeFormat(), NoFallback: true})
+		if err != nil {
+			return Judgement{}, false
 		}
-		system := strings.Join([]string{
-			"You judge one unread message for its reader. Answer only with JSON.", "",
-			"awaited: " + awaitedInstructions, "Yes means: " + awaitedTrue, "No means: " + awaitedFalse,
-			"Give the probability (0 to 1) that the answer is yes.", "",
-			"consequence: " + consequenceText + " Pick the level that fits:", strings.Join(levels, "\n"),
-		}, "\n")
-		state, _ := json.Marshal(JudgeState(item, reader, now))
+		return readPlainJudgement(content)
+	}
+	if backend.ID == "ollama" {
+		system, state := judgePrompt(item, reader, now)
 		body, err := j.post(ctx, backend.URL+"/api/chat", "", map[string]any{
 			"model": backend.Model, "stream": false, "think": false, "keep_alive": "30m",
-			"format": map[string]any{"type": "object", "required": []string{"awaited", "consequence"}, "properties": map[string]any{
-				"awaited":     map[string]any{"type": "number", "minimum": 0, "maximum": 1},
-				"consequence": map[string]any{"type": "integer", "minimum": 0, "maximum": len(ConsequenceLevels) - 1}}},
-			"messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": string(state)}},
+			"format":   judgeFormat(),
+			"messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": state}},
 			"options":  map[string]any{"temperature": 0},
 		})
 		if err != nil {
@@ -356,15 +394,10 @@ func (j *Judge) one(ctx context.Context, backend JudgeBackend, item Item, reader
 		var reply struct {
 			Message struct{ Content string } `json:"message"`
 		}
-		var answer struct {
-			Awaited     any `json:"awaited"`
-			Consequence any `json:"consequence"`
-		}
-		if json.Unmarshal(body, &reply) != nil || json.Unmarshal([]byte(reply.Message.Content), &answer) != nil {
+		if json.Unmarshal(body, &reply) != nil {
 			return Judgement{}, false
 		}
-		wrapped, _ := json.Marshal(map[string]any{"answers": map[string]any{"awaited": map[string]any{"noul": answer.Awaited}, "consequence": map[string]any{"score": answer.Consequence, "confidence": 0}}})
-		return ReadJudgement(wrapped)
+		return readPlainJudgement(reply.Message.Content)
 	}
 	payload := map[string]any{"state": JudgeState(item, reader, now), "questions": judgeQuestions(backend.NeutralLabels)}
 	if backend.Model != "" {
@@ -419,14 +452,17 @@ func (j *Judge) JudgeAll(ctx context.Context, backend JudgeBackend, items []Item
 
 // JudgeSettings say who may judge.
 type JudgeSettings struct {
-	// Provider is laya, typesafe, ollama or off.
+	// Provider is laya, typesafe, xestrata, ollama or off.
 	Provider, LayaURL, LayaKey, TypesafeKey, OllamaURL, OllamaModel string
+	// Chat asks XeStrata; nil when there is no XeStrata (CHAT_URL off).
+	Chat func(context.Context, []llm.Message, llm.Options) (string, error)
 }
 
 var embedModel = regexp.MustCompile(`(?i)embed`)
 
-// PickJudge is Laya when it answers, TypeSafe when asked for, else Ollama
-// with whatever it has pulled; nil means the four rules alone.
+// PickJudge is Laya when it answers, TypeSafe when asked for, XeStrata when
+// asked for, else Ollama with whatever it has pulled, or XeStrata when Ollama
+// is off; nil means the four rules alone.
 func PickJudge(ctx context.Context, settings JudgeSettings, client *http.Client) *JudgeBackend {
 	provider := settings.Provider
 	if provider == "" {
@@ -454,6 +490,13 @@ func PickJudge(ctx context.Context, settings JudgeSettings, client *http.Client)
 	}
 	if provider == "typesafe" && settings.TypesafeKey != "" {
 		return &JudgeBackend{ID: "typesafe", Label: "TypeSafe", URL: "https://api.typesafe.ai/v1/systemone", Model: "jev-latest", Key: settings.TypesafeKey}
+	}
+	xestrata := &JudgeBackend{ID: "xestrata", Label: "XeStrata", Model: settings.OllamaModel, Chat: settings.Chat}
+	if provider == "xestrata" || settings.OllamaURL == "" {
+		if settings.Chat == nil {
+			return nil
+		}
+		return xestrata
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()

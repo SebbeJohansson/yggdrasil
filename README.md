@@ -46,7 +46,11 @@ docker compose up -d --build       # Norn, Gjallar, Munin, Huginn, Dellingr, and
 curl localhost:8775/health
 ```
 
-Settings and tokens are in `~/.config/yggdrasil/<part>.env`. Your owner token
+Settings and tokens are in `~/.config/yggdrasil/<part>.env`. Norn's models
+run on XeStrata (`CHAT_URL`). `OLLAMA_URL=off` in `norn.env` keeps Ollama out
+completely: no fallback, the inbox judge uses XeStrata when Laya doesn't
+answer (or always, with `INBOX_JUDGE=xestrata`), and memory recall goes by
+recency instead of embeddings. Your owner token
 is in `~/.config/yggdrasil/owner.token`:
 
 ```sh
