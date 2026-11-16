@@ -104,9 +104,13 @@ func (n *Norn) readWorkCalendar(ctx context.Context) error {
 	if status.State != "signed-in" || status.Scopes == nil || !status.Scopes.Calendar {
 		return nil
 	}
-	return n.Accounts.Work.readInto(func() (CalendarSnapshot, error) {
+	err := n.Accounts.Work.readInto(func() (CalendarSnapshot, error) {
 		return ReadOutlook(ctx, n.Accounts.Microsoft, n.Accounts.get, time.Now())
 	})
+	if err == nil {
+		n.calendarEvents("work", n.Accounts.Work)
+	}
+	return err
 }
 
 func (n *Norn) readPersonalCalendar(ctx context.Context) error {
@@ -117,9 +121,13 @@ func (n *Norn) readPersonalCalendar(ctx context.Context) error {
 	if n.Accounts.Google.Status().State != "signed-in" || !n.Accounts.Google.Grants().Calendar {
 		return nil
 	}
-	return n.Accounts.Personal.readInto(func() (CalendarSnapshot, error) {
+	err := n.Accounts.Personal.readInto(func() (CalendarSnapshot, error) {
 		return ReadGoogle(ctx, n.Accounts.Google, n.Accounts.get, time.Now(), n.logf)
 	})
+	if err == nil {
+		n.calendarEvents("personal", n.Accounts.Personal)
+	}
+	return err
 }
 
 type microsoftAnswer struct {

@@ -68,7 +68,9 @@ type Norn struct {
 	Gjallar  *alert.Client
 	Accounts *Accounts
 	Inbox    *Inbox
-	Zone     *time.Location
+	// Events is what just changed, for parts that react to it (Huginn).
+	Events *Events
+	Zone   *time.Location
 	// Sindri is where coding work and questions that need tools go.
 	Sindri *SindriClient
 	// Lookup answers questions its MCP servers cover before an agent is
@@ -92,6 +94,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 		suggestions: NewSuggestionCache(1000),
 		Accounts:    NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Inbox = NewInbox(n, config.DataDir)
+	n.Events = NewEvents(time.Now())
 	n.Brain = &Brain{
 		Store:      store,
 		EmbedModel: config.EmbedModel,
@@ -122,6 +125,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountInbox(p)
 	n.mountChat(p)
 	n.mountWrite(p)
+	n.mountEvents(p)
 }
 
 func (n *Norn) fail(w http.ResponseWriter, err error) {

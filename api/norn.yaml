@@ -449,6 +449,32 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Calendar" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/events/stream:
+    get:
+      summary: |
+        What just changed, as server-sent events, for parts that react to it
+        (Huginn). Needs the token, so read it with fetch, not EventSource.
+        Each event has an `id:`; reconnect with `Last-Event-ID` to get what
+        you missed from the last 500, kept in memory only. Events carry
+        summaries, never raw inbox text.
+
+        - `event: inbox.arrived`, data InboxArrived: a poll found an item it
+          had not seen before, ranked urgent or notable.
+        - `event: calendar.added`, data CalendarChange: a meeting that starts
+          within the next 24 hours appeared.
+        - `event: calendar.moved`, data CalendarChange with previousStart and
+          previousEnd: its start or end changed.
+        - `event: calendar.removed`, data CalendarChange: it is gone, or you
+          declined it.
+        - `event: calendar.ended`, data CalendarChange: its end has passed.
+      parameters:
+        - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: The stream.
+          content:
+            text/event-stream: {}
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/inbox:
     get:
       summary: The inbox, collected and ranked here every two minutes (Slack on its own sweep), with its two one-line summaries, the sources' statuses, the mutes and the sign-ins.
@@ -1044,6 +1070,32 @@ components:
         response: { type: string, enum: [accepted, tentativelyAccepted, declined, notResponded, organizer, none] }
         showAs: { type: string }
         online: { type: boolean }
+        id: { type: string, description: The same meeting keeps the same id when it moves. }
+    InboxArrived:
+      type: object
+      required: [id, source, from, band, reasons, direct, mentionsMe, summary, at]
+      description: An inbox item without its text. Raw text never leaves Norn.
+      properties:
+        id: { type: string }
+        source: { type: string, enum: [outlook, teams, slack, gmail] }
+        from: { type: string }
+        relation: { type: string, enum: [manager, above, leadership, report, peer] }
+        band: { type: string, enum: [urgent, notable] }
+        reasons: { type: array, items: { type: string } }
+        direct: { type: boolean }
+        mentionsMe: { type: boolean }
+        summary: { type: string, description: One line written by Norn. }
+        conversation: { type: string }
+        link: { type: string }
+        at: { type: integer, description: Epoch ms. }
+    CalendarChange:
+      type: object
+      required: [calendar, event]
+      properties:
+        calendar: { type: string, enum: [work, personal] }
+        event: { $ref: "#/components/schemas/CalendarEvent" }
+        previousStart: { type: integer, description: Epoch ms; calendar.moved only. }
+        previousEnd: { type: integer }
     Item:
       type: object
       required: [id, source, from, subject, preview, at, direct, mentionsMe, important]

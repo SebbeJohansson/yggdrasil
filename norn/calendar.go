@@ -47,6 +47,8 @@ type CalendarEvent struct {
 	// ShowAs is free, busy, tentative, oof or workingElsewhere.
 	ShowAs string `json:"showAs,omitempty"`
 	Online bool   `json:"online"`
+	// ID stays the same when the meeting moves.
+	ID string `json:"id,omitempty"`
 }
 
 // DueTask is a Google task with a due date. Google keeps only the date.
@@ -174,7 +176,7 @@ func GraphCalendarURL(from, to time.Time) string {
 	params := url.Values{
 		"startDateTime": {from.UTC().Format(time.RFC3339Nano)},
 		"endDateTime":   {to.UTC().Format(time.RFC3339Nano)},
-		"$select":       {"subject,start,end,isAllDay,location,organizer,responseStatus,showAs,isOnlineMeeting,isCancelled"},
+		"$select":       {"id,subject,start,end,isAllDay,location,organizer,responseStatus,showAs,isOnlineMeeting,isCancelled"},
 		"$orderby":      {"start/dateTime"},
 		"$top":          {"200"},
 	}
@@ -202,6 +204,7 @@ func graphUTC(value string) (int64, bool) {
 func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 	var page struct {
 		Value []struct {
+			ID              string                       `json:"id"`
 			Subject         string                       `json:"subject"`
 			Start           struct{ DateTime string }    `json:"start"`
 			End             struct{ DateTime string }    `json:"end"`
@@ -232,7 +235,7 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 		events = append(events, CalendarEvent{
 			Subject: subject, Start: start, End: end, AllDay: raw.IsAllDay, Online: raw.IsOnlineMeeting,
 			Location: strings.TrimSpace(raw.Location.DisplayName), Organizer: raw.Organizer.EmailAddress.Name,
-			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs,
+			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID,
 		})
 	}
 	return events, page.Next
@@ -330,6 +333,7 @@ var googleResponses = map[string]string{"accepted": "accepted", "tentative": "te
 func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 	var page struct {
 		Items []struct {
+			ID             string          `json:"id"`
 			Status         string          `json:"status"`
 			Summary        string          `json:"summary"`
 			Start          googleTime      `json:"start"`
@@ -359,7 +363,7 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 			continue
 		}
 		event := CalendarEvent{Subject: strings.TrimSpace(raw.Summary), Start: start, End: end, AllDay: allDay,
-			Online: raw.HangoutLink != "" || len(raw.ConferenceData) > 0, Location: strings.TrimSpace(raw.Location), ShowAs: "busy"}
+			Online: raw.HangoutLink != "" || len(raw.ConferenceData) > 0, Location: strings.TrimSpace(raw.Location), ShowAs: "busy", ID: raw.ID}
 		if event.Subject == "" {
 			event.Subject = "(no title)"
 		}

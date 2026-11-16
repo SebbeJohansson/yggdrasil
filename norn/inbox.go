@@ -335,6 +335,8 @@ func (in *Inbox) pollOnce(ctx context.Context) (err error) {
 	in.mu.Lock()
 	in.summaries = summaries
 	in.mu.Unlock()
+	in.setStep("telling what's new")
+	n.inboxEvents(ctx, shown, now)
 	return nil
 }
 
