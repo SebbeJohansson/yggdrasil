@@ -33,9 +33,20 @@ const (
 	// draftMaxAge is the oldest message the pass drafts for by itself.
 	draftMaxAge = 48 * time.Hour
 	draftEvery  = 2 * time.Minute
+	// SentKept is how many copied replies are kept, newest, for learning how you write.
+	SentKept = 500
 )
 
-const draftSchema = `CREATE TABLE IF NOT EXISTS reply_drafts (item TEXT PRIMARY KEY, at INTEGER NOT NULL, body TEXT NOT NULL);`
+const draftSchema = `CREATE TABLE IF NOT EXISTS reply_drafts (item TEXT PRIMARY KEY, at INTEGER NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sent_replies (
+	id INTEGER PRIMARY KEY,
+	at INTEGER NOT NULL,
+	item TEXT NOT NULL,
+	source TEXT NOT NULL,
+	relation TEXT,
+	draft TEXT NOT NULL,
+	sent TEXT NOT NULL
+);`
 
 // Draft is a reply written for one inbox item.
 type Draft struct {
@@ -316,6 +327,9 @@ func (n *Norn) draftPass(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
+	if err := n.dropAnswered(ctx); err != nil {
+		return err
+	}
 	written := 0
 	for _, entry := range shown {
 		if written >= DraftsPerPass {
@@ -334,6 +348,51 @@ func (n *Norn) draftPass(ctx context.Context) error {
 			Link: entry.Item.Link, At: draft.At,
 		})
 		written++
+	}
+	return nil
+}
+
+// Gone is the items of `ids` no longer in the inbox: read, answered or
+// deleted. Only a source whose last read worked can say an item is gone; one
+// that failed says nothing, so an outage never throws drafts away.
+func (in *Inbox) Gone(ids []string) []string {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.feedAt == 0 {
+		return nil
+	}
+	read := map[string]bool{}
+	for _, status := range in.sources {
+		read[status.Source] = status.OK && status.Error == ""
+	}
+	held := map[string]bool{}
+	for _, item := range in.items {
+		held[item.ID] = true
+	}
+	var gone []string
+	for _, id := range ids {
+		source, _, _ := strings.Cut(id, ":")
+		if read[source] && !held[id] {
+			gone = append(gone, id)
+		}
+	}
+	return gone
+}
+
+// dropAnswered throws away the drafts whose message left the inbox.
+func (n *Norn) dropAnswered(ctx context.Context) error {
+	drafts, err := n.Drafts(ctx)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, len(drafts))
+	for i, d := range drafts {
+		ids[i] = d.Item
+	}
+	for _, id := range n.Inbox.Gone(ids) {
+		if _, err := n.Store.db.ExecContext(ctx, `DELETE FROM reply_drafts WHERE item = ?`, id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -411,5 +470,85 @@ func (n *Norn) mountDrafts(p *part.Part) {
 	p.Handle("GET /v1/drafts", n.listDrafts)
 	p.Handle("POST /v1/drafts", n.makeDraft)
 	p.Handle("DELETE /v1/drafts/{item}", n.dropDraft)
+	p.Handle("POST /v1/drafts/{item}/copied", n.draftCopied)
+	p.Handle("GET /v1/drafts/copied", n.copiedReplies)
 	p.Loop("drafts", draftEvery, n.draftPass)
+}
+
+// CopiedReply is a reply you copied to send: Norn's draft and what you made
+// of it. Kept to learn how you write; never sent anywhere.
+type CopiedReply struct {
+	At       int64  `json:"at"`
+	Item     string `json:"item"`
+	Source   string `json:"source"`
+	Relation string `json:"relation,omitempty"`
+	Draft    string `json:"draft"`
+	Sent     string `json:"sent"`
+}
+
+// draftCopied keeps what you copied from a draft. The draft itself stays
+// until its message leaves the inbox, so a reply not sent after all is not lost.
+func (n *Norn) draftCopied(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Text string `json:"text"`
+	}
+	text := ""
+	if err := part.Decode(r, &body); err == nil {
+		text = strings.TrimSpace(body.Text)
+	}
+	if text == "" || len([]rune(text)) > 4000 {
+		part.Error(w, http.StatusBadRequest, "`text` must be the copied reply, at most 4000 characters")
+		return
+	}
+	item := r.PathValue("item")
+	var stored string
+	if err := n.Store.db.QueryRowContext(r.Context(), `SELECT body FROM reply_drafts WHERE item = ?`, item).Scan(&stored); err != nil {
+		part.Error(w, http.StatusNotFound, "no draft for that item")
+		return
+	}
+	var draft Draft
+	_ = json.Unmarshal([]byte(stored), &draft)
+	relation := ""
+	if held := n.Inbox.fuller(Item{ID: item}); held.Relation != "" {
+		relation = held.Relation
+	}
+	reply := CopiedReply{At: time.Now().UnixMilli(), Item: item, Source: draft.Source, Relation: relation, Draft: draft.Text, Sent: text}
+	ctx := r.Context()
+	if _, err := n.Store.db.ExecContext(ctx, `INSERT INTO sent_replies (at, item, source, relation, draft, sent) VALUES (?, ?, ?, ?, ?, ?)`,
+		reply.At, reply.Item, reply.Source, reply.Relation, reply.Draft, reply.Sent); err != nil {
+		n.fail(w, err)
+		return
+	}
+	if _, err := n.Store.db.ExecContext(ctx, `DELETE FROM sent_replies WHERE id NOT IN (SELECT id FROM sent_replies ORDER BY at DESC, id DESC LIMIT ?)`, SentKept); err != nil {
+		n.fail(w, err)
+		return
+	}
+	part.JSON(w, http.StatusCreated, reply)
+}
+
+// CopiedReplies is the replies you copied, newest first, at most `limit`.
+func (n *Norn) CopiedReplies(ctx context.Context, limit int) ([]CopiedReply, error) {
+	rows, err := n.Store.db.QueryContext(ctx, `SELECT at, item, source, COALESCE(relation, ''), draft, sent FROM sent_replies ORDER BY at DESC, id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	replies := []CopiedReply{}
+	for rows.Next() {
+		var c CopiedReply
+		if err := rows.Scan(&c.At, &c.Item, &c.Source, &c.Relation, &c.Draft, &c.Sent); err != nil {
+			return nil, err
+		}
+		replies = append(replies, c)
+	}
+	return replies, rows.Err()
+}
+
+func (n *Norn) copiedReplies(w http.ResponseWriter, r *http.Request) {
+	replies, err := n.CopiedReplies(r.Context(), SentKept)
+	if err != nil {
+		n.fail(w, err)
+		return
+	}
+	part.JSON(w, http.StatusOK, map[string]any{"replies": replies})
 }

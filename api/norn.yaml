@@ -653,7 +653,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/drafts:
     get:
-      summary: Reply drafts kept for inbox items, newest first, for a week. Norn drafts by itself for messages to you that ask something and are ranked urgent or notable (DRAFTS=false stops that). Never sent anywhere; you copy one into Teams, Slack or your mail.
+      summary: Reply drafts kept for inbox items, newest first, for a week or until the message leaves the inbox (read, answered or deleted; only a source that read fine can say so). Norn drafts by itself for messages to you that ask something and are ranked urgent or notable (DRAFTS=false stops that). Never sent anywhere; you copy one into Teams, Slack or your mail.
       responses:
         "200":
           description: The drafts.
@@ -696,6 +696,43 @@ paths:
         "204": { description: Thrown away. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/drafts/{item}/copied:
+    post:
+      summary: Keep the reply you copied from a draft (the widget's Copy), beside Norn's draft, to learn how you write. The draft stays until its message leaves the inbox. The last 500 are kept; never sent anywhere.
+      parameters:
+        - { name: item, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 4000 }
+      responses:
+        "201":
+          description: Kept.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopiedReply" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/drafts/copied:
+    get:
+      summary: The replies you copied from drafts, newest first, with Norn's draft beside each.
+      responses:
+        "200":
+          description: The replies.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [replies]
+                properties:
+                  replies: { type: array, items: { $ref: "#/components/schemas/CopiedReply" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/inbox/summary:
     post:
       summary: Phrase a sentence for ranked items the caller collected. Never fails because of the model; falls back to the plain count, as it does when the model names someone the items don't hold.
@@ -1183,6 +1220,16 @@ components:
         online: { type: boolean }
         id: { type: string, description: The same meeting keeps the same id when it moves. }
         attendees: { type: array, items: { type: string }, description: "Who is invited, by name (or address), at most 30. Google leaves you out; Outlook lists you too." }
+    CopiedReply:
+      type: object
+      required: [at, item, source, draft, sent]
+      properties:
+        at: { type: integer }
+        item: { type: string }
+        source: { type: string }
+        relation: { type: string }
+        draft: { type: string, description: Norn's draft. }
+        sent: { type: string, description: What you copied. }
     DraftReady:
       type: object
       required: [id, source, from, band, direct, mentionsMe, at]

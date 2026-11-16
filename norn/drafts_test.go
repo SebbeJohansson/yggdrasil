@@ -3,6 +3,7 @@ package norn
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -128,5 +129,61 @@ func TestTheCheckSeesWhatTheDraftMayBeBackedBy(t *testing.T) {
 	}
 	if !strings.Contains(messages[1].Content, "Ska vi ta frågorna") || !strings.HasSuffix(messages[1].Content, "The draft:\nHej Sanna\n\nJa.") {
 		t.Errorf("check input: %q", messages[1].Content)
+	}
+}
+
+func TestADraftGoesWhenItsMessageLeavesASourceThatReadFine(t *testing.T) {
+	n, _ := newNorn(t)
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	for _, item := range []string{"teams:c:1", "teams:c:2", "slack:x:1"} {
+		if err := n.keepDraft(ctx, Draft{Item: item, Source: "teams", Text: "Ja", At: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Teams read fine and holds only c:2; Slack failed, so its item says nothing.
+	n.Inbox.mu.Lock()
+	n.Inbox.items = []Item{{ID: "teams:c:2", Source: "teams"}}
+	n.Inbox.sources = []SourceStatus{{Source: "teams", OK: true}, {Source: "slack", Error: "timeout"}}
+	n.Inbox.feedAt = now
+	n.Inbox.mu.Unlock()
+	if err := n.dropAnswered(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drafts, _ := n.Drafts(ctx)
+	var left []string
+	for _, d := range drafts {
+		left = append(left, d.Item)
+	}
+	if !slices.Equal(slices.Sorted(slices.Values(left)), []string{"slack:x:1", "teams:c:2"}) {
+		t.Fatalf("left %v", left)
+	}
+}
+
+func TestACopiedReplyIsKeptBesideTheDraft(t *testing.T) {
+	n, p := newNorn(t)
+	if err := n.keepDraft(context.Background(), Draft{Item: "teams:c:1", Source: "teams", Text: "Ja, jag tittar.", At: time.Now().UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := call(t, p, "POST", "/v1/drafts/teams:c:1/copied", map[string]string{"text": " Japp, kollar nu "}); code != http.StatusCreated {
+		t.Fatalf("%d %v", code, body)
+	}
+	if code, _ := call(t, p, "POST", "/v1/drafts/teams:nope/copied", map[string]string{"text": "x"}); code != http.StatusNotFound {
+		t.Fatalf("no draft: %d", code)
+	}
+	if code, _ := call(t, p, "POST", "/v1/drafts/teams:c:1/copied", map[string]string{"text": " "}); code != http.StatusBadRequest {
+		t.Fatalf("empty: %d", code)
+	}
+	code, body := call(t, p, "GET", "/v1/drafts/copied", nil)
+	replies := body.(map[string]any)["replies"].([]any)
+	if code != http.StatusOK || len(replies) != 1 {
+		t.Fatalf("%d %v", code, body)
+	}
+	if reply := replies[0].(map[string]any); reply["sent"] != "Japp, kollar nu" || reply["draft"] != "Ja, jag tittar." || reply["source"] != "teams" {
+		t.Fatalf("reply %v", reply)
+	}
+	// The draft stays: the reply may not have gone out after all.
+	if !n.hasDraft(context.Background(), "teams:c:1") {
+		t.Fatal("the draft went")
 	}
 }
