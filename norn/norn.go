@@ -41,7 +41,8 @@ type Config struct {
 	// SummaryModel phrases the inbox's one-line summaries.
 	SummaryModel string
 	// AskModel answers locally; DispatchModel decides what each message is
-	// ("off": the older rules), kept loaded for DispatchKeepAlive.
+	// ("off": the older rules). DispatchKeepAlive is how long Ollama keeps a
+	// model loaded after a call; empty leaves it to Ollama (5m).
 	AskModel, DispatchModel, DispatchKeepAlive string
 	// Judge says who judges the inbox beside the four rules.
 	Judge JudgeSettings

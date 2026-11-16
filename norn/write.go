@@ -928,17 +928,11 @@ func (n *Norn) writeImprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := n.Config.Write.Model
-	// Same model as the dispatcher by default: a different keep-alive here
-	// would cut the dispatcher's short after each check.
-	keepAlive := "60m"
-	if model == n.Config.DispatchModel {
-		keepAlive = n.Config.DispatchKeepAlive
-	}
 	think := false
 	result, err := Improve(body.Text, n.suggestions, func(system, sentence string) (string, error) {
 		return n.LLM.Chat(r.Context(), []llm.Message{{Role: "system", Content: system}, {Role: "user", Content: sentence}}, llm.Options{
 			Purpose: "improve", Model: model, Temperature: 0, TopP: 1, MaxTokens: 200, Format: ImproveFormat,
-			Think: &think, KeepAlive: keepAlive, Timeout: 60 * time.Second,
+			Think: &think, KeepAlive: n.Config.DispatchKeepAlive, Timeout: 60 * time.Second,
 		})
 	})
 	if err != nil {

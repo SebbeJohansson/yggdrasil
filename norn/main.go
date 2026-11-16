@@ -29,6 +29,7 @@ import (
 //	TIME_ZONE        yours (Europe/Stockholm)
 //	SUMMARY_MODEL    phrases the inbox summary (llama3.2:1b); ASK_MODEL answers (the summary model)
 //	DISPATCH_MODEL   decides what each message is (qwen2.5:7b); off: the older rules
+//	DISPATCH_KEEP_ALIVE  how long Ollama keeps it loaded after a call (unset: Ollama's own 5m)
 //	WARM_EVERY       how long XeStrata may sit idle before Norn asks it for a token (2m); off: never
 //	YGG_SINDRI_URL   Sindri, for coding and questions that need tools; SINDRI_TOKEN is Norn's token there (unset: agents off)
 //	INBOX_JUDGE      laya, typesafe, ollama or off (laya); INBOX_JUDGE_MODEL, TYPESAFE_KEY
@@ -74,7 +75,7 @@ func Main(ctx context.Context) error {
 		SummaryModel:      env.String("SUMMARY_MODEL", "llama3.2:1b"),
 		AskModel:          env.String("ASK_MODEL", env.String("SUMMARY_MODEL", "llama3.2:1b")),
 		DispatchModel:     env.String("DISPATCH_MODEL", "qwen2.5:7b"),
-		DispatchKeepAlive: env.String("DISPATCH_KEEP_ALIVE", "-1m"),
+		DispatchKeepAlive: env.String("DISPATCH_KEEP_ALIVE", ""),
 		Judge: JudgeSettings{
 			Provider:    env.String("INBOX_JUDGE", "laya"),
 			LayaURL:     env.String("LAYA_URL", "http://127.0.0.1:8000"),

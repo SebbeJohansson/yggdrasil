@@ -248,7 +248,7 @@ func (a *asker) name() string {
 		{Role: "system", Content: nameSystem},
 		{Role: "user", Content: strings.Join(lines, "\n") + "\n\nNewest message: " + clipRunes(a.question, 1500)},
 	}, llm.Options{Purpose: "name", Model: a.n.Config.DispatchModel, Temperature: 0, TopP: 1, MaxTokens: 24, Think: &think,
-		KeepAlive: a.n.Config.DispatchKeepAlive, Timeout: 5 * time.Second})
+		Timeout: 5 * time.Second, NoFallback: true})
 	name := strings.Trim(strings.TrimSpace(strings.SplitN(strings.TrimSpace(reply), "\n", 2)[0]), "\"'.")
 	if err != nil || name == "" || len([]rune(name)) > 80 {
 		return ShortName(a.question)
