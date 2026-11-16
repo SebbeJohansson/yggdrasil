@@ -19,8 +19,6 @@ var DefaultProbes = strings.Join([]string{
 	"ollama=http://127.0.0.1:11434",
 	"laya=http://127.0.0.1:8000",
 	"languagetool=http://127.0.0.1:8010",
-	"my-agent=http://127.0.0.1:8787/health",
-	"runner=http://127.0.0.1:8788/health",
 }, ",")
 
 // Main runs Veðrfölnir until ctx ends, saving the hour of samples on the way

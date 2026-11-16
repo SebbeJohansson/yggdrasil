@@ -16,7 +16,6 @@ var DefaultTargets = strings.Join([]string{
 	"xestrata=http:http://127.0.0.1:8095/api/health",
 	"laya=http:http://127.0.0.1:8000/",
 	"languagetool=http:http://127.0.0.1:8010/",
-	"runner=http:http://127.0.0.1:8788/health",
 	"microsoft-graph=http:https://graph.microsoft.com/v1.0/",
 	"slack=http:https://slack.com/api/api.test",
 	"google=http:https://www.googleapis.com/",
