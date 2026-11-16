@@ -592,7 +592,8 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 			}
 		}
 	}
-	if calendar != nil && sindri && BeyondCalendar(question) {
+	// /local never leaves this machine, whatever it asks.
+	if calendar != nil && sindri && route != "local" && BeyondCalendar(question) {
 		return a.handOver("rule: beyond the calendar", inbox), nil
 	}
 
@@ -638,7 +639,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 			enough = (parsed.Enough == nil || *parsed.Enough) && !notKnown.MatchString(answer)
 		}
 	}
-	if calendar != nil && sindri && !enough {
+	if calendar != nil && sindri && route != "local" && !enough {
 		n.learnLater(question)
 		return a.handOver("calendar: not enough", inbox), nil
 	}
