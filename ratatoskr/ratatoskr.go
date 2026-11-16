@@ -31,7 +31,7 @@ import (
 	"time"
 
 	"yggdrasil/internal/alert"
-	"yggdrasil/internal/ntfy"
+	"yggdrasil/internal/tell"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/watch"
 )
@@ -61,7 +61,8 @@ type Ratatoskr struct {
 	// GjallarPart is the target that is Gjallar, whose own downtime is
 	// reported around it.
 	GjallarPart string
-	Fallback    *ntfy.Topic
+	// Fallback tells you Gjallar is down: Hermóðr, then ntfy straight.
+	Fallback    tell.Teller
 	HTTP        *http.Client
 
 	watch        *watch.Watch
@@ -72,7 +73,7 @@ type Ratatoskr struct {
 }
 
 // New makes a watchdog over the targets.
-func New(targets []Target, gjallar *alert.Client, fallback *ntfy.Topic) *Ratatoskr {
+func New(targets []Target, gjallar *alert.Client, fallback tell.Teller) *Ratatoskr {
 	r := &Ratatoskr{
 		Targets:     targets,
 		Gjallar:     gjallar,
@@ -238,14 +239,14 @@ func (r *Ratatoskr) aroundGjallar(ctx context.Context) {
 		r.fallbackSent = false
 		return
 	}
-	if r.fallbackSent || !r.Fallback.On() {
+	if r.fallbackSent || r.Fallback == nil || !r.Fallback.On() {
 		return
 	}
 	r.fallbackSent = true
 	go func() {
 		pushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer cancel()
-		_ = r.Fallback.Push(pushCtx, "Gjallar is down", "Alerts can't be delivered until it's back. "+state.Detail, 5, "")
+		_ = r.Fallback.Tell(pushCtx, tell.Message{Title: "Gjallar is down", Text: "Alerts can't be delivered until it's back. " + state.Detail, Priority: "urgent"})
 	}()
 }
 

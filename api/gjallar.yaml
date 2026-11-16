@@ -19,8 +19,9 @@ info:
       or resolves.
     - Senders named in its "limited" list (glim) may not send critical.
     - info: dashboard only. warning: widget badge. critical: widget toast and
-      a phone push, at most once per alert per 15 minutes, never while muted
-      or snoozed.
+      an urgent message through Hermóðr (straight to ntfy when Hermóðr can't
+      take it), at most once per alert per 15 minutes, never while muted or
+      snoozed.
     - Gjallar never acts on an alert.
 servers:
   - url: http://127.0.0.1:8774

@@ -14,11 +14,13 @@ info:
     Rules a replacement must keep:
     - Suggest and tell, never act for you: no mail, messages, goals or
       agents started. It reads from Norn, Gjallar and Sindri and writes
-      nowhere but your phone and its own list of reactions.
+      nowhere but Hermóðr (`POST /v1/messages`) and its own list of
+      reactions.
     - Never ask Norn for raw inbox text. Work from the events' summaries and
       from `POST /v1/ask` on Norn, which keeps its own text to itself.
-    - A rule with `hold` waits while you are in a meeting and is delivered
-      when Norn sends `calendar.ended`. A rule with `hold: false` goes now.
+    - Every reaction goes to Hermóðr with the rule's `hold`, so Hermóðr
+      keeps it while you are in a meeting. Urgent for an urgent message or a
+      critical alert, high for a message from above you, normal otherwise.
     - A rule an agent creates (any caller but the owner) starts disabled,
       and only the owner can enable it.
     - Missed events are fetched again with `Last-Event-ID` after a
@@ -136,9 +138,9 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/reactions:
     get:
-      summary: What Huginn did lately, newest first, the held ones included. Kept for 7 days. The widget reads this.
+      summary: What Huginn did lately, newest first. Kept for 7 days. Hermóðr's messages are what the widget lists.
       parameters:
-        - { name: state, in: query, required: false, schema: { type: string, enum: [held, delivered, failed, skipped] } }
+        - { name: state, in: query, required: false, schema: { type: string, enum: [delivered, failed, skipped] } }
       responses:
         "200":
           description: The reactions.
@@ -216,8 +218,8 @@ components:
         deliver:
           type: array
           items: { type: string, enum: [phone, widget] }
-          description: Defaults to both.
-        hold: { type: boolean, description: Wait until the meeting you are in ends. Defaults to true. }
+          description: "Defaults to both. Without phone, Hermóðr lists it for the widget only (push: false)."
+        hold: { type: boolean, description: Hermóðr waits until the meeting you are in ends. Defaults to true. }
     Rule:
       allOf:
         - { $ref: "#/components/schemas/RuleInput" }
@@ -229,7 +231,7 @@ components:
         builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact." }
         createdBy: { type: string, description: owner, or the name of the part or agent that made it. }
         lastFiredAt: { type: string, format: date-time }
-        lastResult: { type: string, enum: [delivered, held, failed, skipped] }
+        lastResult: { type: string, enum: [delivered, failed, skipped] }
     Trigger:
       type: object
       required: [event]
@@ -250,7 +252,7 @@ components:
       type: object
       required: [kind]
       description: |
-        - notify: push `text`, with the event's fields filled in ({from},
+        - notify: tell you `text`, with the event's fields filled in ({from},
           {summary}, {subject}, {start}, {title}…).
         - ask: send `text`, filled in the same way, to Norn's `POST /v1/ask`
           with `to: norn` and `/local ` in front, so Norn answers itself and
@@ -269,12 +271,12 @@ components:
         ruleName: { type: string }
         event: { type: string }
         eventAt: { type: string, format: date-time }
-        state: { type: string, enum: [held, delivered, failed, skipped] }
+        state: { type: string, enum: [delivered, failed, skipped], description: "delivered: Hermóðr took it." }
         title: { type: string }
         text: { type: string, description: What was delivered, or will be. }
         link: { type: string }
-        reason: { type: string, description: Why it failed, was skipped, or is held. }
+        reason: { type: string, description: Why it failed or was skipped. }
         deliver: { type: array, items: { type: string, enum: [phone, widget] } }
-        urgent: { type: boolean, description: Never held, and pushed louder. }
+        urgent: { type: boolean, description: Sent to Hermóðr as urgent, so never held. }
         at: { type: string, format: date-time }
         deliveredAt: { type: string, format: date-time }

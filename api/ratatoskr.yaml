@@ -14,8 +14,9 @@ info:
     - A loop on a part's /health that has not run within three of its
       intervals and a minute raises `stalled:<part>:<loop>` (warning). Loops
       of a part that is down are not checked.
-    - Gjallar being down is never sent to Gjallar: push to the phone directly,
-      and report it here as gjallarUp false.
+    - Gjallar being down is never sent to Gjallar: tell Hermóðr, or push to
+      the phone directly when Hermóðr can't take it, and report it here as
+      gjallarUp false.
     - Beat to Gjallar (POST /v1/heartbeat) every minute.
     - Run outside the compose project.
 servers:

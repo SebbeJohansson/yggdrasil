@@ -128,8 +128,8 @@ func (s *Store) Reactions(ctx context.Context, state string, limit int) ([]React
 	return reactions, rows.Err()
 }
 
-// Forget removes reactions older than before, except held ones.
+// Forget removes reactions older than before.
 func (s *Store) Forget(ctx context.Context, before time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM reactions WHERE at < ? AND state != 'held'`, before.UnixMilli())
+	_, err := s.db.ExecContext(ctx, `DELETE FROM reactions WHERE at < ?`, before.UnixMilli())
 	return err
 }

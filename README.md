@@ -14,6 +14,7 @@ Why one process per part: [docs/architecture.md](docs/architecture.md).
 | **Sindri** | coding: agents, worktrees, review, checks | 8772 | host unit |
 | **Huginn** | reacts to what just happened: messages, meetings, alerts | 8777 | container |
 | **Dellingr** | runs the jobs you put on a clock | 8778 | container |
+| **Hermóðr** | carries every message for you to the widget and your phone | 8779 | container |
 
 None of the watching parts fixes anything. Huginn only tells you things;
 Dellingr acts only as far as you set a job up to. Everything listens on 127.0.0.1 only.
@@ -54,8 +55,11 @@ curl -H "Authorization: Bearer $T" localhost:8774/v1/alerts
 curl -H "Authorization: Bearer $T" localhost:8775/v1/status
 ```
 
-To push critical alerts to your phone, set `NTFY_URL` in `gjallar.env` and
-`ratatoskr.env` to the same ntfy topic.
+Every message meant for you goes through Hermóðr, and the widget's ask window
+lists it. To also get it on your phone, set `NTFY_URL` in `hermodr.env`, and
+the same in `gjallar.env` and `ratatoskr.env`: they push straight to it when
+Hermóðr can't take a message. ntfy.sh is a public server; run your own ntfy
+if what reaches your phone must not pass through it.
 
 ## Develop
 
@@ -120,8 +124,8 @@ Ratatoskr reads it. Everything else needs `Authorization: Bearer <token>`.
 | `POST /v1/heartbeat` | a part | I am alive. A part named in `GJALLAR_HEARTBEATS` that goes silent is raised as `silent:<name>` |
 
 How loud: `info` shows on the dashboard, `warning` adds a widget badge,
-`critical` adds a widget toast and a phone push (ntfy), at most once per alert
-every 15 minutes.
+`critical` adds a widget toast and an urgent message through Hermóðr (straight
+to ntfy when Hermóðr can't take it), at most once per alert every 15 minutes.
 
 ### Ratatoskr
 
@@ -179,9 +183,9 @@ It follows Norn's `GET /v1/events/stream` (`inbox.arrived`, `calendar.added`,
 stream, which it turns into `alert.opened`, `alert.escalated` and
 `alert.resolved`. Built-in rules: a message from your manager or above, an
 urgent direct message, a brief for a meeting added or moved into the next
-hour (asked of Norn), and what a critical alert stops. A rule with `hold`
-waits while you are in a meeting and goes out when it ends. A stream down for
-5 minutes is `stream:<part>` (warning).
+hour (asked of Norn), and what a critical alert stops. Each reaction goes
+to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A
+stream down for 5 minutes is `stream:<part>` (warning).
 
 ### Dellingr
 
@@ -199,3 +203,21 @@ waits while you are in a meeting and goes out when it ends. A stream down for
 A goal job drafts the goal in Sindri, and starts it only with `autoStart`.
 Runs the machine slept through run once on wake, never once per missed tick.
 A job that fails 3 times in a row is `failing:<job id>` (warning).
+
+### Hermóðr
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `POST /v1/messages` | a part | `{ title, text?, link?, priority?: low\|normal\|high\|urgent, hold?, push? }` → `201`. The sender is the caller's token name |
+| `GET /v1/messages` | anyone | `?state=held\|sent\|listed\|failed`, `?unseen=true`: the last 7 days. The widget reads this |
+| `POST /v1/messages/{id}/seen` | owner | the widget stops listing it |
+| `GET /v1/channels` | anyone | ntfy: set up or not, the lowest priority each sends, the last send; quiet hours; whether you are in a meeting |
+| `POST /v1/channels/{name}/test` | owner | a test message to one channel, past every rule |
+
+Urgent messages go out at once. Others wait through `QUIET_HOURS`, and, when
+they ask to `hold`, while you are in a meeting (your calendars, from Norn).
+`push: false` lists a message for the widget only. Each channel sends what is
+at or above its `<CHANNEL>_MIN`. Slack and Discord were left out on
+purpose: nothing from your inbox should land where others in a workspace or
+server could read it. A channel failing 3 sends in a row is
+`channel:<name>` (warning).

@@ -41,8 +41,8 @@ import (
 	"unicode/utf8"
 
 	"yggdrasil/internal/alert"
-	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/tell"
 )
 
 // Name is this part's name, and the source of the alerts Gjallar raises itself.
@@ -62,7 +62,8 @@ const (
 // Gjallar is the running service.
 type Gjallar struct {
 	Store *Store
-	Push  *ntfy.Topic
+	// Push tells you of a critical alert: Hermóðr, then ntfy straight.
+	Push  tell.Teller
 	// Heartbeats names the senders expected to beat every minute (Ratatoskr),
 	// and how long a silence may last before Gjallar raises it.
 	Heartbeats map[string]time.Duration
@@ -77,7 +78,7 @@ type Gjallar struct {
 }
 
 // New makes a Gjallar over the store.
-func New(store *Store, push *ntfy.Topic) *Gjallar {
+func New(store *Store, push tell.Teller) *Gjallar {
 	return &Gjallar{Store: store, Push: push, Heartbeats: map[string]time.Duration{}, LimitedSources: map[string]bool{}, started: time.Now(), now: time.Now}
 }
 
@@ -169,7 +170,7 @@ func (g *Gjallar) Raise(ctx context.Context, raise alert.Raise) error {
 // opened again or escalated, unless it is muted, snoozed or pushed recently.
 func (g *Gjallar) changed(ctx context.Context, a Alert, change Change) {
 	g.hub.publish(a)
-	if change == Updated || a.Severity != alert.Critical || a.Muted || !g.Push.On() {
+	if change == Updated || a.Severity != alert.Critical || a.Muted || g.Push == nil || !g.Push.On() {
 		return
 	}
 	now := g.now()
@@ -190,7 +191,7 @@ func (g *Gjallar) changed(ctx context.Context, a Alert, change Change) {
 	go func() {
 		pushCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		_ = g.Push.Push(pushCtx, a.Title, fmt.Sprintf("%s · %s", a.Source, orNone(a.Detail)), 5, link)
+		_ = g.Push.Tell(pushCtx, tell.Message{Title: a.Title, Text: fmt.Sprintf("%s · %s", a.Source, orNone(a.Detail)), Priority: "urgent", Link: link})
 	}()
 }
 

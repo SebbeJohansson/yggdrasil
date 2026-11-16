@@ -32,8 +32,8 @@ import (
 
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/call"
-	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/tell"
 )
 
 // Name is this part's name.
@@ -232,7 +232,8 @@ type Dellingr struct {
 	Norn    *call.Part
 	Sindri  *call.Part
 	Gjallar *alert.Client
-	Push    *ntfy.Topic
+	// Tell carries each run's result to you (Hermóðr).
+	Tell    tell.Teller
 	// Zone is this machine's, for jobs that name none.
 	Zone *time.Location
 
@@ -243,8 +244,8 @@ type Dellingr struct {
 }
 
 // New makes Dellingr.
-func New(store *Store, norn, sindri *call.Part, gjallar *alert.Client, push *ntfy.Topic, zone *time.Location, logf func(string, ...any)) *Dellingr {
-	return &Dellingr{Store: store, Norn: norn, Sindri: sindri, Gjallar: gjallar, Push: push, Zone: zone, now: time.Now, logf: logf, running: map[string]bool{}}
+func New(store *Store, norn, sindri *call.Part, gjallar *alert.Client, teller tell.Teller, zone *time.Location, logf func(string, ...any)) *Dellingr {
+	return &Dellingr{Store: store, Norn: norn, Sindri: sindri, Gjallar: gjallar, Tell: teller, Zone: zone, now: time.Now, logf: logf, running: map[string]bool{}}
 }
 
 // Mount adds the routes and the clock.
@@ -662,9 +663,10 @@ func (d *Dellingr) work(ctx context.Context, job Job) (text, goalID string, err 
 	default:
 		return "", "", fmt.Errorf("unknown action %q", job.Action.Kind)
 	}
-	if slices.Contains(job.Deliver, "phone") {
-		if err := d.Push.Push(ctx, job.Name, text, 3, ""); err != nil {
-			return text, goalID, fmt.Errorf("phone push: %w", err)
+	if d.Tell != nil && d.Tell.On() {
+		push := slices.Contains(job.Deliver, "phone")
+		if err := d.Tell.Tell(ctx, tell.Message{Title: job.Name, Text: text, Priority: "normal", Hold: true, Push: &push}); err != nil {
+			return text, goalID, fmt.Errorf("telling you: %w", err)
 		}
 	}
 	return text, goalID, nil

@@ -10,6 +10,7 @@ import (
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/tell"
 	"yggdrasil/internal/where"
 )
 
@@ -20,7 +21,8 @@ import (
 //	GJALLAR_DB          the SQLite file (data/gjallar.db)
 //	GJALLAR_HEARTBEATS  senders that must beat, and their allowance: ratatoskr=3m
 //	GJALLAR_LIMITED     senders that may not send critical: glim
-//	NTFY_URL, NTFY_TOKEN  the phone push topic for critical alerts; unset is off
+//	YGG_HERMODR_URL     Hermóðr, which carries critical alerts to you; HERMODR_TOKEN is Gjallar's token there
+//	NTFY_URL, NTFY_TOKEN  a phone push used only when Hermóðr can't take one; unset is off
 //	DASHBOARD_URL       where a push links to
 //	YGG_CORS_ORIGINS    browser origins allowed to call it
 func Main(ctx context.Context) error {
@@ -41,7 +43,10 @@ func Main(ctx context.Context) error {
 	}
 	defer store.Close()
 
-	g := New(store, ntfy.New(env.String("NTFY_URL", ""), env.String("NTFY_TOKEN", "")))
+	g := New(store, tell.Chain{
+		tell.NewHermodr(where.URL("hermodr"), env.String("HERMODR_TOKEN", "")),
+		tell.Direct{Push: ntfy.New(env.String("NTFY_URL", ""), env.String("NTFY_TOKEN", ""))},
+	})
 	g.DashboardURL = env.String("DASHBOARD_URL", "")
 	for _, pair := range env.Pairs(env.String("GJALLAR_HEARTBEATS", "ratatoskr=3m")) {
 		allowance, err := time.ParseDuration(pair.Value)

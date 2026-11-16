@@ -33,7 +33,7 @@ if [ ! -e "$config/gjallar.env" ]; then
 GJALLAR_TOKENS=owner=$owner
 # Senders that must beat, and how long a silence may last.
 GJALLAR_HEARTBEATS=ratatoskr=3m
-# Your phone push topic for critical alerts, e.g. https://ntfy.sh/<a secret topic>. Empty is off.
+# A phone push for critical alerts when Hermóðr can't take them: the same topic as hermodr.env's. Empty is off.
 NTFY_URL=
 NTFY_TOKEN=
 DASHBOARD_URL=http://localhost:17420
@@ -58,7 +58,7 @@ part_token() {
 gjallar_token() {
 	part_token gjallar "$1"
 }
-for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr; do
+for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr; do
 	gjallar_token "$part" >/dev/null
 done
 
@@ -85,7 +85,7 @@ EOF
 write ratatoskr.env <<EOF
 RATATOSKR_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token ratatoskr)
-# Used only when Gjallar itself is down. The same topic as Gjallar's.
+# Used only when Gjallar is down and Hermóðr can't take it. The same topic as hermodr.env's.
 NTFY_URL=
 NTFY_TOKEN=
 YGG_CORS_ORIGINS=$origins
@@ -134,6 +134,36 @@ EOF
 	done
 fi
 
+# Hermóðr carries every message for you: into the widget, and to your phone
+# when NTFY_URL is set. It reads your calendars from Norn, to hold messages
+# through a meeting.
+write hermodr.env <<EOF
+HERMODR_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token hermodr)
+NORN_TOKEN=$(part_token norn hermodr)
+TIME_ZONE=Europe/Stockholm
+# Your phone: an ntfy topic, e.g. https://ntfy.sh/<a long secret topic>. Empty is off.
+NTFY_URL=
+NTFY_TOKEN=
+# The lowest priority it sends: low, normal, high or urgent.
+NTFY_MIN=normal
+# Only urgent messages go out between these, e.g. 22:00-07:00. Empty is none.
+QUIET_HOURS=
+YGG_CORS_ORIGINS=$origins
+EOF
+
+# ensure <file> <name> <value>: adds name=value to a settings file that
+# lacks it, keeping everything else.
+ensure() {
+	[ -e "$config/$1" ] || return 0
+	grep -q "^$2=" "$config/$1" && return 0
+	printf '%s=%s\n' "$2" "$3" >>"$config/$1"
+	echo "  added $2 to $1"
+}
+for part in gjallar ratatoskr huginn dellingr; do
+	ensure "$part.env" HERMODR_TOKEN "$(part_token hermodr "$part")"
+done
+
 # Huginn and Dellingr call Norn and Sindri with tokens of their own. After a
 # token is added there, restart Norn and Sindri (docker compose up -d, and
 # systemctl --user restart ygg-sindri).
@@ -142,10 +172,8 @@ HUGINN_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token huginn)
 NORN_TOKEN=$(part_token norn huginn)
 SINDRI_TOKEN=$(part_token sindri huginn)
+HERMODR_TOKEN=$(part_token hermodr huginn)
 TIME_ZONE=Europe/Stockholm
-# Your phone push topic, the same as Gjallar's. Empty: the widget only.
-NTFY_URL=
-NTFY_TOKEN=
 YGG_CORS_ORIGINS=$origins
 EOF
 write dellingr.env <<EOF
@@ -153,10 +181,8 @@ DELLINGR_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token dellingr)
 NORN_TOKEN=$(part_token norn dellingr)
 SINDRI_TOKEN=$(part_token sindri dellingr)
+HERMODR_TOKEN=$(part_token hermodr dellingr)
 TIME_ZONE=Europe/Stockholm
-# Your phone push topic, the same as Gjallar's. Empty: the widget only.
-NTFY_URL=
-NTFY_TOKEN=
 YGG_CORS_ORIGINS=$origins
 EOF
 
@@ -173,12 +199,13 @@ write parts.env <<'EOF'
 #YGG_MUNIN_URL=http://127.0.0.1:8776
 #YGG_HUGINN_URL=http://127.0.0.1:8777
 #YGG_DELLINGR_URL=http://127.0.0.1:8778
+#YGG_HERMODR_URL=http://127.0.0.1:8779
 
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
-RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr
+RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr
 EOF
-if ! grep -q '^RATATOSKR_WATCH=.*huginn' "$config/parts.env"; then
-	echo "  Note: add huginn,dellingr to RATATOSKR_WATCH in $config/parts.env if this machine runs them"
+if ! grep -q '^RATATOSKR_WATCH=.*hermodr' "$config/parts.env"; then
+	echo "  Note: add huginn,dellingr,hermodr to RATATOSKR_WATCH in $config/parts.env if this machine runs them"
 fi
 
 umask 022

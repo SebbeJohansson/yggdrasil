@@ -10,12 +10,13 @@ import (
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/tell"
 	"yggdrasil/internal/where"
 )
 
 // DefaultWatch is every other part. A machine that doesn't run one (at work,
 // say) leaves it out of RATATOSKR_WATCH.
-const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr"
+const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr"
 
 // Main runs Ratatoskr until ctx ends. Settings:
 //
@@ -24,7 +25,8 @@ const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr"
 //	RATATOSKR_WATCH   the parts to watch (DefaultWatch), each at YGG_<PART>_URL
 //	RATATOSKR_EVERY   how often to check (30s)
 //	YGG_GJALLAR_URL   Gjallar (http://127.0.0.1:8774); GJALLAR_TOKEN is Ratatoskr's token there
-//	NTFY_URL, NTFY_TOKEN  the phone push used only when Gjallar is down
+//	YGG_HERMODR_URL   Hermóðr, which tells you when Gjallar is down; HERMODR_TOKEN is Ratatoskr's token there
+//	NTFY_URL, NTFY_TOKEN  a phone push used when Gjallar is down and Hermóðr can't take it
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("RATATOSKR_TOKENS")
 	if err != nil {
@@ -43,7 +45,10 @@ func Main(ctx context.Context) error {
 	}
 	r := New(targets,
 		alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", "")),
-		ntfy.New(env.String("NTFY_URL", ""), env.String("NTFY_TOKEN", "")))
+		tell.Chain{
+			tell.NewHermodr(where.URL("hermodr"), env.String("HERMODR_TOKEN", "")),
+			tell.Direct{Push: ntfy.New(env.String("NTFY_URL", ""), env.String("NTFY_TOKEN", ""))},
+		})
 	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))
 	r.Mount(p, env.Duration("RATATOSKR_EVERY", 30*time.Second))
 	return p.Run(ctx, where.Addr(Name))

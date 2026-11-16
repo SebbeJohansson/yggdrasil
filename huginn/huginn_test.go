@@ -14,7 +14,7 @@ import (
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/call"
 	"yggdrasil/internal/contract/contracttest"
-	"yggdrasil/internal/ntfy"
+	"yggdrasil/internal/tell"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/sse"
 )
@@ -22,7 +22,7 @@ import (
 type fakeParts struct {
 	mu     sync.Mutex
 	asked  []string
-	pushed []string
+	pushed []tell.Message
 }
 
 func newTest(t *testing.T, now time.Time) (*Huginn, *fakeParts) {
@@ -39,8 +39,11 @@ func newTest(t *testing.T, now time.Time) (*Huginn, *fakeParts) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"answer": "Bring the Q3 numbers."})
 		case "/v1/agents":
 			_ = json.NewEncoder(w).Encode([]Agent{{ID: "a1", Label: "fix login", Status: "working"}, {ID: "a2", Status: "done"}})
-		case "/push":
-			fake.pushed = append(fake.pushed, r.Header.Get("Title"))
+		case "/v1/messages":
+			var m tell.Message
+			_ = json.NewDecoder(r.Body).Decode(&m)
+			fake.pushed = append(fake.pushed, m)
+			w.WriteHeader(201)
 		}
 	}))
 	t.Cleanup(server.Close)
@@ -50,7 +53,7 @@ func newTest(t *testing.T, now time.Time) (*Huginn, *fakeParts) {
 	}
 	t.Cleanup(func() { store.Close() })
 	h, err := New(context.Background(), store, call.New("norn", server.URL, "t", time.Second), call.New("sindri", server.URL, "t", time.Second),
-		alert.NewClient("", ""), ntfy.New(server.URL+"/push", ""), time.UTC, t.Logf)
+		alert.NewClient("", ""), tell.NewHermodr(server.URL, "t"), time.UTC, t.Logf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,31 +98,26 @@ func TestAMessageFromYourManagerIsPushedOnce(t *testing.T) {
 		states[r.State]++
 	}
 	// important-message and urgent-message both match; one tells you.
-	if states["delivered"] != 1 || states["skipped"] != 1 || len(fake.pushed) != 1 {
+	if states["delivered"] != 1 || states["skipped"] != 1 || len(fake.pushed) != 1 || fake.pushed[0].Priority != "urgent" || fake.pushed[0].Hold {
 		t.Fatalf("states %v, pushed %v", states, fake.pushed)
 	}
 }
 
-func TestAMeetingBriefWaitsUntilYourMeetingEnds(t *testing.T) {
+func TestAMeetingBriefIsAskedOfNornAndHandedToHermodrToHold(t *testing.T) {
 	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
 	h, fake := newTest(t, now)
-	h.SetMeetings([]CalendarEvent{{ID: "now", Start: now.Add(-30 * time.Minute).UnixMilli(), End: now.Add(15 * time.Minute).UnixMilli(), ShowAs: "busy"}})
 	fired, _ := h.FromNorn(norn("calendar.added", map[string]any{"calendar": "work",
 		"event": map[string]any{"id": "x", "subject": "Budget", "start": now.Add(40 * time.Minute).UnixMilli(), "end": now.Add(70 * time.Minute).UnixMilli(), "organizer": "Kim"}}))
 	h.Handle(context.Background(), fired)
 	got := reactions(t, h)
-	if len(got) != 1 || got[0].State != "held" || got[0].Text != "Bring the Q3 numbers." {
+	if len(got) != 1 || got[0].State != "delivered" || got[0].Text != "Bring the Q3 numbers." {
 		t.Fatalf("got %+v", got)
 	}
 	if len(fake.asked) != 1 || !strings.HasPrefix(fake.asked[0], "/local Brief me for my meeting \"Budget\" at 10:40, organized by Kim") {
 		t.Fatalf("asked %q", fake.asked)
 	}
-
-	ended, _ := h.FromNorn(norn("calendar.ended", map[string]any{"calendar": "work",
-		"event": map[string]any{"id": "now", "subject": "Standup", "start": now.Add(-30 * time.Minute).UnixMilli(), "end": now.UnixMilli()}}))
-	h.Handle(context.Background(), ended)
-	if got := reactions(t, h); got[0].State != "delivered" || len(fake.pushed) != 1 {
-		t.Fatalf("after the meeting: %+v, pushed %v", got, fake.pushed)
+	if len(fake.pushed) != 1 || !fake.pushed[0].Hold || fake.pushed[0].Priority != "normal" || fake.pushed[0].Title != "Budget at 10:40" {
+		t.Fatalf("handed over %+v", fake.pushed)
 	}
 }
 

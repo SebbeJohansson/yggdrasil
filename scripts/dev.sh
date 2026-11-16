@@ -16,7 +16,7 @@
 #   YGG_DEV_DIR=<dir>   where the build goes (default bin/dev), one per runner
 set -eu
 cd "$(dirname "$0")/.."
-ALL="norn sindri vedrfolnir gjallar ratatoskr munin huginn dellingr"
+ALL="norn sindri vedrfolnir gjallar ratatoskr munin huginn dellingr hermodr"
 parts="${*:-$ALL}"
 for part in $parts; do
 	case " $ALL " in *" $part "*) ;; *) echo "No part called $part. Parts: $ALL" >&2; exit 2 ;; esac

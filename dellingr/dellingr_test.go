@@ -13,7 +13,6 @@ import (
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/call"
 	"yggdrasil/internal/contract/contracttest"
-	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
 )
 
@@ -95,7 +94,7 @@ func newTest(t *testing.T, now *time.Time) (*Dellingr, *fake, *httptest.Server) 
 	}
 	t.Cleanup(func() { store.Close() })
 	d := New(store, call.New("norn", parts.URL, "t", time.Second), call.New("sindri", parts.URL, "t", time.Second),
-		alert.NewClient("", ""), ntfy.New("", ""), time.UTC, t.Logf)
+		alert.NewClient("", ""), nil, time.UTC, t.Logf)
 	d.now = func() time.Time { return *now }
 	p := part.New(Name, contracttest.Tokens(), nil)
 	d.Mount(p)

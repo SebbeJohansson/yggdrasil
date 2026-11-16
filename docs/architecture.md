@@ -33,7 +33,9 @@ never call each other's Go code. They talk over HTTP only:
   re-sending what Gjallar didn't take, and, after a restart, taking back the
   alerts Gjallar still holds (`GET /v1/alerts/mine`) so they get resolved.
   Used by Ratatoskr, Munin and Veðrfölnir.
-- `internal/ntfy`: phone pushes.
+- `internal/ntfy`: phone pushes, for Hermóðr and for the fallbacks below.
+- `internal/tell`: telling you something through Hermóðr, chained with a
+  direct ntfy push where Hermóðr itself may be down (Gjallar, Ratatoskr).
 - `internal/env`: settings.
 - `internal/where`: where each part is found (`YGG_<PART>_URL`).
 - `internal/contract`: reads a part's spec and checks a running service
@@ -64,6 +66,7 @@ hold it to its spec: the same routes, and every answer in the spec's shape.
 | Munin: external checks | 8776 | container | none | built |
 | Huginn: reacts to events | 8777 | container | `huginn.db`: rules, reactions | built |
 | Dellingr: scheduled jobs | 8778 | container | `dellingr.db`: jobs, runs | built |
+| Hermóðr: messages to you | 8779 | container | `hermodr.db`: the last week of messages | built |
 
 ## Tokens
 
@@ -85,7 +88,7 @@ knows the caller's name:
 | a disk is filling, a unit failed, a container crashed (not Yggdrasil's own) | Veðrfölnir |
 | a sign-in expired | the part holding it (Norn, Sindri) |
 | Ratatoskr went silent | Gjallar |
-| Gjallar is down | Ratatoskr, around Gjallar: phone push, and `/v1/status` for the widget |
+| Gjallar is down | Ratatoskr, around Gjallar: through Hermóðr or straight to ntfy, and `/v1/status` for the widget |
 
 ## Moving from my-agent
 
@@ -149,3 +152,17 @@ can replace them later through their contracts.
 
 A rule or job made by anyone but you starts disabled, and only you can
 enable it. Only you can let a goal job start agents (`autoStart`).
+
+## One way to tell you
+
+Hermóðr is the only part that sends to you: one history the widget lists,
+and ntfy when it is set up. Slack and Discord were left out so nothing
+from your inbox lands where others could read it. Gjallar, Huginn and Dellingr send their
+messages there, with a priority, and Hermóðr decides when and where:
+urgent at once, the rest after quiet hours and, if asked, after your
+meeting. Holding through meetings moved from Huginn to here, so every
+sender gets it.
+
+Two senders keep a way around it. Gjallar pushes a critical alert straight
+to ntfy when Hermóðr can't take it, and Ratatoskr does the same for
+"Gjallar is down": the alert path must not depend on one more part.

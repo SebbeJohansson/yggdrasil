@@ -1,0 +1,236 @@
+openapi: 3.1.0
+info:
+  title: Hermóðr
+  version: "1"
+  description: |
+    Carries every message meant for you: into one history the widget reads,
+    and, when it is set up, to your phone (ntfy). The other parts send here
+    instead of to a channel of their own. Any program
+    that serves this contract and passes `ygg check hermodr <url>` can
+    replace the built-in one (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - The sender is the caller's token name, never something in the body.
+    - An urgent message goes out at once, always.
+    - Any other message waits through quiet hours, and, when it asks to
+      `hold`, while you are in a meeting (your calendars, read from Norn). It
+      goes out when that ends.
+    - A message with `push: false` is listed only, never sent to a channel.
+    - Each channel sends only what is at or above its minimum priority.
+    - Messages are kept for 7 days.
+    - A channel that fails 3 sends in a row is raised on Gjallar as
+      `channel:<name>` (warning).
+servers:
+  - url: http://127.0.0.1:8779
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/messages:
+    get:
+      summary: The last 7 days of messages, newest first. The widget reads this.
+      parameters:
+        - { name: state, in: query, required: false, schema: { type: string, enum: [held, sent, listed, failed] } }
+        - { name: unseen, in: query, required: false, schema: { type: boolean }, description: Only the ones you haven't marked seen. }
+      responses:
+        "200":
+          description: The messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages: { type: array, items: { $ref: "#/components/schemas/Message" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Tell the owner something. Sent now, or held, by the rules above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MessageInput" }
+      responses:
+        "201":
+          description: Taken.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/messages/{id}/seen:
+    post:
+      summary: You have seen it; the widget stops listing it. Owner only.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: Marked.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/channels:
+    get:
+      summary: Each channel, whether it is set up, what it sends, and how its last send went. Quiet hours and whether you are in a meeting now.
+      responses:
+        "200":
+          description: The channels.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channels, quiet, inMeeting]
+                properties:
+                  channels: { type: array, items: { $ref: "#/components/schemas/Channel" } }
+                  quiet:
+                    type: object
+                    required: [now]
+                    properties:
+                      from: { type: string, example: "22:00" }
+                      to: { type: string, example: "07:00" }
+                      now: { type: boolean }
+                  inMeeting: { type: boolean }
+                  meetingEndsAt: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/channels/{name}/test:
+    post:
+      summary: Send a test to one channel now, past every rule. Owner only.
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string, enum: [ntfy] } }
+      responses:
+        "200":
+          description: Sent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Delivery" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: The channel refused it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: The request doesn't make sense.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not yours to do.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such message or channel.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    MessageInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 200 }
+        text: { type: string, maxLength: 4000 }
+        link: { type: string, maxLength: 1000 }
+        priority: { type: string, enum: [low, normal, high, urgent], description: Defaults to normal. }
+        hold: { type: boolean, description: Wait while you are in a meeting. Never holds an urgent one. }
+        push: { type: boolean, description: "Defaults to true. false: listed for the widget only." }
+    Message:
+      type: object
+      required: [id, source, title, priority, hold, push, state, at, deliveries]
+      properties:
+        id: { type: string }
+        source: { type: string, description: The part that sent it. }
+        title: { type: string }
+        text: { type: string }
+        link: { type: string }
+        priority: { type: string, enum: [low, normal, high, urgent] }
+        hold: { type: boolean }
+        push: { type: boolean }
+        state: { type: string, enum: [held, sent, listed, failed], description: "listed: push false, or no channel takes its priority. failed: every channel it went to refused it." }
+        reason: { type: string, description: Why it is held. }
+        at: { type: string, format: date-time }
+        sentAt: { type: string, format: date-time }
+        seenAt: { type: string, format: date-time }
+        deliveries: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
+    Delivery:
+      type: object
+      required: [channel, ok, at]
+      properties:
+        channel: { type: string, enum: [ntfy] }
+        ok: { type: boolean }
+        error: { type: string }
+        at: { type: string, format: date-time }
+    Channel:
+      type: object
+      required: [name, on, min]
+      properties:
+        name: { type: string, enum: [ntfy] }
+        on: { type: boolean, description: Set up in Hermóðr's settings. }
+        min: { type: string, enum: [low, normal, high, urgent] }
+        lastSentAt: { type: string, format: date-time }
+        lastError: { type: string }
+        failures: { type: integer, description: Failed sends in a row. }

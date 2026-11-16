@@ -20,6 +20,7 @@ import (
 	"yggdrasil/api"
 	"yggdrasil/dellingr"
 	"yggdrasil/gjallar"
+	"yggdrasil/hermodr"
 	"yggdrasil/huginn"
 	"yggdrasil/internal/contract"
 	"yggdrasil/internal/migrate"
@@ -44,6 +45,7 @@ var parts = map[string]struct {
 	"vedrfolnir": {"reports on the machine: CPU, GPU, disks, services, containers", vedrfolnir.Main},
 	"huginn":     {"reacts to what just happened: messages, meetings, alerts", huginn.Main},
 	"dellingr":   {"runs the jobs you put on a clock", dellingr.Main},
+	"hermodr":    {"carries every message for you to the widget and your phone", hermodr.Main},
 }
 
 func usage() {

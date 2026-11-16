@@ -10,8 +10,8 @@ import (
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/call"
 	"yggdrasil/internal/env"
-	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/tell"
 	"yggdrasil/internal/where"
 )
 
@@ -23,7 +23,7 @@ import (
 //	YGG_NORN_URL     Norn; NORN_TOKEN is Dellingr's token there (ask jobs)
 //	YGG_SINDRI_URL   Sindri; SINDRI_TOKEN is Dellingr's token there (goal jobs)
 //	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Dellingr's token there (failing:<job>)
-//	NTFY_URL, NTFY_TOKEN  the phone push topic; unset is widget only
+//	YGG_HERMODR_URL  Hermóðr, which carries each run's result to you; HERMODR_TOKEN is Dellingr's token there
 //	TIME_ZONE        for jobs that name none (Europe/Stockholm)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("DELLINGR_TOKENS")
@@ -51,7 +51,7 @@ func Main(ctx context.Context) error {
 		call.New("norn", where.URL("norn"), env.String("NORN_TOKEN", ""), 3*time.Minute),
 		call.New("sindri", where.URL("sindri"), env.String("SINDRI_TOKEN", ""), 30*time.Second),
 		alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", "")),
-		ntfy.New(env.String("NTFY_URL", ""), env.String("NTFY_TOKEN", "")), zone, p.Logf)
+		tell.NewHermodr(where.URL("hermodr"), env.String("HERMODR_TOKEN", "")), zone, p.Logf)
 	d.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }

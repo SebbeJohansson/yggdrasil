@@ -9,7 +9,7 @@
 //	POST   /v1/rules        a new rule; disabled unless the owner made it
 //	PATCH  /v1/rules/{id}   change it; enabling is owner only
 //	DELETE /v1/rules/{id}   not a built-in one
-//	GET    /v1/reactions    what Huginn did lately, held ones included
+//	GET    /v1/reactions    what Huginn did lately
 package huginn
 
 import (
@@ -29,9 +29,9 @@ import (
 
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/call"
-	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/sse"
+	"yggdrasil/internal/tell"
 )
 
 // Name is this part's name.
@@ -132,7 +132,8 @@ type Huginn struct {
 	Norn    *call.Part
 	Sindri  *call.Part
 	Gjallar *alert.Client
-	Push    *ntfy.Topic
+	// Tell carries reactions to you (Hermóðr).
+	Tell    tell.Teller
 	Zone    *time.Location
 	// Streams are Norn's and Gjallar's; nil in tests.
 	Streams []*sse.Stream
@@ -141,17 +142,9 @@ type Huginn struct {
 	logf    func(string, ...any)
 	mu      sync.Mutex
 	started bool
-	// meetings are your calendars as last read from Norn.
-	meetings []meeting
 	alerts   map[int64]alertSeen
 	told     map[string]string
 	raised   map[string]bool
-}
-
-type meeting struct {
-	ID         string
-	Start, End int64
-	Busy       bool
 }
 
 type alertSeen struct {
@@ -160,8 +153,8 @@ type alertSeen struct {
 }
 
 // New makes Huginn and writes the built-in rules into the store.
-func New(ctx context.Context, store *Store, norn, sindri *call.Part, gjallar *alert.Client, push *ntfy.Topic, zone *time.Location, logf func(string, ...any)) (*Huginn, error) {
-	h := &Huginn{Store: store, Norn: norn, Sindri: sindri, Gjallar: gjallar, Push: push, Zone: zone, now: time.Now, logf: logf,
+func New(ctx context.Context, store *Store, norn, sindri *call.Part, gjallar *alert.Client, teller tell.Teller, zone *time.Location, logf func(string, ...any)) (*Huginn, error) {
+	h := &Huginn{Store: store, Norn: norn, Sindri: sindri, Gjallar: gjallar, Tell: teller, Zone: zone, now: time.Now, logf: logf,
 		alerts: map[int64]alertSeen{}, told: map[string]string{}, raised: map[string]bool{}}
 	kept, err := store.Rules(ctx)
 	if err != nil {
@@ -190,8 +183,7 @@ func (h *Huginn) Mount(p *part.Part) {
 	p.Handle("DELETE /v1/rules/{id}", h.deleteRule)
 	p.Handle("GET /v1/reactions", h.reactions)
 	p.Loop("streams", 30*time.Second, h.watchStreams)
-	p.Loop("meetings", 2*time.Minute, h.readMeetings)
-	p.Loop("deliver", 30*time.Second, h.releaseHeld)
+	p.Loop("forget", time.Hour, h.forget)
 }
 
 // --- routes ---
@@ -398,8 +390,8 @@ func (h *Huginn) deleteRule(w http.ResponseWriter, r *http.Request) {
 
 func (h *Huginn) reactions(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
-	if state != "" && !slices.Contains([]string{"held", "delivered", "failed", "skipped"}, state) {
-		part.Error(w, http.StatusBadRequest, "state must be held, delivered, failed or skipped")
+	if state != "" && !slices.Contains([]string{"delivered", "failed", "skipped"}, state) {
+		part.Error(w, http.StatusBadRequest, "state must be delivered, failed or skipped")
 		return
 	}
 	reactions, err := h.Store.Reactions(r.Context(), state, 200)
@@ -609,9 +601,6 @@ func Fill(text string, fields map[string]string) string {
 // Handle runs every enabled rule the event matches. The rules' work runs in
 // the background, so a slow answer never holds up the stream.
 func (h *Huginn) Handle(ctx context.Context, f Fired) {
-	if f.Kind == "calendar.ended" && f.Change != nil {
-		h.endMeeting(f.Change.Event.ID)
-	}
 	rules, err := h.Store.Rules(ctx)
 	if err != nil {
 		h.logf("reading the rules: %v", err)
@@ -630,9 +619,6 @@ func (h *Huginn) Handle(ctx context.Context, f Fired) {
 		}()
 	}
 	wg.Wait()
-	if f.Kind == "calendar.ended" {
-		h.releaseHeld(ctx)
-	}
 }
 
 // claim reports whether this rule is the first to tell you about the event
@@ -663,17 +649,11 @@ func (h *Huginn) react(ctx context.Context, rule Rule, f Fired) {
 	default:
 		text, err := h.content(ctx, rule, f)
 		reaction.Text = text
-		switch {
-		case err != nil:
+		if err != nil {
 			reaction.State, reaction.Reason = "failed", err.Error()
-		case rule.Hold && !f.Urgent:
-			if until, busy := h.inMeeting(h.now()); busy {
-				reaction.State, reaction.Reason = "held", "in a meeting until "+h.clock(until)
-			}
+		} else {
+			h.deliver(ctx, rule, f, &reaction)
 		}
-	}
-	if reaction.State == "" {
-		h.deliver(ctx, &reaction)
 	}
 	h.record(ctx, rule, reaction)
 }
@@ -690,16 +670,31 @@ func (h *Huginn) content(ctx context.Context, rule Rule, f Fired) (string, error
 	return "", fmt.Errorf("unknown action %q", rule.Action.Kind)
 }
 
-func (h *Huginn) deliver(ctx context.Context, reaction *Reaction) {
-	if slices.Contains(reaction.Deliver, "phone") {
-		priority := 3
-		if reaction.Urgent {
-			priority = 4
-		}
-		if err := h.Push.Push(ctx, reaction.Title, reaction.Text, priority, reaction.Link); err != nil {
-			reaction.State, reaction.Reason = "failed", "phone push: "+err.Error()
-			return
-		}
+// Priority is how loudly Hermóðr should tell you: urgent for an urgent message
+// or a critical alert, high for a message from above you, normal otherwise.
+func Priority(f Fired) string {
+	switch {
+	case f.Urgent:
+		return "urgent"
+	case f.Inbox != nil && slices.Contains([]string{"manager", "above", "leadership"}, f.Inbox.Relation):
+		return "high"
+	}
+	return "normal"
+}
+
+// deliver hands the reaction to Hermóðr, which holds it through a meeting
+// when the rule says so, and carries it to your channels.
+func (h *Huginn) deliver(ctx context.Context, rule Rule, f Fired, reaction *Reaction) {
+	if h.Tell == nil || !h.Tell.On() {
+		reaction.State, reaction.Reason = "failed", "Hermóðr is not set up (YGG_HERMODR_URL, HERMODR_TOKEN)"
+		return
+	}
+	push := slices.Contains(rule.Deliver, "phone")
+	err := h.Tell.Tell(ctx, tell.Message{Title: reaction.Title, Text: reaction.Text, Link: reaction.Link,
+		Priority: Priority(f), Hold: rule.Hold, Push: &push})
+	if err != nil {
+		reaction.State, reaction.Reason = "failed", err.Error()
+		return
 	}
 	at := h.now()
 	reaction.State, reaction.Reason, reaction.DeliveredAt = "delivered", "", &at
@@ -716,86 +711,8 @@ func (h *Huginn) record(ctx context.Context, rule Rule, reaction Reaction) {
 	}
 }
 
-// --- meetings and held reactions ---
-
-func (h *Huginn) inMeeting(now time.Time) (int64, bool) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	nowMs := now.UnixMilli()
-	var until int64
-	for _, m := range h.meetings {
-		if m.Busy && m.Start <= nowMs && nowMs < m.End && m.End > until {
-			until = m.End
-		}
-	}
-	return until, until > 0
-}
-
-func (h *Huginn) endMeeting(id string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for i := range h.meetings {
-		if h.meetings[i].ID == id {
-			h.meetings[i].Busy = false
-		}
-	}
-}
-
-// SetMeetings replaces what Huginn knows of your calendars.
-func (h *Huginn) SetMeetings(events []CalendarEvent) {
-	var meetings []meeting
-	for _, event := range events {
-		if event.AllDay || event.Response == "declined" {
-			continue
-		}
-		meetings = append(meetings, meeting{ID: event.ID, Start: event.Start, End: event.End, Busy: event.ShowAs != "free"})
-	}
-	h.mu.Lock()
-	h.meetings = meetings
-	h.mu.Unlock()
-}
-
-func (h *Huginn) readMeetings(ctx context.Context) error {
-	if !h.Norn.On() {
-		return nil
-	}
-	var all []CalendarEvent
-	var failed []string
-	for _, path := range []string{"/v1/calendar", "/v1/calendar/personal"} {
-		var calendar struct {
-			Events []CalendarEvent `json:"events"`
-		}
-		if err := h.Norn.Do(ctx, http.MethodGet, path, nil, &calendar); err != nil {
-			failed = append(failed, err.Error())
-			continue
-		}
-		all = append(all, calendar.Events...)
-	}
-	if len(failed) == 2 {
-		return errors.New(failed[0])
-	}
-	h.SetMeetings(all)
-	return nil
-}
-
-func (h *Huginn) releaseHeld(ctx context.Context) error {
-	if err := h.Store.Forget(ctx, h.now().Add(-KeepReactions)); err != nil {
-		return err
-	}
-	if _, busy := h.inMeeting(h.now()); busy {
-		return nil
-	}
-	held, err := h.Store.Reactions(ctx, "held", 200)
-	if err != nil {
-		return err
-	}
-	for _, reaction := range held {
-		h.deliver(ctx, &reaction)
-		if err := h.Store.PutReaction(ctx, reaction); err != nil {
-			return err
-		}
-	}
-	return nil
+func (h *Huginn) forget(ctx context.Context) error {
+	return h.Store.Forget(ctx, h.now().Add(-KeepReactions))
 }
 
 // --- streams ---
