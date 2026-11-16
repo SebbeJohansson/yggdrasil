@@ -49,6 +49,21 @@ type CalendarEvent struct {
 	Online bool   `json:"online"`
 	// ID stays the same when the meeting moves.
 	ID string `json:"id,omitempty"`
+	// Attendees is who is invited, by name (or address when there is no
+	// name), you left out where the calendar says which is you. At most maxAttendees.
+	Attendees []string `json:"attendees,omitempty"`
+}
+
+// maxAttendees keeps an all-hands from filling the snapshot.
+const maxAttendees = 30
+
+// addAttendee adds a name once, up to maxAttendees.
+func addAttendee(names []string, name string) []string {
+	name = strings.TrimSpace(name)
+	if name == "" || len(names) >= maxAttendees || slices.Contains(names, name) {
+		return names
+	}
+	return append(names, name)
 }
 
 // DueTask is a Google task with a due date. Google keeps only the date.
@@ -176,7 +191,7 @@ func GraphCalendarURL(from, to time.Time) string {
 	params := url.Values{
 		"startDateTime": {from.UTC().Format(time.RFC3339Nano)},
 		"endDateTime":   {to.UTC().Format(time.RFC3339Nano)},
-		"$select":       {"id,subject,start,end,isAllDay,location,organizer,responseStatus,showAs,isOnlineMeeting,isCancelled"},
+		"$select":       {"id,subject,start,end,isAllDay,location,organizer,attendees,responseStatus,showAs,isOnlineMeeting,isCancelled"},
 		"$orderby":      {"start/dateTime"},
 		"$top":          {"200"},
 	}
@@ -215,6 +230,9 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 			Organizer       struct {
 				EmailAddress struct{ Name string } `json:"emailAddress"`
 			} `json:"organizer"`
+			Attendees []struct {
+				EmailAddress struct{ Name, Address string } `json:"emailAddress"`
+			} `json:"attendees"`
 			ResponseStatus struct{ Response string } `json:"responseStatus"`
 			ShowAs         string                    `json:"showAs"`
 		} `json:"value"`
@@ -232,10 +250,18 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 		if subject == "" {
 			subject = "(no title)"
 		}
+		var attendees []string
+		for _, attendee := range raw.Attendees {
+			name := attendee.EmailAddress.Name
+			if name == "" {
+				name = attendee.EmailAddress.Address
+			}
+			attendees = addAttendee(attendees, name)
+		}
 		events = append(events, CalendarEvent{
 			Subject: subject, Start: start, End: end, AllDay: raw.IsAllDay, Online: raw.IsOnlineMeeting,
 			Location: strings.TrimSpace(raw.Location.DisplayName), Organizer: raw.Organizer.EmailAddress.Name,
-			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID,
+			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID, Attendees: attendees,
 		})
 	}
 	return events, page.Next
@@ -350,6 +376,8 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 			Attendees []struct {
 				Self           bool   `json:"self"`
 				ResponseStatus string `json:"responseStatus"`
+				DisplayName    string `json:"displayName"`
+				Email          string `json:"email"`
 			} `json:"attendees"`
 		} `json:"items"`
 		NextPageToken string `json:"nextPageToken"`
@@ -382,6 +410,16 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 					event.Response = googleResponses[attendee.ResponseStatus]
 				}
 			}
+		}
+		for _, attendee := range raw.Attendees {
+			if attendee.Self {
+				continue
+			}
+			name := attendee.DisplayName
+			if name == "" {
+				name = attendee.Email
+			}
+			event.Attendees = addAttendee(event.Attendees, name)
 		}
 		events = append(events, event)
 	}

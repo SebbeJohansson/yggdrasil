@@ -1177,6 +1177,7 @@ components:
         showAs: { type: string }
         online: { type: boolean }
         id: { type: string, description: The same meeting keeps the same id when it moves. }
+        attendees: { type: array, items: { type: string }, description: "Who is invited, by name (or address), at most 30. Google leaves you out; Outlook lists you too." }
     InboxArrived:
       type: object
       required: [id, source, from, band, reasons, direct, mentionsMe, summary, at]

@@ -3,6 +3,7 @@ package norn
 import (
 	"context"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -10,12 +11,15 @@ import (
 
 func TestGraphEvents(t *testing.T) {
 	events, next := GraphEvents([]byte(`{"value":[
-		{"subject":" Standup ","start":{"dateTime":"2026-10-08T07:00:00.0000000"},"end":{"dateTime":"2026-10-08T07:15:00.0000000"},"isOnlineMeeting":true,"organizer":{"emailAddress":{"name":"Ada"}},"responseStatus":{"response":"accepted"},"showAs":"busy"},
+		{"subject":" Standup ","start":{"dateTime":"2026-10-08T07:00:00.0000000"},"end":{"dateTime":"2026-10-08T07:15:00.0000000"},"isOnlineMeeting":true,"organizer":{"emailAddress":{"name":"Ada"}},"attendees":[{"emailAddress":{"name":"Ada","address":"ada@x"}},{"emailAddress":{"address":"bo@x"}},{"emailAddress":{"name":"Ada"}}],"responseStatus":{"response":"accepted"},"showAs":"busy"},
 		{"subject":"Gone","isCancelled":true,"start":{"dateTime":"2026-10-08T08:00:00"},"end":{"dateTime":"2026-10-08T09:00:00"}},
 		{"subject":"","start":{"dateTime":"2026-10-09T00:00:00Z"},"end":{"dateTime":"2026-10-10T00:00:00Z"},"isAllDay":true}
 	],"@odata.nextLink":"https://next"}`))
 	if next != "https://next" || len(events) != 2 {
 		t.Fatalf("got %d events, next %q", len(events), next)
+	}
+	if !reflect.DeepEqual(events[0].Attendees, []string{"Ada", "bo@x"}) {
+		t.Fatalf("attendees %v", events[0].Attendees)
 	}
 	if events[0].Subject != "Standup" || events[0].Start != time.Date(2026, 10, 8, 7, 0, 0, 0, time.UTC).UnixMilli() || !events[0].Online || events[0].Organizer != "Ada" {
 		t.Fatalf("got %+v", events[0])
@@ -27,12 +31,15 @@ func TestGraphEvents(t *testing.T) {
 
 func TestGoogleEvents(t *testing.T) {
 	events, _ := GoogleEvents([]byte(`{"items":[
-		{"summary":"Dinner","start":{"dateTime":"2026-10-08T18:00:00+02:00"},"end":{"dateTime":"2026-10-08T20:00:00+02:00"},"organizer":{"displayName":"Sam"},"attendees":[{"self":true,"responseStatus":"tentative"}],"transparency":"transparent"},
+		{"summary":"Dinner","start":{"dateTime":"2026-10-08T18:00:00+02:00"},"end":{"dateTime":"2026-10-08T20:00:00+02:00"},"organizer":{"displayName":"Sam"},"attendees":[{"self":true,"responseStatus":"tentative","displayName":"Me"},{"displayName":"Kim"}],"transparency":"transparent"},
 		{"summary":"Mine","start":{"date":"2026-10-09"},"end":{"date":"2026-10-10"},"organizer":{"self":true},"hangoutLink":"x"},
 		{"status":"cancelled","summary":"x","start":{"date":"2026-10-09"},"end":{"date":"2026-10-10"}}
 	]}`))
 	if len(events) != 2 {
 		t.Fatalf("got %+v", events)
+	}
+	if !reflect.DeepEqual(events[0].Attendees, []string{"Kim"}) {
+		t.Fatalf("attendees %v", events[0].Attendees)
 	}
 	if events[0].Response != "tentativelyAccepted" || events[0].ShowAs != "free" || events[0].Organizer != "Sam" {
 		t.Fatalf("got %+v", events[0])
