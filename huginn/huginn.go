@@ -149,6 +149,8 @@ type Huginn struct {
 	alerts  map[int64]alertSeen
 	told    map[string]string
 	raised  map[string]bool
+	// linearFails is how many times in a row Norn could not judge each Linear ticket.
+	linearFails map[string]int
 }
 
 type alertSeen struct {

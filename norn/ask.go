@@ -611,6 +611,15 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		options.Format = map[string]any{"type": "object", "properties": map[string]any{"answer": map[string]any{"type": "string"}, "enough": map[string]any{"type": "boolean"}}, "required": []string{"answer", "enough"}}
 	}
 	raw, err := n.LLM.Chat(ctx, messages, options)
+	if err != nil && options.Format != nil {
+		// XeStrata's JSON mode gives up on some questions (structured_output_failed).
+		// A plain answer is better than none: asked again without it, and read as
+		// enough unless it says it does not know.
+		n.logf("answer: JSON mode failed (%v); asking without it", err)
+		plain := options
+		plain.Format = nil
+		raw, err = n.LLM.Chat(ctx, messages, plain)
+	}
 	if err != nil {
 		return AskResponse{}, fmt.Errorf("the model did not answer: %w", err)
 	}

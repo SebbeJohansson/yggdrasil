@@ -243,3 +243,39 @@ func TestYourOwnSessions(t *testing.T) {
 		t.Error("the hand-over leaves out your sessions")
 	}
 }
+
+// A /local question that reads like a calendar one asks for JSON; when the
+// model's JSON mode gives up, the answer comes from a plain ask instead of a 502.
+func TestALocalAnswerSurvivesJSONModeFailing(t *testing.T) {
+	var mu sync.Mutex
+	var formats []bool
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, structured := body["response_format"]
+		mu.Lock()
+		formats = append(formats, structured)
+		mu.Unlock()
+		if structured {
+			http.Error(w, `{"error": {"type": "structured_output_failed", "message": "model did not return valid JSON"}}`, http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"No"}}]}`))
+	}))
+	defer model.Close()
+	n, p := newNorn(t)
+	n.LLM = &llm.Client{PrimaryURL: model.URL + "/v1"}
+	now := time.Now()
+	n.Accounts.Work.Set(CalendarSnapshot{From: now.Add(-time.Hour).UnixMilli(), To: now.Add(24 * time.Hour).UnixMilli(), At: now.UnixMilli()})
+
+	code, body := call(t, p, "POST", "/v1/ask", map[string]string{"question": "/local Is this ticket development work? Ticket: AI-58 Prepare the agenda for the planning meeting", "to": "norn"})
+	if code != http.StatusOK {
+		t.Fatalf("%d %v", code, body)
+	}
+	if answer := body.(map[string]any)["answer"]; answer != "No" {
+		t.Fatalf("answer %v", answer)
+	}
+	if len(formats) != 2 || !formats[0] || formats[1] {
+		t.Fatalf("asked with JSON mode %v, want once with and then once without", formats)
+	}
+}

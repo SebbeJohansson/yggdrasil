@@ -8,6 +8,7 @@ package huginn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,6 +18,11 @@ import (
 
 // LinearEvery is how often Huginn looks at your Linear tickets.
 const LinearEvery = 5 * time.Minute
+
+// LinearTries is how many passes in a row a ticket Norn cannot judge is asked
+// about before it is set aside as not development work, so one ticket does not
+// fail the loop for good.
+const LinearTries = 3
 
 // Candidate is the little of Sindri's goal candidate Huginn reads.
 type Candidate struct {
@@ -69,6 +75,10 @@ func (h *Huginn) watchLinear(ctx context.Context) error {
 	if err := h.Sindri.Do(ctx, http.MethodGet, "/v1/goals/candidates?from=linear&assignee=mine", nil, &answer); err != nil {
 		return err
 	}
+	// One ticket Norn cannot judge does not stop the others; the pass fails
+	// only when it asked and every ask failed.
+	var failed []error
+	asked := 0
 	for _, c := range answer.Candidates {
 		key := strings.TrimPrefix(c.Source, "linear:")
 		if c.StateType != "unstarted" || c.Goal != nil || key == c.Source {
@@ -77,10 +87,17 @@ func (h *Huginn) watchLinear(ctx context.Context) error {
 		if _, judged, err := h.Store.Judged(ctx, key); err != nil || judged {
 			continue
 		}
+		asked++
 		reply, err := h.Norn.Ask(ctx, fmt.Sprintf(JudgeAsk, key+" "+c.Title, clipText(c.Context, 1500)), AskSession)
 		if err != nil {
-			return fmt.Errorf("asking Norn about %s: %w", key, err)
+			if h.linearFailed(key) < LinearTries {
+				failed = append(failed, fmt.Errorf("asking Norn about %s: %w", key, err))
+				continue
+			}
+			h.logf("linear: Norn could not judge %s %d times in a row; set aside as not development work: %v", key, LinearTries, err)
+			reply = "no"
 		}
+		h.linearJudged(key)
 		dev := IsYes(reply)
 		if err := h.Store.Judge(ctx, key, dev); err != nil {
 			return err
@@ -92,5 +109,28 @@ func (h *Huginn) watchLinear(ctx context.Context) error {
 			Link:   GoalsLink(h.DashboardURL, key),
 			Fields: map[string]string{"key": key, "title": c.Title, "url": c.URL, "state": c.State}})
 	}
+	if len(failed) > 0 && len(failed) == asked {
+		return errors.Join(failed...)
+	}
+	for _, err := range failed {
+		h.logf("linear: %v", err)
+	}
 	return nil
+}
+
+// linearFailed counts one more failed ask about `key`, and says how many in a row.
+func (h *Huginn) linearFailed(key string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.linearFails == nil {
+		h.linearFails = map[string]int{}
+	}
+	h.linearFails[key]++
+	return h.linearFails[key]
+}
+
+func (h *Huginn) linearJudged(key string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.linearFails, key)
 }

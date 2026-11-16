@@ -78,6 +78,64 @@ func TestATodoTicketWithNoGoalIsSuggestedOnceWhenNornSaysItIsDevelopment(t *test
 	}
 }
 
+func TestATicketNornCannotJudgeNeitherBlocksTheOthersNorFailsForGood(t *testing.T) {
+	var mu sync.Mutex
+	asked := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/v1/goals/candidates":
+			_ = json.NewEncoder(w).Encode(map[string]any{"candidates": []Candidate{
+				{Source: "linear:AI-58", Title: "Prepare the planning meeting", State: "Todo", StateType: "unstarted"},
+				{Source: "linear:AI-59", Title: "Fix the importer", State: "Todo", StateType: "unstarted"},
+			}})
+		case "/v1/ask":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if strings.Contains(body["question"], "AI-58") {
+				asked["AI-58"]++
+				http.Error(w, `{"error":"the model did not answer"}`, http.StatusBadGateway)
+				return
+			}
+			asked["AI-59"]++
+			_ = json.NewEncoder(w).Encode(map[string]any{"answer": "No"})
+		}
+	}))
+	defer server.Close()
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	h, err := New(context.Background(), store, call.New("norn", server.URL, "t", time.Second), call.New("sindri", server.URL, "t", time.Second),
+		alert.NewClient("", ""), tell.NewHermodr(server.URL, "t"), time.UTC, t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The first pass: AI-59 is judged although AI-58 failed before it, and the pass is not a failure.
+	if err := h.watchLinear(context.Background()); err != nil {
+		t.Fatalf("pass 1: %v", err)
+	}
+	if _, judged, _ := store.Judged(context.Background(), "AI-59"); !judged {
+		t.Fatal("AI-59 was not judged")
+	}
+	// Now AI-58 is the only one asked: those passes fail, until the third sets it aside.
+	if err := h.watchLinear(context.Background()); err == nil {
+		t.Fatal("pass 2: want the failure, as every ask failed")
+	}
+	if err := h.watchLinear(context.Background()); err != nil {
+		t.Fatalf("pass 3 should set AI-58 aside: %v", err)
+	}
+	if dev, judged, _ := store.Judged(context.Background(), "AI-58"); !judged || dev {
+		t.Fatalf("AI-58: judged %v, development %v", judged, dev)
+	}
+	if err := h.watchLinear(context.Background()); err != nil || asked["AI-58"] != LinearTries || asked["AI-59"] != 1 {
+		t.Fatalf("pass 4: %v, asked %v", err, asked)
+	}
+}
+
 func TestIsYes(t *testing.T) {
 	for answer, want := range map[string]bool{"Yes": true, "yes, it is code": true, `"Yes."`: true, "Ja": true, "No": false, "Probably": false, "": false} {
 		if IsYes(answer) != want {
