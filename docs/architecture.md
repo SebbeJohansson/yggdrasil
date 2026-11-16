@@ -87,6 +87,7 @@ knows the caller's name:
 | something outside Yggdrasil doesn't answer (Ollama, Laya, Slack…) | Munin |
 | a disk is filling, a unit failed, a container crashed (not Yggdrasil's own) | Veðrfölnir |
 | a sign-in expired | the part holding it (Norn, Sindri) |
+| the local model fails most calls for an hour | Norn |
 | Ratatoskr went silent | Gjallar |
 | Gjallar is down | Ratatoskr, around Gjallar: through Hermóðr or straight to ntfy, and `/v1/status` for the widget |
 

@@ -227,6 +227,55 @@ paths:
                         calls: { type: array, items: { $ref: "#/components/schemas/LlmCall" } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/models/health:
+    get:
+      summary: Every model call of the last hours counted by hour and by purpose, failures sorted into kinds (json, timeout, unreachable, other), and the latest failures. For the System page.
+      parameters:
+        - { name: hours, in: query, required: false, example: 24, schema: { type: integer, minimum: 1, maximum: 72 } }
+      responses:
+        "200":
+          description: Model health.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [since, total, hours, purposes, recent, lastHour]
+                properties:
+                  since: { type: integer }
+                  lastHour:
+                    type: object
+                    description: The last hour as Norn's alert judges it. Failures a retry without JSON mode made good do not count.
+                    required: [calls, failed, failing]
+                    properties:
+                      calls: { type: integer }
+                      failed: { type: integer }
+                      failing: { type: boolean }
+                  total: { $ref: "#/components/schemas/HealthCount" }
+                  hours:
+                    type: array
+                    items:
+                      allOf:
+                        - { $ref: "#/components/schemas/HealthCount" }
+                        - { type: object, required: [at], properties: { at: { type: integer } } }
+                  purposes:
+                    type: array
+                    items:
+                      allOf:
+                        - { $ref: "#/components/schemas/HealthCount" }
+                        - { type: object, required: [purpose, medianMs], properties: { purpose: { type: string }, medianMs: { type: integer } } }
+                  recent:
+                    type: array
+                    items:
+                      type: object
+                      required: [at, purpose, backend, kind, error]
+                      properties:
+                        at: { type: integer }
+                        purpose: { type: string }
+                        backend: { type: string }
+                        kind: { type: string, enum: [json, timeout, unreachable, other] }
+                        error: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/systemone:
     post:
       summary: Forwarded to Laya unchanged. Laya's key goes in X-Laya-Authorization, or Norn uses its own.
@@ -1216,6 +1265,14 @@ components:
         authorizeUrl: { type: string }
         handle: { type: string }
         error: { type: string }
+    HealthCount:
+      type: object
+      required: [calls, failed, ollama]
+      properties:
+        calls: { type: integer }
+        failed: { type: integer }
+        ollama: { type: integer, description: Calls Ollama answered because XeStrata did not. }
+        kinds: { type: [object, "null"], additionalProperties: { type: integer } }
     LlmCall:
       type: object
       required: [at, session, exchange, purpose, backend, model, totalMs]

@@ -618,6 +618,8 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		n.logf("answer: JSON mode failed (%v); asking without it", err)
 		plain := options
 		plain.Format = nil
+		// Its own purpose, so the health view tells a failed answer from a recovered one.
+		plain.Purpose = "answer without JSON"
 		raw, err = n.LLM.Chat(ctx, messages, plain)
 	}
 	if err != nil {

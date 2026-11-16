@@ -67,9 +67,11 @@ type Norn struct {
 	Brain  *Brain
 	HTTP   *http.Client
 	// Gjallar is where Norn raises what is its to raise: a sign-in that ended.
-	Gjallar  *alert.Client
-	Accounts *Accounts
-	Inbox    *Inbox
+	Gjallar *alert.Client
+	// modelFailing is what the model-health loop last told Gjallar; modelChecked, that it has.
+	modelFailing, modelChecked bool
+	Accounts                   *Accounts
+	Inbox                      *Inbox
 	// Events is what just changed, for parts that react to it (Huginn).
 	Events *Events
 	Zone   *time.Location
@@ -122,6 +124,7 @@ func (n *Norn) Mount(p *part.Part) {
 	p.Handle("GET /v1/search", n.search)
 	p.Handle("GET /v1/activity", n.activity)
 	p.Handle("GET /v1/chat/llm-calls", n.llmCalls)
+	p.Handle("GET /v1/models/health", n.modelHealth)
 	p.Handle("POST /v1/systemone", n.systemOne)
 	n.mountAccounts(p)
 	n.mountInbox(p)
@@ -129,6 +132,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountWrite(p)
 	n.mountEvents(p)
 	n.mountDrafts(p)
+	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 
 func (n *Norn) fail(w http.ResponseWriter, err error) {
