@@ -41,17 +41,24 @@ YGG_CORS_ORIGINS=$origins
 EOF
 fi
 
-# A part's token at Gjallar: read from GJALLAR_TOKENS, added when missing.
-gjallar_token() {
-	found=$(grep '^GJALLAR_TOKENS=' "$config/gjallar.env" | cut -d= -f2- | tr ',' '\n' | grep "^$1=" | cut -d= -f2- || true)
+# part_token <part> <caller>: the caller's token at the part, read from
+# <PART>_TOKENS in <part>.env and added when missing.
+part_token() {
+	file="$config/$1.env"
+	variable="$(echo "$1" | tr a-z A-Z)_TOKENS"
+	found=$(grep "^$variable=" "$file" | cut -d= -f2- | tr ',' '\n' | grep "^$2=" | cut -d= -f2- || true)
 	if [ -z "$found" ]; then
 		found=$(token)
-		sed -i "s|^GJALLAR_TOKENS=.*|&,$1=$found|" "$config/gjallar.env"
-		echo "  gave $1 a token at Gjallar" >&2
+		sed -i "s|^$variable=.*|&,$2=$found|" "$file"
+		echo "  gave $2 a token at $1" >&2
 	fi
 	echo "$found"
 }
-for part in munin vedrfolnir ratatoskr norn sindri; do
+# A part's token at Gjallar.
+gjallar_token() {
+	part_token gjallar "$1"
+}
+for part in munin vedrfolnir ratatoskr norn sindri huginn; do
 	gjallar_token "$part" >/dev/null
 done
 
@@ -127,6 +134,21 @@ EOF
 	done
 fi
 
+# Huginn calls Norn and Sindri with tokens of its own. After a
+# token is added there, restart Norn and Sindri (docker compose up -d, and
+# systemctl --user restart ygg-sindri).
+write huginn.env <<EOF
+HUGINN_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token huginn)
+NORN_TOKEN=$(part_token norn huginn)
+SINDRI_TOKEN=$(part_token sindri huginn)
+TIME_ZONE=Europe/Stockholm
+# Your phone push topic, the same as Gjallar's. Empty: the widget only.
+NTFY_URL=
+NTFY_TOKEN=
+YGG_CORS_ORIGINS=$origins
+EOF
+
 write parts.env <<'EOF'
 # Where every part lives, read by every part. Leave a line commented to use
 # the built-in part on its default port. To replace a part with your own
@@ -138,10 +160,14 @@ write parts.env <<'EOF'
 #YGG_GJALLAR_URL=http://127.0.0.1:8774
 #YGG_RATATOSKR_URL=http://127.0.0.1:8775
 #YGG_MUNIN_URL=http://127.0.0.1:8776
+#YGG_HUGINN_URL=http://127.0.0.1:8777
 
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
-RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin
+RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn
 EOF
+if ! grep -q '^RATATOSKR_WATCH=.*huginn' "$config/parts.env"; then
+	echo "  Note: add huginn to RATATOSKR_WATCH in $config/parts.env if this machine runs them"
+fi
 
 umask 022
 mkdir -p profile data

@@ -12,8 +12,9 @@ Why one process per part: [docs/architecture.md](docs/architecture.md).
 | **Veðrfölnir** | reports on the machine: CPU, GPU, disks, services, containers | 8773 | host unit |
 | **Norn** | assistant: inbox, calendars, sign-ins, memory, the front desk | 8771 | container |
 | **Sindri** | coding: agents, worktrees, review, checks | 8772 | host unit |
+| **Huginn** | reacts to what just happened: messages, meetings, alerts | 8777 | container |
 
-None of them fixes anything. Everything listens on 127.0.0.1 only.
+None of the watching parts fixes anything, and Huginn only tells you things. Everything listens on 127.0.0.1 only.
 
 ## Contracts
 
@@ -38,7 +39,7 @@ The host has no Go; `scripts/go` runs the toolchain in Docker.
 ```sh
 scripts/install.sh                 # build, write settings and tokens, start the host units
 cp .env.example .env               # pick the container parts (COMPOSE_PROFILES)
-docker compose up -d --build       # Norn, Gjallar, Munin, and LanguageTool for Norn
+docker compose up -d --build       # Norn, Gjallar, Munin, Huginn, and LanguageTool for Norn
 curl localhost:8775/health
 ```
 
@@ -77,7 +78,7 @@ scripts/dev-mode.sh logs    # follow it
 scripts/dev-mode.sh off     # the installed parts again
 ```
 
-Norn, Gjallar and Munin then run in the `dev` container (compose profile
+Norn, Gjallar, Munin and Huginn then run in the `dev` container (compose profile
 `dev`), and Sindri, Veðrfölnir and Ratatoskr in `ygg-dev.service` on the host,
 since they need your repos and toolchain, the host's `/proc` and systemd, or
 must outlive Docker. `on` disables the installed units and stops the
@@ -159,3 +160,23 @@ Its alerts: a disk 90 % full (warning) or 95 % full (critical), a failed unit,
 and a container that crashed or keeps restarting. Containers in the
 `yggdrasil` compose project and `ygg-*` units are left out, because
 Ratatoskr watches those.
+
+### Huginn
+
+| Route | What it does |
+| --- | --- |
+| `GET /v1/status` | `{ streams }`: Norn's and Gjallar's event streams, connected or not |
+| `GET /v1/rules` | every rule, the built-in ones first |
+| `POST /v1/rules` | `{ name, on: { event, …filters }, action: { kind: notify\|ask\|alert-impact, text }, deliver?, hold? }`. Disabled unless the owner makes it |
+| `PATCH /v1/rules/{id}` | change it; enabling is owner only, and a built-in rule can only be switched on or off |
+| `DELETE /v1/rules/{id}` | not a built-in one |
+| `GET /v1/reactions` | `?state=held\|delivered\|failed\|skipped`: what it did in the last 7 days. The widget reads this |
+
+It follows Norn's `GET /v1/events/stream` (`inbox.arrived`, `calendar.added`,
+`calendar.moved`, `calendar.removed`, `calendar.ended`) and Gjallar's alert
+stream, which it turns into `alert.opened`, `alert.escalated` and
+`alert.resolved`. Built-in rules: a message from your manager or above, an
+urgent direct message, a brief for a meeting added or moved into the next
+hour (asked of Norn), and what a critical alert stops. A rule with `hold`
+waits while you are in a meeting and goes out when it ends. A stream down for
+5 minutes is `stream:<part>` (warning).

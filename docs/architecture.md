@@ -38,6 +38,10 @@ never call each other's Go code. They talk over HTTP only:
 - `internal/where`: where each part is found (`YGG_<PART>_URL`).
 - `internal/contract`: reads a part's spec and checks a running service
   against it (`ygg check`).
+- `internal/call`: one part calling another's JSON routes with its token,
+  and asking Norn (Huginn).
+- `internal/sse`: following another part's event stream, reconnecting with
+  `Last-Event-ID` (Huginn).
 
 ## Contracts
 
@@ -58,6 +62,7 @@ hold it to its spec: the same routes, and every answer in the spec's shape.
 | Gjallar: alerts | 8774 | container | `gjallar.db` | built |
 | Ratatoskr: watchdog | 8775 | host unit, outside compose | none | built |
 | Munin: external checks | 8776 | container | none | built |
+| Huginn: reacts to events | 8777 | container | `huginn.db`: rules, reactions | built |
 
 ## Tokens
 
@@ -124,3 +129,17 @@ to-my-agent` copies them back. Both back up the target first and refuse to
 write over data unless given `--replace`. my-agent's herdr question agents
 (`data/herdr-agents.json`) become Sindri agents with the herdr engine, and
 go back the same way.
+
+## Doing things without being asked
+
+Huginn acts without a message from you, and is built so that Glim can
+replace it later through its contract.
+
+- **Huginn** reacts to events. Norn sends what changed on
+  `GET /v1/events/stream`: summaries and links only, since raw inbox text
+  never leaves Norn. Gjallar's alert stream is the other source. Huginn
+  suggests and tells; it never sends, starts or changes anything. Its
+  questions to Norn go with `to: norn` and `/local`, so Norn answers itself
+  and never hands them to an agent.
+
+A rule made by anyone but you starts disabled, and only you can enable it.

@@ -1,0 +1,280 @@
+openapi: 3.1.0
+info:
+  title: Huginn
+  version: "1"
+  description: |
+    Reacts to what just happened, so you hear about it without asking:
+    an important message, a meeting that just landed in the next hour, an
+    alert that stops your agents. It follows Norn's and Gjallar's event
+    streams and runs a rule for each event that matches one. Time-based jobs
+    belong to Dellingr. Any program that serves this contract and passes
+    `ygg check huginn <url>` can replace the built-in one
+    (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - Suggest and tell, never act for you: no mail, messages, goals or
+      agents started. It reads from Norn, Gjallar and Sindri and writes
+      nowhere but your phone and its own list of reactions.
+    - Never ask Norn for raw inbox text. Work from the events' summaries and
+      from `POST /v1/ask` on Norn, which keeps its own text to itself.
+    - A rule with `hold` waits while you are in a meeting and is delivered
+      when Norn sends `calendar.ended`. A rule with `hold: false` goes now.
+    - A rule an agent creates (any caller but the owner) starts disabled,
+      and only the owner can enable it.
+    - Missed events are fetched again with `Last-Event-ID` after a
+      reconnect. An event older than an hour is recorded, not delivered.
+    - A stream that stays down for 5 minutes is raised on Gjallar as
+      `stream:<part>` (warning).
+servers:
+  - url: http://127.0.0.1:8777
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/status:
+    get:
+      summary: Each stream Huginn follows, whether it is connected, and the last event from it.
+      responses:
+        "200":
+          description: The streams.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [streams]
+                properties:
+                  streams:
+                    type: array
+                    items:
+                      type: object
+                      required: [part, connected]
+                      properties:
+                        part: { type: string, enum: [norn, gjallar] }
+                        connected: { type: boolean }
+                        since: { type: string, format: date-time }
+                        lastEventId: { type: string }
+                        lastEventAt: { type: string, format: date-time }
+                        error: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/rules:
+    get:
+      summary: Every rule, the built-in ones first.
+      responses:
+        "200":
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rules]
+                properties:
+                  rules: { type: array, items: { $ref: "#/components/schemas/Rule" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: A new rule. Enabled when the owner makes it, disabled when anyone else does.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RuleInput" }
+      responses:
+        "201":
+          description: Made.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Rule" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/rules/{id}:
+    patch:
+      summary: Change a rule, or switch it on or off. Enabling is owner only. A built-in rule can only be switched on or off.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/RuleInput" }
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Rule" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Remove a rule. Built-in rules can't be removed, only switched off.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/reactions:
+    get:
+      summary: What Huginn did lately, newest first, the held ones included. Kept for 7 days. The widget reads this.
+      parameters:
+        - { name: state, in: query, required: false, schema: { type: string, enum: [held, delivered, failed, skipped] } }
+      responses:
+        "200":
+          description: The reactions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reactions]
+                properties:
+                  reactions: { type: array, items: { $ref: "#/components/schemas/Reaction" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: The request doesn't make sense.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not yours to do.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such rule.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    RuleInput:
+      type: object
+      required: [name, on, action]
+      properties:
+        name: { type: string, maxLength: 100 }
+        on: { $ref: "#/components/schemas/Trigger" }
+        action: { $ref: "#/components/schemas/Action" }
+        deliver:
+          type: array
+          items: { type: string, enum: [phone, widget] }
+          description: Defaults to both.
+        hold: { type: boolean, description: Wait until the meeting you are in ends. Defaults to true. }
+    Rule:
+      allOf:
+        - { $ref: "#/components/schemas/RuleInput" }
+      type: object
+      required: [id, enabled, builtIn, createdBy, deliver, hold]
+      properties:
+        id: { type: string }
+        enabled: { type: boolean }
+        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact." }
+        createdBy: { type: string, description: owner, or the name of the part or agent that made it. }
+        lastFiredAt: { type: string, format: date-time }
+        lastResult: { type: string, enum: [delivered, held, failed, skipped] }
+    Trigger:
+      type: object
+      required: [event]
+      description: Which event, and which of them. Every filter field given must match.
+      properties:
+        event:
+          type: string
+          enum: [inbox.arrived, calendar.added, calendar.moved, calendar.removed, calendar.ended, alert.opened, alert.escalated, alert.resolved]
+        relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived only. }
+        band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived only. }
+        direct: { type: boolean, description: inbox.arrived only. }
+        mentionsMe: { type: boolean, description: inbox.arrived only. }
+        startsWithinMinutes: { type: integer, minimum: 1, maximum: 1440, description: calendar.* only. }
+        calendar: { type: string, enum: [work, personal], description: calendar.* only. }
+        severity: { type: array, items: { type: string, enum: [info, warning, critical] }, description: alert.* only. }
+        source: { type: string, description: "alert.* only: the part that raised it." }
+    Action:
+      type: object
+      required: [kind]
+      description: |
+        - notify: push `text`, with the event's fields filled in ({from},
+          {summary}, {subject}, {start}, {title}…).
+        - ask: send `text`, filled in the same way, to Norn's `POST /v1/ask`
+          with `to: norn` and `/local ` in front, so Norn answers itself and
+          never hands it to an agent, and deliver the answer. The meeting brief is this.
+        - alert-impact: read Sindri's agents and tasks and say which ones the
+          alert affects. alert.* only.
+      properties:
+        kind: { type: string, enum: [notify, ask, alert-impact] }
+        text: { type: string, maxLength: 2000 }
+    Reaction:
+      type: object
+      required: [id, ruleId, ruleName, event, eventAt, state, deliver, at]
+      properties:
+        id: { type: string }
+        ruleId: { type: string }
+        ruleName: { type: string }
+        event: { type: string }
+        eventAt: { type: string, format: date-time }
+        state: { type: string, enum: [held, delivered, failed, skipped] }
+        title: { type: string }
+        text: { type: string, description: What was delivered, or will be. }
+        link: { type: string }
+        reason: { type: string, description: Why it failed, was skipped, or is held. }
+        deliver: { type: array, items: { type: string, enum: [phone, widget] } }
+        urgent: { type: boolean, description: Never held, and pushed louder. }
+        at: { type: string, format: date-time }
+        deliveredAt: { type: string, format: date-time }

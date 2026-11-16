@@ -19,6 +19,7 @@ import (
 
 	"yggdrasil/api"
 	"yggdrasil/gjallar"
+	"yggdrasil/huginn"
 	"yggdrasil/internal/contract"
 	"yggdrasil/internal/migrate"
 	"yggdrasil/internal/part"
@@ -40,6 +41,7 @@ var parts = map[string]struct {
 	"ratatoskr":  {"watchdog: is each part alive and doing its job", ratatoskr.Main},
 	"munin":      {"checks the systems outside Yggdrasil that the parts depend on", munin.Main},
 	"vedrfolnir": {"reports on the machine: CPU, GPU, disks, services, containers", vedrfolnir.Main},
+	"huginn":     {"reacts to what just happened: messages, meetings, alerts", huginn.Main},
 }
 
 func usage() {

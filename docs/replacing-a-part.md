@@ -59,6 +59,7 @@ check as the Go one.
 | Gjallar | `YGG_GJALLAR_URL` | `http://127.0.0.1:8774` |
 | Ratatoskr | `YGG_RATATOSKR_URL` | `http://127.0.0.1:8775` |
 | Munin | `YGG_MUNIN_URL` | `http://127.0.0.1:8776` |
+| Huginn | `YGG_HUGINN_URL` | `http://127.0.0.1:8777` |
 
 ## Changing a contract
 
