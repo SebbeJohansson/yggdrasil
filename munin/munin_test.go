@@ -97,3 +97,19 @@ func TestOnlyTheKeysOfTheTargetsInTheSettingsAreChecked(t *testing.T) {
 		}
 	}
 }
+
+func TestXeStrataWithNoModelLoadedIsRaised(t *testing.T) {
+	loaded, err := LoadedModels([]byte(`{"data":[{"id":"qwen3.6","status":{"value":"loaded"}},{"id":"other","status":{"value":"unloaded"}}]}`))
+	if err != nil || len(loaded) != 1 || loaded[0] != "qwen3.6" {
+		t.Fatalf("%v %v", loaded, err)
+	}
+	if loaded, _ := LoadedModels([]byte(`{"data":[{"id":"qwen3.6","status":{"value":"unloaded"}}]}`)); len(loaded) != 0 {
+		t.Fatalf("%v", loaded)
+	}
+	if loaded, _ := LoadedModels([]byte(`{"data":[{"id":"gpt"}]}`)); len(loaded) != 1 {
+		t.Fatalf("a model without a status: %v", loaded)
+	}
+	if target, err := ParseTarget("xestrata", "openai:http://127.0.0.1:8095/v1/models"); err != nil || target.Kind != OpenAI {
+		t.Fatalf("%+v %v", target, err)
+	}
+}

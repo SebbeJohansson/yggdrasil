@@ -12,6 +12,7 @@
 //
 //	http        up when anything answers: a 404 is a server that is there
 //	ollama      /api/tags answers, and the models the parts need are pulled
+//	openai      an OpenAI-compatible /v1/models (XeStrata) answers, and has a model loaded
 //	statuspage  a provider's Statuspage JSON says there is no incident
 //
 // Local targets (loopback) are checked every minute, internet targets every
@@ -51,6 +52,7 @@ type Kind string
 const (
 	HTTP       Kind = "http"
 	Ollama     Kind = "ollama"
+	OpenAI     Kind = "openai"
 	Statuspage Kind = "statuspage"
 )
 
@@ -66,8 +68,8 @@ type Target struct {
 // ParseTarget reads `kind:url` for a name.
 func ParseTarget(name, text string) (Target, error) {
 	kind, rawURL, ok := strings.Cut(text, ":")
-	if !ok || !slices.Contains([]Kind{HTTP, Ollama, Statuspage}, Kind(kind)) {
-		return Target{}, fmt.Errorf("%s: want kind:url with kind http, ollama or statuspage, not %q", name, text)
+	if !ok || !slices.Contains([]Kind{HTTP, Ollama, OpenAI, Statuspage}, Kind(kind)) {
+		return Target{}, fmt.Errorf("%s: want kind:url with kind http, ollama, openai or statuspage, not %q", name, text)
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
@@ -198,7 +200,7 @@ func (m *Munin) checked(key string) bool {
 func keys(target Target) []string {
 	keys := []string{downKey(target.Name)}
 	switch target.Kind {
-	case Ollama:
+	case Ollama, OpenAI:
 		keys = append(keys, modelsKey(target.Name))
 	case Statuspage:
 		keys = append(keys, incidentKey(target.Name))
@@ -286,6 +288,20 @@ func (m *Munin) check(ctx context.Context, target Target) ([]watch.Result, Seen)
 			seen.Detail = result.Title
 		}
 		results = append(results, result)
+	case OpenAI:
+		loaded, err := LoadedModels(body)
+		result := watch.Result{Key: modelsKey(target.Name), OK: err == nil && len(loaded) > 0, Severity: alert.Warning}
+		switch {
+		case err != nil:
+			result.Title, result.Detail = target.Name+" did not list its models", err.Error()
+		case len(loaded) == 0:
+			result.Title = target.Name + " has no model loaded"
+			result.Detail = "it answers, but every answer will wait for a model to load, or fail"
+			seen.Detail = result.Title
+		default:
+			seen.Detail = "loaded: " + strings.Join(loaded, ", ")
+		}
+		results = append(results, result)
 	case Statuspage:
 		indicator, description, err := Incident(body)
 		result := watch.Result{Key: incidentKey(target.Name), OK: err == nil && indicator == "none", Severity: alert.Warning}
@@ -329,6 +345,29 @@ func MissingModels(tags []byte, wanted []string) ([]string, error) {
 		}
 	}
 	return missing, nil
+}
+
+// LoadedModels is the models an OpenAI-compatible /v1/models lists as loaded.
+// A server that gives no status (plain OpenAI) counts every model it lists.
+func LoadedModels(body []byte) ([]string, error) {
+	var parsed struct {
+		Data []struct {
+			ID     string `json:"id"`
+			Status *struct {
+				Value string `json:"value"`
+			} `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("not a /v1/models list: %w", err)
+	}
+	var loaded []string
+	for _, model := range parsed.Data {
+		if model.Status == nil || model.Status.Value == "loaded" {
+			loaded = append(loaded, model.ID)
+		}
+	}
+	return loaded, nil
 }
 
 // Incident reads a Statuspage /api/v2/status.json: its indicator (none,

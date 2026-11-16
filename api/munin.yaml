@@ -59,7 +59,7 @@ paths:
                       required: [name, kind, url, local, up]
                       properties:
                         name: { type: string }
-                        kind: { type: string, enum: [http, ollama, statuspage] }
+                        kind: { type: string, enum: [http, ollama, openai, statuspage] }
                         url: { type: string }
                         local: { type: boolean, description: On this machine; checked every minute, the rest every 5. }
                         up: { type: boolean }

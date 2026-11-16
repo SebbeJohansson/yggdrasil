@@ -148,8 +148,10 @@ minute is `stalled:<part>:<loop>` (warning).
 | `GET /v1/status` | `{ targets, checks }` |
 
 Targets are `name=kind:url` in `MUNIN_TARGETS`. The kinds are `http` (up when
-anything answers), `ollama` (also has the models in `MUNIN_OLLAMA_MODELS`) and
-`statuspage` (a provider's Statuspage says there is no incident). Local
+anything answers), `openai` (an OpenAI-compatible `/v1/models` has a model
+loaded: XeStrata), `ollama` (also has the models in `MUNIN_OLLAMA_MODELS`) and
+`statuspage` (a provider's Statuspage says there is no incident). Ollama is
+not checked by default: Yggdrasil runs on XeStrata alone. Local
 targets are checked every minute and internet ones every 5 minutes. When this
 machine is offline, that is one `offline` alert.
 
