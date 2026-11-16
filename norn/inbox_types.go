@@ -41,6 +41,10 @@ type Item struct {
 	Recipients []string `json:"recipients,omitempty"`
 	Subject    string   `json:"subject"`
 	Preview    string   `json:"preview"`
+	// Text is the message as far as it was read, longer than the preview where
+	// the source gives it (Teams, Slack): what a reply draft is written from.
+	// Not sent to the widget, and not kept across a restart.
+	Text string `json:"-"`
 	// Context is what a wordless message carries: a file title, GIF.
 	Context string `json:"context,omitempty"`
 	// At is when it arrived, epoch ms.

@@ -327,13 +327,14 @@ func SlackItems(channel SlackChannel, messages []SlackMessage, me SlackMe, names
 		case from == "":
 			from = "someone"
 		}
-		preview := ""
+		preview, full := "", ""
 		if text != "" {
-			preview = OneLine(SlackToText(text, names), PreviewChars)
+			full = OneLine(SlackToText(text, names), DraftTextChars)
+			preview = OneLine(full, PreviewChars)
 		}
 		items = append(items, Item{
 			ID: "slack:" + channel.ID + ":" + m.TS, Source: "slack", From: from, Sender: emails[m.User],
-			Recipients: members, Subject: subject, Preview: preview, Context: context, At: at,
+			Recipients: members, Subject: subject, Preview: preview, Text: full, Context: context, At: at,
 			Direct: channel.IsIM || channel.IsMPIM, MentionsMe: slackMentionsMe(m.Text, me),
 			Link: SlackPermalink(me.URL, channel.ID, m.TS, m.ThreadTS),
 		})

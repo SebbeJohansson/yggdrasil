@@ -597,6 +597,51 @@ paths:
                   total: { type: integer }
                   at: { type: [integer, "null"] }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/drafts:
+    get:
+      summary: Reply drafts kept for inbox items, newest first, for a week. Norn drafts by itself for messages to you that ask something and are ranked urgent or notable (DRAFTS=false stops that). Never sent anywhere; you copy one into Teams, Slack or your mail.
+      responses:
+        "200":
+          description: The drafts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [drafts]
+                properties:
+                  drafts: { type: array, items: { $ref: "#/components/schemas/Draft" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Write a reply draft for an item in the inbox now, by the local model, replacing any draft it had. Takes a few seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [item]
+              properties:
+                item: { type: string, description: The inbox item's id. }
+      responses:
+        "200":
+          description: The draft.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/drafts/{item}:
+    delete:
+      summary: Throw a draft away.
+      parameters:
+        - { name: item, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Thrown away. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/inbox/summary:
     post:
       summary: Phrase a sentence for ranked items the caller collected. Never fails because of the model; falls back to the plain count, as it does when the model names someone the items don't hold.
@@ -994,6 +1039,16 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    Draft:
+      type: object
+      required: [item, source, text, auto, at]
+      properties:
+        item: { type: string, description: The inbox item it answers. }
+        source: { type: string, enum: [outlook, teams, slack, gmail] }
+        text: { type: string }
+        tone: { type: string, description: How it reads, by Laya; unset when Laya did not answer. }
+        auto: { type: boolean, description: Norn wrote it by itself, rather than on request. }
+        at: { type: integer }
     WriteText:
       type: object
       required: [text]

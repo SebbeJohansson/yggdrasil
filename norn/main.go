@@ -27,6 +27,7 @@ import (
 //	EMBED_URL        an OpenAI-compatible embedding server, ending in /v1 (the compose `embeddings` service, http://127.0.0.1:8096/v1); off: Ollama makes them
 //	EMBED_MODEL      for memory recall (nomic-embed-text-v1.5 on EMBED_URL, nomic-embed-text on Ollama)
 //	MEMORY_LEARN     false keeps memory read-only (true)
+//	DRAFTS           false stops drafting replies to the inbox by itself (true)
 //	LAYA_URL, LAYA_KEY  Laya, for the judge, the tone badge and /v1/systemone
 //	TIME_ZONE        yours (Europe/Stockholm)
 //	SUMMARY_MODEL    phrases the inbox summary (llama3.2:1b); ASK_MODEL answers (the summary model)
@@ -82,6 +83,7 @@ func Main(ctx context.Context) error {
 		ProfilePath:       env.String("PROFILE_PATH", "profile/profile.md"),
 		EmbedModel:        env.String("EMBED_MODEL", embedModel),
 		Learn:             env.String("MEMORY_LEARN", "true") == "true",
+		Drafts:            env.String("DRAFTS", "true") == "true",
 		LayaURL:           env.String("LAYA_URL", "http://127.0.0.1:8000"),
 		LayaKey:           env.String("LAYA_KEY", ""),
 		TimeZone:          env.String("TIME_ZONE", "Europe/Stockholm"),

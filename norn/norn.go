@@ -31,7 +31,9 @@ type Config struct {
 	ProfilePath string
 	EmbedModel  string
 	// Learn is whether Norn learns facts from your messages.
-	Learn   bool
+	Learn bool
+	// Drafts is whether Norn drafts replies to the inbox's questions by itself (drafts.go).
+	Drafts  bool
 	LayaURL string
 	// LayaKey is Laya's bearer key, for the inbox judge, the tone badge and
 	// the /v1/systemone pass-through.
@@ -126,6 +128,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountChat(p)
 	n.mountWrite(p)
 	n.mountEvents(p)
+	n.mountDrafts(p)
 }
 
 func (n *Norn) fail(w http.ResponseWriter, err error) {

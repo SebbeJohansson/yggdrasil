@@ -361,7 +361,8 @@ func ChatItems(body []byte, me Me, now time.Time) []Item {
 		} else if now.UnixMilli()-at > freshUnread.Milliseconds() {
 			continue
 		}
-		text := OneLine(StripHTML(preview.Body.Content), PreviewChars)
+		full := OneLine(StripHTML(preview.Body.Content), DraftTextChars)
+		text := OneLine(full, PreviewChars)
 		if text == "" {
 			continue
 		}
@@ -380,7 +381,7 @@ func ChatItems(body []byte, me Me, now time.Time) []Item {
 		}
 		items = append(items, Item{
 			ID: "teams:" + chat.ID + ":" + id, Source: "teams", From: senderName, Sender: senderID,
-			Recipients: recipients, Subject: chatName(chat, me), Preview: text, At: at,
+			Recipients: recipients, Subject: chatName(chat, me), Preview: text, Text: full, At: at,
 			Conversation: chat.ID, Direct: chat.ChatType == "oneOnOne", MentionsMe: NamesMe(text, names), Link: chat.WebURL,
 		})
 	}
