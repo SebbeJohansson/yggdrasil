@@ -119,7 +119,8 @@ EOF
 	# Laya, Linear and the models. Values are copied, never printed.
 	legacy="${MY_AGENT_ENV:-$(dirname "$PWD")/my-agent/.env}"
 	carry() {
-		value=$(grep -E "^$1=" "$legacy" 2>/dev/null | tail -1 | cut -d= -f2-)
+		# Without an inline "# comment", spaces or quotes: dotenv drops them, the parts don't.
+		value=$(grep -E "^$1=" "$legacy" 2>/dev/null | tail -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')
 		[ -n "$value" ] || return 0
 		grep -vE "^$1=" "$2" >"$2.tmp" || true
 		printf '%s=%s\n' "$1" "$value" >>"$2.tmp"
