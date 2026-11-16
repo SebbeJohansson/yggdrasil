@@ -47,6 +47,10 @@ type Draft struct {
 	// Auto is true when the pass wrote it, false when you asked for it.
 	Auto bool  `json:"auto"`
 	At   int64 `json:"at"`
+	// Checked is true when a second pass checked every sentence against the
+	// message, the calendar and your notes; Dropped is what it took out.
+	Checked bool     `json:"checked"`
+	Dropped []string `json:"dropped,omitempty"`
 }
 
 // asksSomething: a question, or a request, in English or Swedish.
@@ -69,6 +73,9 @@ func messageText(item Item) string {
 	return item.Preview
 }
 
+// draftWords is the most words a draft may have, by where it goes.
+var draftWords = map[string]int{"teams": 40, "slack": 40, "outlook": 80, "gmail": 80}
+
 var channelStyle = map[string]string{
 	"teams":   "a Teams chat: short and plain, no greeting line or sign-off",
 	"slack":   "a Slack message: short and plain, no greeting line or sign-off",
@@ -82,9 +89,11 @@ func DraftMessages(item Item, relation, profile string, memories []Memory, calen
 	system.WriteString("You write a reply draft for the owner of this inbox, to paste and send themselves.\n")
 	system.WriteString("Write only the reply text: no subject line, no quotes, no notes about the reply.\n")
 	system.WriteString("Write in the language of the message (Swedish to Swedish, English to English).\n")
-	system.WriteString("Reply as " + channelStyle[item.Source] + ". At most 120 words.\n")
+	system.WriteString("Reply as " + channelStyle[item.Source] + ". At most " + itoa(draftWords[item.Source]) + " words: shorter is better.\n")
 	system.WriteString("Never add a signature or sign-off: no closing line (Mvh, Vänliga hälsningar, Best regards, Thanks), and not the owner's name at the end. The reply ends with its last sentence.\n")
-	system.WriteString("Do not promise, decide or state anything the owner has not told you. Where they must fill something in, write it in [square brackets], like [time] or [yes/no].\n")
+	system.WriteString("Answer only what the message asks. Add nothing of your own: no new topics, no questions of your own, no requests (\"please confirm\", \"invite me\"), no offers to prepare anything, no \"looking forward to\".\n")
+	system.WriteString("State only what the message, the calendar below or the owner's notes below say. Whether the owner can, wants to, has time or agrees is not known unless written below: put it in [square brackets] for them to fill in, like [ja/nej], [tid] or [yes/no].\n")
+	system.WriteString("Say nothing about the owner's calendar unless it is listed below.\n")
 	if profile != "" {
 		system.WriteString("\nAbout the owner:\n" + profile + "\n")
 	}
@@ -97,7 +106,11 @@ func DraftMessages(item Item, relation, profile string, memories []Memory, calen
 	if len(calendar) > 0 {
 		system.WriteString("\nThe owner's calendar, for proposing times:\n" + strings.Join(calendar, "\n") + "\n")
 	}
+	return []llm.Message{{Role: "system", Content: system.String()}, {Role: "user", Content: draftFacts(item, relation) + "\n\nWrite the reply."}}
+}
 
+// draftFacts is the message as both passes see it: who, where, and what it says.
+func draftFacts(item Item, relation string) string {
 	var user strings.Builder
 	user.WriteString("From: " + item.From)
 	if relation != "" {
@@ -115,8 +128,82 @@ func DraftMessages(item Item, relation, profile string, memories []Memory, calen
 	if item.Text == "" && len([]rune(item.Preview)) >= PreviewChars-1 {
 		user.WriteString("\n(Only the start of the message was read.)")
 	}
-	user.WriteString("\n\nWrite the reply.")
-	return []llm.Message{{Role: "system", Content: system.String()}, {Role: "user", Content: user.String()}}
+	return user.String()
+}
+
+// CheckMessages asks for the draft back with every sentence nothing below
+// backs up taken out: the second pass, against what the first one invents.
+func CheckMessages(item Item, relation string, memories []Memory, calendar []string, draft string) []llm.Message {
+	var system strings.Builder
+	system.WriteString("You check a reply draft before its owner sends it. Go through it sentence by sentence.\n")
+	system.WriteString("Take out every sentence that states, promises, asks for or offers something the message, the calendar or the owner's notes below do not say. Also take out \"looking forward to\" and \"please confirm\" lines.\n")
+	system.WriteString("A sentence with a [bracketed] blank for the owner to fill in stays. A greeting stays.\n")
+	system.WriteString("Change nothing else: keep the words of every sentence you keep, in the same order. Return only the checked draft, nothing about what you did.\n")
+	if len(memories) > 0 {
+		system.WriteString("\nThe owner's notes:\n")
+		for _, m := range memories {
+			system.WriteString("- " + m.Text + "\n")
+		}
+	}
+	if len(calendar) > 0 {
+		system.WriteString("\nThe owner's calendar:\n" + strings.Join(calendar, "\n") + "\n")
+	}
+	return []llm.Message{{Role: "system", Content: system.String()},
+		{Role: "user", Content: draftFacts(item, relation) + "\n\nThe draft:\n" + draft}}
+}
+
+// sentencesOf splits a draft into its lines and sentences.
+func sentencesOf(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		start := 0
+		runes := []rune(line)
+		for i, r := range runes {
+			if (r == '.' || r == '!' || r == '?') && (i+1 == len(runes) || runes[i+1] == ' ') {
+				if s := strings.TrimSpace(string(runes[start : i+1])); s != "" {
+					out = append(out, s)
+				}
+				start = i + 1
+			}
+		}
+		if s := strings.TrimSpace(string(runes[start:])); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func normalised(text string) string {
+	return strings.ToLower(strings.Join(strings.Fields(text), " "))
+}
+
+// droppedSentences is what the check took out: the sentences of `before` that are not in `after`.
+func droppedSentences(before, after string) []string {
+	kept := normalised(after)
+	var dropped []string
+	for _, sentence := range sentencesOf(before) {
+		if !strings.Contains(kept, normalised(sentence)) {
+			dropped = append(dropped, sentence)
+		}
+	}
+	return dropped
+}
+
+// checkedDraft is the check's answer, if it is one: shorter or the same, not
+// empty, and every sentence it kept one of the draft's own. Anything else is
+// the check rewriting, not checking, and the draft stays as it was.
+func checkedDraft(before, raw string) (string, []string, bool) {
+	after := cleanDraft(raw)
+	if after == "" || len(strings.Fields(after)) > len(strings.Fields(before)) {
+		return before, nil, false
+	}
+	own := normalised(before)
+	for _, sentence := range sentencesOf(after) {
+		if !strings.Contains(own, normalised(sentence)) {
+			return before, nil, false
+		}
+	}
+	return after, droppedSentences(before, after), true
 }
 
 var (
@@ -156,7 +243,7 @@ func (n *Norn) WriteDraft(ctx context.Context, item Item, auto bool) (Draft, err
 	now := time.Now()
 	calendar := n.calendarLines(messageText(item), now)
 	raw, err := n.LLM.Chat(ctx, DraftMessages(item, item.Relation, LoadProfile(n.Config.ProfilePath), memories, calendar),
-		llm.Options{Purpose: "reply draft", Temperature: 0.4, TopP: 0.9, MaxTokens: 400})
+		llm.Options{Purpose: "reply draft", Temperature: 0.2, TopP: 0.9, MaxTokens: 300})
 	if err != nil {
 		return Draft{}, err
 	}
@@ -165,6 +252,12 @@ func (n *Norn) WriteDraft(ctx context.Context, item Item, auto bool) (Draft, err
 		return Draft{}, errors.New("the model wrote nothing")
 	}
 	draft := Draft{Item: item.ID, Source: item.Source, Text: text, Auto: auto, At: now.UnixMilli()}
+	// The second pass: what nothing backs up comes out. A failed check leaves the draft unchecked, not lost.
+	if checked, err := n.LLM.Chat(ctx, CheckMessages(item, item.Relation, memories, calendar, text),
+		llm.Options{Purpose: "reply draft check", Temperature: 0, MaxTokens: 300}); err == nil {
+		draft.Text, draft.Dropped, draft.Checked = checkedDraft(text, checked)
+		text = draft.Text
+	}
 	if n.Config.LayaURL != "" {
 		if toned, err := Tone(ctx, n.HTTP, n.Config.LayaURL, n.Config.LayaKey, text); err == nil {
 			draft.Tone = toned.Tone

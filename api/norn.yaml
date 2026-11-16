@@ -1041,13 +1041,15 @@ components:
   schemas:
     Draft:
       type: object
-      required: [item, source, text, auto, at]
+      required: [item, source, text, auto, at, checked]
       properties:
         item: { type: string, description: The inbox item it answers. }
         source: { type: string, enum: [outlook, teams, slack, gmail] }
         text: { type: string }
         tone: { type: string, description: How it reads, by Laya; unset when Laya did not answer. }
         auto: { type: boolean, description: Norn wrote it by itself, rather than on request. }
+        checked: { type: boolean, description: A second pass checked every sentence against the message, the calendar and your notes. }
+        dropped: { type: array, items: { type: string }, description: The sentences that pass took out, as nothing backed them up. }
         at: { type: integer }
     WriteText:
       type: object

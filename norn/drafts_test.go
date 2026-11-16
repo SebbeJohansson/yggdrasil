@@ -39,7 +39,7 @@ func TestDraftPromptCarriesWhoAndWhereAndOnlyWhatIsKnown(t *testing.T) {
 	item := Item{Source: "teams", From: "Anna Berg", Subject: "Q4", Preview: "Can you look at the numbers?", Text: "Can you look at the numbers before Friday? The sheet is in the channel."}
 	messages := DraftMessages(item, "manager", "I lead the AI team.", []Memory{{Text: "Anna owns the Q4 budget"}}, []string{"Tue 14:00-15:00 Sprint review"})
 	system, user := messages[0].Content, messages[1].Content
-	for _, want := range []string{"Teams chat", "language of the message", "[square brackets]", "Never add a signature", "I lead the AI team.", "Anna owns the Q4 budget", "Sprint review"} {
+	for _, want := range []string{"Teams chat", "At most 40 words", "Answer only what the message asks", "language of the message", "[square brackets]", "Never add a signature", "I lead the AI team.", "Anna owns the Q4 budget", "Sprint review"} {
 		if !strings.Contains(system, want) {
 			t.Errorf("system prompt lacks %q", want)
 		}
@@ -98,5 +98,35 @@ func TestDraftsAreKeptListedAndThrownAway(t *testing.T) {
 	}
 	if code, _ := call(t, p, "DELETE", "/v1/drafts/teams:c:1", nil); code != http.StatusNotFound {
 		t.Fatalf("delete again: %d", code)
+	}
+}
+
+func TestTheCheckTakesOutOnlyWholeSentencesOfTheDraft(t *testing.T) {
+	draft := "Hej Sanna\n\nDet låter bra. Vi tar frågorna på mötet kl. 14.\n\nJag har också frågor om releaser. Vänligen bekräfta att jag är inbjuden."
+	// The check answered with the draft, two sentences out.
+	after, dropped, ok := checkedDraft(draft, "Hej Sanna\n\nDet låter bra. Vi tar frågorna på mötet kl. 14.")
+	if !ok || after != "Hej Sanna\n\nDet låter bra. Vi tar frågorna på mötet kl. 14." {
+		t.Fatalf("%v %q", ok, after)
+	}
+	if strings.Join(dropped, " | ") != "Jag har också frågor om releaser. | Vänligen bekräfta att jag är inbjuden." {
+		t.Fatalf("dropped %q", dropped)
+	}
+	// A check that rewrites, adds or empties is not a check: the draft stays.
+	for _, bad := range []string{"", "Hej Sanna, jag kommer gärna och har mycket att ta upp om releaser och deployment och mer därtill.", "Hej Sanna\n\nJa, gärna."} {
+		if got, _, ok := checkedDraft(draft, bad); ok || got != draft {
+			t.Errorf("%q passed as a check: %v %q", bad, ok, got)
+		}
+	}
+}
+
+func TestTheCheckSeesWhatTheDraftMayBeBackedBy(t *testing.T) {
+	messages := CheckMessages(Item{Source: "outlook", From: "Sanna", Preview: "Ska vi ta frågorna i morgon kl 14?"}, "", []Memory{{Text: "I own the Mediaflow work"}}, []string{"Tue 13:30-14:30 Snacka Jev"}, "Hej Sanna\n\nJa.")
+	for _, want := range []string{"sentence by sentence", "I own the Mediaflow work", "Snacka Jev"} {
+		if !strings.Contains(messages[0].Content, want) {
+			t.Errorf("check prompt lacks %q", want)
+		}
+	}
+	if !strings.Contains(messages[1].Content, "Ska vi ta frågorna") || !strings.HasSuffix(messages[1].Content, "The draft:\nHej Sanna\n\nJa.") {
+		t.Errorf("check input: %q", messages[1].Content)
 	}
 }
