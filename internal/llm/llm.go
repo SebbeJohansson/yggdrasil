@@ -122,6 +122,9 @@ type Client struct {
 	PrimaryURL string
 	// OllamaURL is Ollama's base URL. Empty: no Ollama at all, for answers or embeddings.
 	OllamaURL string
+	// EmbedURL is an OpenAI-compatible base URL, ending in /v1, that makes
+	// embeddings (llama-server --embeddings). Empty: Ollama makes them.
+	EmbedURL string
 	// Record is handed every attempt.
 	Record func(Call)
 	Warn   func(format string, args ...any)
@@ -136,8 +139,8 @@ type Client struct {
 // ErrNoModel is a client with neither XeStrata nor Ollama.
 var ErrNoModel = errors.New("no model server: CHAT_URL and OLLAMA_URL are both off")
 
-// ErrNoEmbeddings is a client without Ollama, which is what embeds.
-var ErrNoEmbeddings = errors.New("embeddings need Ollama, which is off")
+// ErrNoEmbeddings is a client with neither an embedding server nor Ollama.
+var ErrNoEmbeddings = errors.New("no embedding server: EMBED_URL and OLLAMA_URL are both off")
 
 // Chat answers, from XeStrata or, when it fails, from Ollama.
 func (c *Client) Chat(ctx context.Context, messages []Message, options Options) (string, error) {
@@ -389,6 +392,9 @@ func (c *Client) openaiChat(ctx context.Context, messages []Message, options Opt
 
 // Embed is one vector per input, in order, from Ollama.
 func (c *Client) Embed(ctx context.Context, model string, inputs []string) ([][]float64, error) {
+	if c.EmbedURL != "" {
+		return c.openaiEmbed(ctx, model, inputs)
+	}
 	if c.OllamaURL == "" {
 		return nil, ErrNoEmbeddings
 	}
@@ -402,6 +408,35 @@ func (c *Client) Embed(ctx context.Context, model string, inputs []string) ([][]
 		return nil, fmt.Errorf("ollama answered without one embedding per input")
 	}
 	return body.Embeddings, nil
+}
+
+// CanEmbed reports whether the client has somewhere to make embeddings.
+func (c *Client) CanEmbed() bool {
+	return c.EmbedURL != "" || c.OllamaURL != ""
+}
+
+// openaiEmbed asks an OpenAI-compatible /v1/embeddings, one vector per input, in order.
+func (c *Client) openaiEmbed(ctx context.Context, model string, inputs []string) ([][]float64, error) {
+	var body struct {
+		Data []struct {
+			Index     int       `json:"index"`
+			Embedding []float64 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := c.post(ctx, c.EmbedURL+"/embeddings", map[string]any{"model": model, "input": inputs}, 30*time.Second, &body); err != nil {
+		return nil, fmt.Errorf("embeddings: %w", err)
+	}
+	if len(body.Data) != len(inputs) {
+		return nil, fmt.Errorf("embeddings answered %d vectors for %d inputs", len(body.Data), len(inputs))
+	}
+	vectors := make([][]float64, len(inputs))
+	for _, item := range body.Data {
+		if item.Index < 0 || item.Index >= len(inputs) || len(item.Embedding) == 0 {
+			return nil, fmt.Errorf("embeddings answered a vector out of place")
+		}
+		vectors[item.Index] = item.Embedding
+	}
+	return vectors, nil
 }
 
 // ToolCall is a function the model wants called.

@@ -13,6 +13,7 @@ import (
 // DefaultTargets are what the parts depend on today.
 var DefaultTargets = strings.Join([]string{
 	"xestrata=openai:http://127.0.0.1:8095/v1/models",
+	"embeddings=openai:http://127.0.0.1:8096/v1/models",
 	"laya=http:http://127.0.0.1:8000/",
 	"languagetool=http:http://127.0.0.1:8010/",
 	"microsoft-graph=http:https://graph.microsoft.com/v1.0/",

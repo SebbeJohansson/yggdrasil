@@ -86,3 +86,21 @@ func TestNoFallbackNeverAsksOllama(t *testing.T) {
 		t.Fatalf("asked Ollama %d times", ollama)
 	}
 }
+
+func TestEmbedAsksTheEmbeddingServerInOrder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/embeddings" {
+			t.Errorf("asked %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"index":1,"embedding":[0,1]},{"index":0,"embedding":[1,0]}]}`))
+	}))
+	defer server.Close()
+	c := &Client{EmbedURL: server.URL + "/v1"}
+	vectors, err := c.Embed(context.Background(), "nomic-embed-text-v1.5", []string{"a", "b"})
+	if err != nil || len(vectors) != 2 || vectors[0][0] != 1 || vectors[1][1] != 1 {
+		t.Fatalf("%v %v", vectors, err)
+	}
+	if !c.CanEmbed() || (&Client{}).CanEmbed() {
+		t.Fatal("CanEmbed")
+	}
+}

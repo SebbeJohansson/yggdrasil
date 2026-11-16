@@ -49,8 +49,11 @@ curl localhost:8775/health
 Settings and tokens are in `~/.config/yggdrasil/<part>.env`. Norn's models
 run on XeStrata (`CHAT_URL`). `OLLAMA_URL=off` in `norn.env` keeps Ollama out
 completely: no fallback, the inbox judge uses XeStrata when Laya doesn't
-answer (or always, with `INBOX_JUDGE=xestrata`), and memory recall goes by
-recency instead of embeddings. Your owner token
+answer (or always, with `INBOX_JUDGE=xestrata`). Embeddings for memory
+recall come from the compose `embeddings` service (llama.cpp with
+nomic-embed-text v1.5 on `127.0.0.1:8096`, `EMBED_URL` in `norn.env`); start it
+with `docker compose --profile embeddings up -d embeddings`. Memories embedded
+by another model are embedded again in the background. Your owner token
 is in `~/.config/yggdrasil/owner.token`:
 
 ```sh

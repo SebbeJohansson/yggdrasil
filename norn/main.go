@@ -24,7 +24,8 @@ import (
 //	OLLAMA_URL       Ollama (http://127.0.0.1:11434); off: no Ollama at all, so no fallback, no Ollama judge and no embeddings (memory recall by recency)
 //	CHAT_URL         an OpenAI-compatible server asked first (XeStrata, http://127.0.0.1:8095/v1); off: Ollama only
 //	OLLAMA_FALLBACK  off: never ask Ollama when XeStrata fails; the call fails instead (on). Embeddings still use Ollama
-//	EMBED_MODEL      for memory recall (nomic-embed-text)
+//	EMBED_URL        an OpenAI-compatible embedding server, ending in /v1 (the compose `embeddings` service, http://127.0.0.1:8096/v1); off: Ollama makes them
+//	EMBED_MODEL      for memory recall (nomic-embed-text-v1.5 on EMBED_URL, nomic-embed-text on Ollama)
 //	MEMORY_LEARN     false keeps memory read-only (true)
 //	LAYA_URL, LAYA_KEY  Laya, for the judge, the tone badge and /v1/systemone
 //	TIME_ZONE        yours (Europe/Stockholm)
@@ -60,9 +61,15 @@ func Main(ctx context.Context) error {
 	if ollamaURL == "off" {
 		ollamaURL = ""
 	}
+	embedURL := env.String("EMBED_URL", "http://127.0.0.1:8096/v1")
+	embedModel := "nomic-embed-text-v1.5"
+	if embedURL == "off" {
+		embedURL, embedModel = "", "nomic-embed-text"
+	}
 	client := &llm.Client{
 		PrimaryURL: chatURL,
 		OllamaURL:  ollamaURL,
+		EmbedURL:   embedURL,
 		NoFallback: chatURL != "" && env.String("OLLAMA_FALLBACK", "on") == "off",
 		Warn:       p.Logf,
 		Record: func(call llm.Call) {
@@ -73,7 +80,7 @@ func Main(ctx context.Context) error {
 	}
 	n := New(Config{
 		ProfilePath:       env.String("PROFILE_PATH", "profile/profile.md"),
-		EmbedModel:        env.String("EMBED_MODEL", "nomic-embed-text"),
+		EmbedModel:        env.String("EMBED_MODEL", embedModel),
 		Learn:             env.String("MEMORY_LEARN", "true") == "true",
 		LayaURL:           env.String("LAYA_URL", "http://127.0.0.1:8000"),
 		LayaKey:           env.String("LAYA_KEY", ""),
@@ -106,9 +113,12 @@ func Main(ctx context.Context) error {
 	if chatURL != "" {
 		n.Config.Judge.Chat = client.Chat
 	}
-	if ollamaURL == "" {
-		// Embeddings come from Ollama only: without it, memory recall is by recency.
+	if !client.CanEmbed() {
+		// Nothing makes embeddings: memory recall goes by recency.
 		n.Brain.Embed = nil
+	} else {
+		// After the embedding model changes, old vectors are made again, in the background.
+		p.Loop("memory-vectors", 10*time.Minute, n.Brain.Reembed)
 	}
 	n.Gjallar = alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", ""))
 	if token := env.String("SINDRI_TOKEN", ""); token != "" {

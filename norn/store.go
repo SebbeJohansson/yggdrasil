@@ -245,6 +245,13 @@ func (s *Store) Memories(ctx context.Context) ([]StoredMemory, error) {
 	return memories, rows.Err()
 }
 
+// SetEmbedding puts a new vector, from model, on a memory.
+func (s *Store) SetEmbedding(ctx context.Context, id int64, embedding []float64, model string) error {
+	encoded, _ := json.Marshal(embedding)
+	_, err := s.db.ExecContext(ctx, `UPDATE memories SET embedding = ?, model = ? WHERE id = ?`, string(encoded), model, id)
+	return err
+}
+
 // DeleteMemory forgets one; false when there was none.
 func (s *Store) DeleteMemory(ctx context.Context, id int64) (bool, error) {
 	result, err := s.db.ExecContext(ctx, `DELETE FROM memories WHERE id = ?`, id)

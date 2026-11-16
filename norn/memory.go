@@ -14,6 +14,7 @@ package norn
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"regexp"
 	"slices"
@@ -138,6 +139,45 @@ func (b *Brain) vectorFor(ctx context.Context, text string) []float64 {
 		return nil
 	}
 	return vectors[0]
+}
+
+// ReembedBatch is how many memories are embedded in one request.
+const ReembedBatch = 32
+
+// Reembed gives every memory without a vector from EmbedModel one, so recall
+// works again after the embedding model changed (Ollama's nomic-embed-text to
+// the embedding server's). Nothing to do is not an error.
+func (b *Brain) Reembed(ctx context.Context) error {
+	if b.Embed == nil {
+		return nil
+	}
+	memories, err := b.Store.Memories(ctx)
+	if err != nil {
+		return err
+	}
+	var stale []StoredMemory
+	for _, m := range memories {
+		if m.Embedding == nil || m.Model != b.EmbedModel {
+			stale = append(stale, m)
+		}
+	}
+	for start := 0; start < len(stale); start += ReembedBatch {
+		batch := stale[start:min(start+ReembedBatch, len(stale))]
+		texts := make([]string, len(batch))
+		for i, m := range batch {
+			texts[i] = m.Text
+		}
+		vectors, err := b.Embed(ctx, texts)
+		if err != nil {
+			return fmt.Errorf("re-embedding memories with %s: %w", b.EmbedModel, err)
+		}
+		for i, m := range batch {
+			if err := b.Store.SetEmbedding(ctx, m.ID, vectors[i], b.EmbedModel); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // RecallFor is the memories worth putting in front of the model for a question.
