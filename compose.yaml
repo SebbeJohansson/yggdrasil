@@ -69,6 +69,18 @@ services:
       timeout: 3s
       retries: 3
 
+  # Spelling and grammar for Norn's writing checks, with exact offsets, fast
+  # enough to check as you type. Not a part, so not in dev mode: it keeps
+  # running while Norn runs from source.
+  languagetool:
+    profiles: [languagetool]
+    # Built from the official release zip (../pennvass/docker/languagetool).
+    build: ../pennvass/docker/languagetool
+    image: pennvass-languagetool
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8010:8010"
+
   # Dev mode for the container parts (scripts/dev-mode.sh on): Norn, Gjallar
   # and Munin from your working tree, rebuilt and restarted on every save by
   # scripts/dev.sh. Stop the three containers above first; dev-mode.sh does.

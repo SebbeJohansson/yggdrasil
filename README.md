@@ -38,7 +38,7 @@ The host has no Go; `scripts/go` runs the toolchain in Docker.
 ```sh
 scripts/install.sh                 # build, write settings and tokens, start the host units
 cp .env.example .env               # pick the container parts (COMPOSE_PROFILES)
-docker compose up -d --build       # Gjallar and Munin
+docker compose up -d --build       # Norn, Gjallar, Munin, and LanguageTool for Norn
 curl localhost:8775/health
 ```
 
