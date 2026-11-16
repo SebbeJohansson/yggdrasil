@@ -101,7 +101,7 @@ type Reaction struct {
 }
 
 // Events are the events a trigger can name.
-var Events = []string{"inbox.arrived", "draft.ready", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo"}
+var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo"}
 
 var (
 	yes      = true
@@ -117,7 +117,7 @@ func BuiltIn() []Rule {
 			Action: Action{Kind: "notify", Text: "{from} on {source}: {summary}"}, Deliver: both},
 		{ID: "urgent-message", Name: "Urgent message", On: Trigger{Event: "inbox.arrived", Band: []string{"urgent"}, Direct: &yes},
 			Action: Action{Kind: "notify", Text: "{from} on {source}: {summary}"}, Deliver: both},
-		{ID: "meeting-prep", Name: "Meeting in the next hour", On: Trigger{Event: "calendar.added", StartsWithinMinutes: 60},
+		{ID: "meeting-prep", Name: "Meeting in the next half hour", On: Trigger{Event: "calendar.soon"},
 			Action: Action{Kind: "ask", Text: briefAsk}, Deliver: both, Hold: true},
 		{ID: "meeting-moved", Name: "Meeting moved into the next hour", On: Trigger{Event: "calendar.moved", StartsWithinMinutes: 60},
 			Action: Action{Kind: "ask", Text: briefAsk}, Deliver: both, Hold: true},
@@ -541,7 +541,13 @@ func (h *Huginn) FromNorn(event sse.Event) (Fired, bool) {
 		if change.PreviousStart != 0 {
 			fields["previousStart"] = h.clock(change.PreviousStart)
 		}
-		return Fired{Kind: event.Kind, Key: event.Kind + ":" + meeting.ID + fmt.Sprint(meeting.Start), At: at,
+		// A meeting coming up, whether just added, moved or about to start,
+		// is one thing to tell: the second rule to brief on it stays quiet.
+		key := event.Kind + ":" + meeting.ID + fmt.Sprint(meeting.Start)
+		if event.Kind == "calendar.added" || event.Kind == "calendar.moved" || event.Kind == "calendar.soon" {
+			key = "meeting:" + meeting.ID + fmt.Sprint(meeting.Start)
+		}
+		return Fired{Kind: event.Kind, Key: key, At: at,
 			Title: meeting.Subject + " at " + h.clock(meeting.Start), Change: &change, Fields: fields}, true
 	}
 	return Fired{}, false

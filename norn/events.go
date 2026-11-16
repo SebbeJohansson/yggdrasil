@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,8 +24,11 @@ const (
 	EventsKept = 500
 	// EventsAhead is how far ahead a new or moved meeting is told about.
 	EventsAhead = 24 * time.Hour
-	// EndedEvery is how often Norn looks for meetings that just ended.
+	// EndedEvery is how often Norn looks for meetings that just ended, and
+	// for meetings about to start.
 	EndedEvery = 30 * time.Second
+	// SoonLead is how long before its start calendar.soon tells about a meeting.
+	SoonLead = 30 * time.Minute
 )
 
 // InboxArrived is an inbox item without its text.
@@ -86,12 +90,16 @@ type Events struct {
 	inboxSeen   map[string]bool
 	calendars   map[string]map[string]CalendarEvent
 	endedAfter  time.Time
+	// soonFrom is when Norn started: a meeting already that close by then
+	// is not told about, so a restart doesn't repeat it.
+	soonFrom time.Time
+	soonSent map[string]bool
 }
 
 // NewEvents starts with nothing seen; meetings that end from now on count.
 func NewEvents(now time.Time) *Events {
 	return &Events{listeners: map[chan StreamEvent]struct{}{}, inboxSeen: map[string]bool{},
-		calendars: map[string]map[string]CalendarEvent{}, endedAfter: now}
+		calendars: map[string]map[string]CalendarEvent{}, endedAfter: now, soonFrom: now, soonSent: map[string]bool{}}
 }
 
 // Publish sends an event to every listener and keeps it for catching up.
@@ -235,6 +243,33 @@ func (e *Events) Ended(now time.Time) {
 	}
 }
 
+// Soon sends calendar.soon once for each meeting you didn't decline that
+// starts within SoonLead: every meeting, not only one just added or moved.
+// A meeting that moves is told about again for its new start.
+func (e *Events) Soon(now time.Time) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	nowMs, horizon, from := now.UnixMilli(), now.Add(SoonLead).UnixMilli(), e.soonFrom.Add(SoonLead).UnixMilli()
+	for key := range e.soonSent {
+		if start, err := strconv.ParseInt(key[strings.LastIndexByte(key, '@')+1:], 10, 64); err == nil && start <= nowMs {
+			delete(e.soonSent, key)
+		}
+	}
+	for calendar, events := range e.calendars {
+		for id, event := range events {
+			key := fmt.Sprintf("%s@%d", id, event.Start)
+			if declined(event) || event.Start <= nowMs || event.Start > horizon || event.Start <= from || e.soonSent[key] {
+				continue
+			}
+			e.soonSent[key] = true
+			payload, err := json.Marshal(CalendarChange{Calendar: calendar, Event: event})
+			if err == nil {
+				e.publishLocked("calendar.soon", payload)
+			}
+		}
+	}
+}
+
 // inboxEvents sends inbox.arrived for each new item worth it, each with a
 // one-line summary of its own.
 func (n *Norn) inboxEvents(ctx context.Context, shown []Ranked, now time.Time) {
@@ -262,7 +297,9 @@ func (n *Norn) calendarEvents(calendar string, c *Calendar) {
 func (n *Norn) mountEvents(p *part.Part) {
 	p.Handle("GET /v1/events/stream", n.eventStream)
 	p.Loop("meetings-ended", EndedEvery, func(context.Context) error {
-		n.Events.Ended(time.Now())
+		now := time.Now()
+		n.Events.Ended(now)
+		n.Events.Soon(now)
 		return nil
 	})
 }

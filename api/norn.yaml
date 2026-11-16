@@ -511,6 +511,9 @@ paths:
           had not seen before, ranked urgent or notable.
         - `event: draft.ready`, data DraftReady: Norn wrote a reply draft by
           itself for an inbox item (the drafts pass, not one you asked for).
+        - `event: calendar.soon`, data CalendarChange: a meeting you did
+          not decline starts within 30 minutes; once per meeting and start,
+          and not for one already that close when Norn started.
         - `event: calendar.added`, data CalendarChange: a meeting that starts
           within the next 24 hours appeared.
         - `event: calendar.moved`, data CalendarChange with previousStart and

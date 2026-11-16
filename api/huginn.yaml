@@ -27,6 +27,11 @@ info:
       and only the owner can enable it.
     - Missed events are fetched again with `Last-Event-ID` after a
       reconnect. An event older than an hour is recorded, not delivered.
+    - calendar.soon: a meeting starts within 30 minutes, told once per
+      meeting and start. The built-in meeting-prep rule briefs on it, so
+      every meeting gets a brief, not only one just added. A meeting that
+      is added, moved and about to start is one thing to tell: a second
+      rule of the same kind on it stays quiet.
     - draft.ready: Norn wrote a reply draft by itself for an inbox item.
       It matches on the item's relation, band, direct and mentionsMe like
       inbox.arrived, and links to the dashboard's inbox, where the draft is.
@@ -248,7 +253,7 @@ components:
       properties:
         event:
           type: string
-          enum: [inbox.arrived, draft.ready, calendar.added, calendar.moved, calendar.removed, calendar.ended, alert.opened, alert.escalated, alert.resolved, linear.todo]
+          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, alert.opened, alert.escalated, alert.resolved, linear.todo]
         relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived and draft.ready only. }
         band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived and draft.ready only. }
         direct: { type: boolean, description: inbox.arrived and draft.ready only. }

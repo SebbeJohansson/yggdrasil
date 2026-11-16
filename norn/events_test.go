@@ -62,3 +62,39 @@ func TestNewInboxItemsSkipTheFirstPollAndQuietOnes(t *testing.T) {
 		t.Fatalf("sent again: %v", fresh)
 	}
 }
+
+func TestSoonTellsOnceAboutEveryMeetingAboutToStartExceptAtStartup(t *testing.T) {
+	now := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) int64 { return now.Add(d).UnixMilli() }
+	e := NewEvents(now)
+	already := CalendarEvent{ID: "a", Subject: "Already close", Start: at(10 * time.Minute), End: at(time.Hour)}
+	standup := CalendarEvent{ID: "b", Subject: "Standup", Start: at(2 * time.Hour), End: at(150 * time.Minute)}
+	declinedOne := CalendarEvent{ID: "c", Subject: "No", Start: at(2 * time.Hour), End: at(3 * time.Hour), Response: "declined"}
+	e.Calendar("work", []CalendarEvent{already, standup, declinedOne}, now)
+
+	e.Soon(now)
+	if got := kinds(e, -1); len(got) != 0 {
+		t.Fatalf("at startup: %v", got)
+	}
+	later := now.Add(95 * time.Minute)
+	e.Soon(later)
+	e.Soon(later.Add(30 * time.Second))
+	if got := kinds(e, -1); len(got) != 1 || got[0] != "calendar.soon" {
+		t.Fatalf("25 min before the standup: %v", got)
+	}
+
+	// Moved later: told again for the new start once it comes close.
+	moved := standup
+	moved.Start, moved.End = at(3*time.Hour), at(210*time.Minute)
+	e.Calendar("work", []CalendarEvent{moved}, later)
+	e.Soon(now.Add(155 * time.Minute))
+	soon := 0
+	for _, kind := range kinds(e, -1) {
+		if kind == "calendar.soon" {
+			soon++
+		}
+	}
+	if soon != 2 {
+		t.Fatalf("after moving: %d soon events", soon)
+	}
+}

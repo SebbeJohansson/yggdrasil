@@ -134,18 +134,38 @@ func TestADraftReadyRuleFiltersLikeAMessageAndLinksToTheInbox(t *testing.T) {
 func TestAMeetingBriefIsAskedOfNornAndHandedToHermodrToHold(t *testing.T) {
 	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
 	h, fake := newTest(t, now)
-	fired, _ := h.FromNorn(norn("calendar.added", map[string]any{"calendar": "work",
-		"event": map[string]any{"id": "x", "subject": "Budget", "start": now.Add(40 * time.Minute).UnixMilli(), "end": now.Add(70 * time.Minute).UnixMilli(), "organizer": "Kim"}}))
+	meeting := map[string]any{"calendar": "work",
+		"event": map[string]any{"id": "x", "subject": "Budget", "start": now.Add(25 * time.Minute).UnixMilli(), "end": now.Add(70 * time.Minute).UnixMilli(), "organizer": "Kim"}}
+	added, _ := h.FromNorn(norn("calendar.added", meeting))
+	h.Handle(context.Background(), added)
+	if len(fake.asked) != 0 {
+		t.Fatalf("briefed on the add: %q", fake.asked)
+	}
+	fired, _ := h.FromNorn(norn("calendar.soon", meeting))
 	h.Handle(context.Background(), fired)
 	got := reactions(t, h)
 	if len(got) != 1 || got[0].State != "delivered" || got[0].Text != "Bring the Q3 numbers." {
 		t.Fatalf("got %+v", got)
 	}
-	if len(fake.asked) != 1 || !strings.HasPrefix(fake.asked[0], "/local Brief me for my meeting \"Budget\" at 10:40, organized by Kim") {
+	if len(fake.asked) != 1 || !strings.HasPrefix(fake.asked[0], "/local Brief me for my meeting \"Budget\" at 10:25, organized by Kim") {
 		t.Fatalf("asked %q", fake.asked)
 	}
-	if len(fake.pushed) != 1 || !fake.pushed[0].Hold || fake.pushed[0].Priority != "normal" || fake.pushed[0].Title != "Budget at 10:40" {
+	if len(fake.pushed) != 1 || !fake.pushed[0].Hold || fake.pushed[0].Priority != "normal" || fake.pushed[0].Title != "Budget at 10:25" {
 		t.Fatalf("handed over %+v", fake.pushed)
+	}
+}
+
+func TestAMeetingMovedIntoTheHourIsBriefedOnceNotAgainWhenItComesClose(t *testing.T) {
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	h, fake := newTest(t, now)
+	meeting := map[string]any{"calendar": "work", "previousStart": now.Add(3 * time.Hour).UnixMilli(),
+		"event": map[string]any{"id": "x", "subject": "Budget", "start": now.Add(20 * time.Minute).UnixMilli(), "end": now.Add(70 * time.Minute).UnixMilli()}}
+	for _, kind := range []string{"calendar.moved", "calendar.soon"} {
+		fired, _ := h.FromNorn(norn(kind, meeting))
+		h.Handle(context.Background(), fired)
+	}
+	if len(fake.asked) != 1 || len(fake.pushed) != 1 {
+		t.Fatalf("asked %d times, told %d times", len(fake.asked), len(fake.pushed))
 	}
 }
 
