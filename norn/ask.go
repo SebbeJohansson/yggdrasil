@@ -475,7 +475,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		result := Dispatch(ctx, input, func(ctx context.Context, messages []llm.Message, format map[string]any) (string, error) {
 			think := false
 			return n.LLM.Chat(ctx, messages, llm.Options{Purpose: "dispatch", Model: n.Config.DispatchModel, Temperature: 0, TopP: 1, MaxTokens: 60,
-				Format: format, Think: &think, KeepAlive: n.Config.DispatchKeepAlive, Timeout: 30 * time.Second})
+				Format: format, Think: &think, KeepAlive: n.Config.DispatchKeepAlive, Timeout: 20 * time.Second, NoFallback: true})
 		})
 		target := agentNamed(input, result.Decision.Agent)
 		source := "fallback"

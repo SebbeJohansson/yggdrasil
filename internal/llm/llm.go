@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,6 +44,10 @@ type Options struct {
 	// KeepAlive is how long Ollama keeps the model loaded after this call.
 	KeepAlive string
 	Timeout   time.Duration
+	// NoFallback skips Ollama when XeStrata fails: Ollama runs on the CPU
+	// here, too slow for a call you are waiting on that has a rule to fall
+	// back to instead (dispatch, route).
+	NoFallback bool
 }
 
 // Usage is what a backend says about one answer; nil where it says nothing.
@@ -119,6 +124,8 @@ type Client struct {
 	Record func(Call)
 	Warn   func(format string, args ...any)
 	HTTP   *http.Client
+	// lastAnswer is when XeStrata last answered, in Unix ms, for KeepWarm.
+	lastAnswer atomic.Int64
 }
 
 // Chat answers, from XeStrata or, when it fails, from Ollama.
@@ -130,10 +137,30 @@ func (c *Client) Chat(ctx context.Context, messages []Message, options Options) 
 	if err == nil {
 		return content, nil
 	}
+	if options.NoFallback {
+		return "", err
+	}
 	if c.Warn != nil {
 		c.Warn("%s failed (%v); asking Ollama instead", c.PrimaryURL, err)
 	}
 	return c.attempt(ctx, "ollama", messages, options)
+}
+
+// KeepWarm asks XeStrata for one token when it has not answered for `idle`.
+// Its model sits in the iGPU's shared memory, and Windows pages it out when
+// left alone: the first message after that waits 30 s or more for the model
+// to come back (0.8 prompt tokens a second, against 40 when warm). The ask
+// is not recorded; the debug view is for your messages.
+func (c *Client) KeepWarm(ctx context.Context, idle time.Duration) error {
+	if c.PrimaryURL == "" || time.Since(time.UnixMilli(c.lastAnswer.Load())) < idle {
+		return nil
+	}
+	_, err := c.openaiChat(ctx, []Message{{Role: "user", Content: "hi"}}, Options{MaxTokens: 1, Timeout: 2 * time.Minute})
+	if err != nil {
+		return fmt.Errorf("could not keep %s warm: %w", c.PrimaryURL, err)
+	}
+	c.lastAnswer.Store(time.Now().UnixMilli())
+	return nil
 }
 
 type result struct {
@@ -159,6 +186,9 @@ func (c *Client) attempt(ctx context.Context, backend string, messages []Message
 		answer, err = c.ollamaChat(ctx, messages, options)
 	}
 	call.TotalMS = time.Since(start).Milliseconds()
+	if err == nil && backend == "xestrata" {
+		c.lastAnswer.Store(time.Now().UnixMilli())
+	}
 	if err != nil {
 		call.Error = err.Error()
 	} else {

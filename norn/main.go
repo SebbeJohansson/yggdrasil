@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"time"
 	"yggdrasil/internal/linear"
 	"yggdrasil/internal/mcp"
 
@@ -28,6 +29,7 @@ import (
 //	TIME_ZONE        yours (Europe/Stockholm)
 //	SUMMARY_MODEL    phrases the inbox summary (llama3.2:1b); ASK_MODEL answers (the summary model)
 //	DISPATCH_MODEL   decides what each message is (qwen2.5:7b); off: the older rules
+//	WARM_EVERY       how long XeStrata may sit idle before Norn asks it for a token (2m); off: never
 //	YGG_SINDRI_URL   Sindri, for coding and questions that need tools; SINDRI_TOKEN is Norn's token there (unset: agents off)
 //	INBOX_JUDGE      laya, typesafe, ollama or off (laya); INBOX_JUDGE_MODEL, TYPESAFE_KEY
 //	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  your own Google "Desktop app" OAuth client; unset is no Google
@@ -106,6 +108,11 @@ func Main(ctx context.Context) error {
 		}}
 	}
 	n.WakeShadow()
+	// Ask XeStrata for a token when it has sat idle, so your next message
+	// does not wait for Windows to page its model back in (llm.KeepWarm).
+	if warm := env.Duration("WARM_EVERY", 2*time.Minute); env.String("WARM_EVERY", "") != "off" {
+		p.Loop("keep-warm", warm/2, func(ctx context.Context) error { return client.KeepWarm(ctx, warm/2) })
+	}
 	n.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }

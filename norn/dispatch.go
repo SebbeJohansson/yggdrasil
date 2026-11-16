@@ -693,7 +693,7 @@ func (n *Norn) Classify(ctx context.Context, question string) (tools, change boo
 		messages = append(messages, llm.Message{Role: "user", Content: example.question}, llm.Message{Role: "assistant", Content: string(answer)})
 	}
 	messages = append(messages, llm.Message{Role: "user", Content: question})
-	raw, err := n.LLM.Chat(ctx, messages, llm.Options{Purpose: "route", Model: n.Config.AskModel, Temperature: 0, TopP: 1, MaxTokens: 30,
+	raw, err := n.LLM.Chat(ctx, messages, llm.Options{Purpose: "route", Model: n.Config.AskModel, Temperature: 0, TopP: 1, MaxTokens: 30, Timeout: 15 * time.Second, NoFallback: true,
 		Format: map[string]any{"type": "object", "properties": map[string]any{"tools": map[string]any{"type": "boolean"}, "change": map[string]any{"type": "boolean"}}, "required": []string{"tools", "change"}}})
 	if err != nil {
 		n.logf("the router did not answer; answering locally: %v", err)
