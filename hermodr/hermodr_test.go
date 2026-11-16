@@ -111,6 +111,30 @@ func TestQuietHoursAndMeetingsHoldAllButUrgent(t *testing.T) {
 	}
 }
 
+func TestLaterHoldsEvenUrgentUntilItsTime(t *testing.T) {
+	now := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
+	h, phone, _ := newTest(t, &now, "")
+	at := now.Add(5 * time.Hour)
+	later := h.Take(context.Background(), Message{ID: "1", Title: "Call Anna back", Priority: "urgent", Push: true, NotBefore: &at, At: now})
+	if later.State != "held" || later.Reason != "later, at Tue 15:00" {
+		t.Fatalf("%+v", later)
+	}
+	now = at.Add(-time.Minute)
+	if err := h.release(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := h.message(context.Background(), "1"); m.State != "held" {
+		t.Fatalf("a minute early %+v", m)
+	}
+	now = at
+	if err := h.release(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := h.message(context.Background(), "1"); m.State != "sent" || len(phone.sent) != 1 {
+		t.Fatalf("at its time %+v, phone %d", m, len(phone.sent))
+	}
+}
+
 func TestTheSenderIsItsTokenAndOnlyYouMarkSeen(t *testing.T) {
 	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
 	h, _, _ := newTest(t, &now, "")

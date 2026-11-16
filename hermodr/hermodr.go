@@ -51,16 +51,18 @@ type Delivery struct {
 
 // Message is one thing told to you.
 type Message struct {
-	ID         string     `json:"id"`
-	Source     string     `json:"source"`
-	Title      string     `json:"title"`
-	Text       string     `json:"text,omitempty"`
-	Link       string     `json:"link,omitempty"`
-	Priority   string     `json:"priority"`
-	Hold       bool       `json:"hold"`
-	Push       bool       `json:"push"`
-	State      string     `json:"state"`
-	Reason     string     `json:"reason,omitempty"`
+	ID       string `json:"id"`
+	Source   string `json:"source"`
+	Title    string `json:"title"`
+	Text     string `json:"text,omitempty"`
+	Link     string `json:"link,omitempty"`
+	Priority string `json:"priority"`
+	Hold     bool   `json:"hold"`
+	Push     bool   `json:"push"`
+	State    string `json:"state"`
+	Reason   string `json:"reason,omitempty"`
+	// NotBefore holds it until then, whatever its priority: "later" was asked for.
+	NotBefore  *time.Time `json:"notBefore,omitempty"`
 	At         time.Time  `json:"at"`
 	SentAt     *time.Time `json:"sentAt,omitempty"`
 	SeenAt     *time.Time `json:"seenAt,omitempty"`
@@ -228,13 +230,17 @@ func (h *Hermodr) message(ctx context.Context, id string) (Message, error) {
 // --- routes ---
 
 type input struct {
-	Title    string `json:"title"`
-	Text     string `json:"text"`
-	Link     string `json:"link"`
-	Priority string `json:"priority"`
-	Hold     bool   `json:"hold"`
-	Push     *bool  `json:"push"`
+	Title     string     `json:"title"`
+	Text      string     `json:"text"`
+	Link      string     `json:"link"`
+	Priority  string     `json:"priority"`
+	Hold      bool       `json:"hold"`
+	Push      *bool      `json:"push"`
+	NotBefore *time.Time `json:"notBefore"`
 }
+
+// Later is how far ahead NotBefore may be.
+const Later = 30 * 24 * time.Hour
 
 func (h *Hermodr) post(w http.ResponseWriter, r *http.Request) {
 	var in input
@@ -255,9 +261,12 @@ func (h *Hermodr) post(w http.ResponseWriter, r *http.Request) {
 	case !slices.Contains(Priorities, in.Priority):
 		part.Error(w, http.StatusBadRequest, "priority must be low, normal, high or urgent")
 		return
+	case in.NotBefore != nil && in.NotBefore.After(h.now().Add(Later)):
+		part.Error(w, http.StatusBadRequest, "notBefore is at most 30 days ahead")
+		return
 	}
 	m := Message{ID: newID(), Source: part.Caller(r), Title: strings.TrimSpace(in.Title), Text: in.Text, Link: in.Link,
-		Priority: in.Priority, Hold: in.Hold, Push: in.Push == nil || *in.Push, At: h.now(), Deliveries: []Delivery{}}
+		Priority: in.Priority, Hold: in.Hold, Push: in.Push == nil || *in.Push, NotBefore: in.NotBefore, At: h.now(), Deliveries: []Delivery{}}
 	m = h.Take(r.Context(), m)
 	part.JSON(w, http.StatusCreated, m)
 }
@@ -276,10 +285,13 @@ func (h *Hermodr) Take(ctx context.Context, m Message) Message {
 }
 
 func (h *Hermodr) holdFor(m Message) (string, bool) {
+	now := h.now().In(h.Zone)
+	if m.NotBefore != nil && now.Before(*m.NotBefore) {
+		return "later, at " + m.NotBefore.In(h.Zone).Format("Mon 15:04"), true
+	}
 	if !m.Push || m.Priority == "urgent" {
 		return "", false
 	}
-	now := h.now().In(h.Zone)
 	if until, quiet := h.Quiet.Until(now); quiet {
 		return "quiet hours until " + until.Format("15:04"), true
 	}

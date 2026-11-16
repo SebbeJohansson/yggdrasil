@@ -198,6 +198,7 @@ components:
         priority: { type: string, enum: [low, normal, high, urgent], description: Defaults to normal. }
         hold: { type: boolean, description: Wait while you are in a meeting. Never holds an urgent one. }
         push: { type: boolean, description: "Defaults to true. false: listed for the widget only." }
+        notBefore: { type: string, format: date-time, description: "Held until then, whatever its priority: a reminder you asked for later. At most 30 days ahead." }
     Message:
       type: object
       required: [id, source, title, priority, hold, push, state, at, deliveries]
@@ -212,6 +213,7 @@ components:
         push: { type: boolean }
         state: { type: string, enum: [held, sent, listed, failed], description: "listed: push false, or no channel takes its priority. failed: every channel it went to refused it." }
         reason: { type: string, description: Why it is held. }
+        notBefore: { type: string, format: date-time }
         at: { type: string, format: date-time }
         sentAt: { type: string, format: date-time }
         seenAt: { type: string, format: date-time }
