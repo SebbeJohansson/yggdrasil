@@ -68,3 +68,34 @@ services:
       interval: 30s
       timeout: 3s
       retries: 3
+
+  # Dev mode for the container parts (scripts/dev-mode.sh on): Norn, Gjallar
+  # and Munin from your working tree, rebuilt and restarted on every save by
+  # scripts/dev.sh. Stop the three containers above first; dev-mode.sh does.
+  # The repo, its data and your settings are mounted at their host paths, so
+  # the parts find the same files a `scripts/dev.sh` on the host would.
+  dev:
+    profiles: [dev]
+    build:
+      dockerfile_inline: |
+        FROM golang:1.25-alpine
+        RUN apk add --no-cache git
+    image: yggdrasil-dev
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"
+    working_dir: ${HOME}/projects/yggdrasil
+    command: ["scripts/dev.sh", "norn", "gjallar", "munin"]
+    environment:
+      HOME: ${HOME}
+      YGG_DEV_MANAGED: "1"
+      YGG_GO: go
+      YGG_DEV_DIR: bin/dev-container
+      GOMODCACHE: /gomod
+      GOCACHE: /gocache
+      CGO_ENABLED: "0"
+    volumes:
+      - .:${HOME}/projects/yggdrasil
+      - ${HOME}/.config/yggdrasil:${HOME}/.config/yggdrasil:ro
+      - ${HOME}/go/pkg/mod:/gomod
+      - ${HOME}/.cache/go-build:/gocache

@@ -1,0 +1,18 @@
+[Unit]
+Description=Yggdrasil dev mode: Sindri, Veðrfölnir and Ratatoskr from the working tree, rebuilt on every save
+After=network-online.target
+# The installed copies take the same ports.
+Conflicts=ygg-sindri.service ygg-vedrfolnir.service ygg-ratatoskr.service
+
+[Service]
+WorkingDirectory=%h/projects/yggdrasil
+ExecStart=%h/projects/yggdrasil/scripts/dev.sh sindri vedrfolnir ratatoskr
+Environment=YGG_DEV_MANAGED=1
+Environment=YGG_DEV_DIR=bin/dev-host
+Restart=always
+RestartSec=5
+# Agents are stopped with Sindri; give them a moment.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

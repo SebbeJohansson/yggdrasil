@@ -69,6 +69,20 @@ containers) are stopped first, so the dev ones take the same ports and data,
 and started again when you press Ctrl-C. The first run installs air into
 `bin/tools`, through `scripts/go` like every other Go command here.
 
+To keep dev mode running without a terminal, and after a reboot:
+
+```sh
+scripts/dev-mode.sh on      # every part from your working tree, rebuilt on every save
+scripts/dev-mode.sh logs    # follow it
+scripts/dev-mode.sh off     # the installed parts again
+```
+
+Norn, Gjallar and Munin then run in the `dev` container (compose profile
+`dev`), and Sindri, Veðrfölnir and Ratatoskr in `ygg-dev.service` on the host,
+since they need your repos and toolchain, the host's `/proc` and systemd, or
+must outlive Docker. `on` disables the installed units and stops the
+containers; `off` enables the units again.
+
 ## Test
 
 ```sh
