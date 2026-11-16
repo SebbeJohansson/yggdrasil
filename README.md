@@ -142,7 +142,9 @@ to ntfy when Hermóðr can't take it), at most once per alert every 15 minutes.
 
 It checks the parts in `RATATOSKR_WATCH` every 30 s, at their `YGG_<PART>_URL`. Down is `down:<part>`
 (critical). A loop that hasn't run within three of its intervals plus a
-minute is `stalled:<part>:<loop>` (warning).
+minute is `stalled:<part>:<loop>` (warning). A loop whose last run failed is
+`failing:<part>:<loop>` (warning), with the error as the detail; it resolves
+after the loop runs cleanly again.
 
 ### Munin
 

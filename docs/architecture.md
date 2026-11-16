@@ -83,7 +83,7 @@ knows the caller's name:
 
 | Problem | Reported by |
 | --- | --- |
-| a Yggdrasil part is down, or one of its loops stopped | Ratatoskr |
+| a Yggdrasil part is down, or one of its loops stopped or failed | Ratatoskr |
 | something outside Yggdrasil doesn't answer (Ollama, Laya, Slack…) | Munin |
 | a disk is filling, a unit failed, a container crashed (not Yggdrasil's own) | Veðrfölnir |
 | a sign-in expired | the part holding it (Norn, Sindri) |

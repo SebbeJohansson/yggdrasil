@@ -11,6 +11,7 @@ import (
 
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/watch"
 )
 
 // fakeGjallar records what Ratatoskr sends.
@@ -107,6 +108,29 @@ func TestAStalledLoopIsAWarning(t *testing.T) {
 	}
 	if !got["stalled:norn:linear"] {
 		t.Fatalf("linear runs every 10 min and was last seen 10 min ago: that is fine")
+	}
+}
+
+func TestALoopWhoseLastRunFailedIsAWarning(t *testing.T) {
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	last := now.Add(-time.Minute)
+	health := &part.Health{OK: true, Part: "huginn", StartedAt: now.Add(-time.Hour), Loops: map[string]part.LoopHealth{
+		"linear":  {EverySeconds: 300, LastRunAt: &last, LastError: "norn answered 502"},
+		"streams": {EverySeconds: 30, LastRunAt: &last},
+	}}
+	got := map[string]watch.Result{}
+	for _, result := range Results(Target{Name: "huginn"}, health, nil, now) {
+		got[result.Key] = result
+	}
+	failing := got["failing:huginn:linear"]
+	if failing.OK || failing.Detail != "norn answered 502" {
+		t.Fatalf("linear failed its last run: got %+v", failing)
+	}
+	if !got["stalled:huginn:linear"].OK {
+		t.Fatalf("linear ran a minute ago: it failed, but it is not stalled")
+	}
+	if !got["failing:huginn:streams"].OK {
+		t.Fatalf("streams did not fail")
 	}
 }
 

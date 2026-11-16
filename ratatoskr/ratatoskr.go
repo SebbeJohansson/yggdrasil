@@ -4,7 +4,7 @@
 //
 //   - Alive: GET /health answers within 2 s.
 //   - Working: every loop on /health ran within three times its interval plus
-//     a minute.
+//     a minute, and its last run did not fail.
 //   - Two failures in a row raise an alert through Gjallar; two passes resolve it.
 //   - When Gjallar itself is down, the alert goes around it: a direct phone
 //     push (ntfy), and GET /v1/status, which the widget reads directly.
@@ -31,8 +31,8 @@ import (
 	"time"
 
 	"yggdrasil/internal/alert"
-	"yggdrasil/internal/tell"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/tell"
 	"yggdrasil/internal/watch"
 )
 
@@ -62,8 +62,8 @@ type Ratatoskr struct {
 	// reported around it.
 	GjallarPart string
 	// Fallback tells you Gjallar is down: Hermóðr, then ntfy straight.
-	Fallback    tell.Teller
-	HTTP        *http.Client
+	Fallback tell.Teller
+	HTTP     *http.Client
 
 	watch        *watch.Watch
 	mu           sync.Mutex
@@ -94,6 +94,10 @@ func downKey(name string) string {
 
 func stalledKey(name, loop string) string {
 	return "stalled:" + name + ":" + loop
+}
+
+func failingKey(name, loop string) string {
+	return "failing:" + name + ":" + loop
 }
 
 // Title is a part's name as a person reads it.
@@ -180,6 +184,13 @@ func Results(target Target, health *part.Health, err error, now time.Time) []wat
 			Severity: alert.Warning,
 			Title:    fmt.Sprintf("%s's %s loop has not run in %s", title, name, late.Round(time.Minute)),
 			Detail:   fmt.Sprintf("it runs every %s; last run %s", every, since.Format(time.RFC3339)),
+		})
+		results = append(results, watch.Result{
+			Key:      failingKey(target.Name, name),
+			OK:       loop.LastError == "",
+			Severity: alert.Warning,
+			Title:    fmt.Sprintf("%s's %s loop failed its last run", title, name),
+			Detail:   loop.LastError,
 		})
 	}
 	return results
