@@ -87,6 +87,24 @@ services:
       timeout: 3s
       retries: 3
 
+  dellingr:
+    <<: *part
+    profiles: [dellingr]
+    command: [dellingr]
+    env_file:
+      - path: ${HOME}/.config/yggdrasil/parts.env
+        required: false
+      - ${HOME}/.config/yggdrasil/dellingr.env
+    environment:
+      DELLINGR_DB: /data/dellingr.db
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8778/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
   # Spelling and grammar for Norn's writing checks, with exact offsets, fast
   # enough to check as you type. Not a part, so not in dev mode: it keeps
   # running while Norn runs from source.
@@ -100,8 +118,8 @@ services:
       - "127.0.0.1:8010:8010"
 
   # Dev mode for the container parts (scripts/dev-mode.sh on): Norn, Gjallar,
-  # Munin and Huginn from your working tree, rebuilt and restarted on every
-  # save by scripts/dev.sh. Stop their containers above first;
+  # Munin, Huginn and Dellingr from your working tree, rebuilt and restarted
+  # on every save by scripts/dev.sh. Stop their containers above first;
   # dev-mode.sh does.
   # The repo, its data and your settings are mounted at their host paths, so
   # the parts find the same files a `scripts/dev.sh` on the host would.
@@ -116,7 +134,7 @@ services:
     network_mode: host
     user: "1000:1000"
     working_dir: ${HOME}/projects/yggdrasil
-    command: ["scripts/dev.sh", "norn", "gjallar", "munin", "huginn"]
+    command: ["scripts/dev.sh", "norn", "gjallar", "munin", "huginn", "dellingr"]
     environment:
       HOME: ${HOME}
       YGG_DEV_MANAGED: "1"

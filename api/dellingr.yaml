@@ -1,0 +1,294 @@
+openapi: 3.1.0
+info:
+  title: Dellingr
+  version: "1"
+  description: |
+    Runs the jobs you put on a clock: "every weekday 08:00, summarise my
+    calendar and unread mail", "1st of each month, draft a goal to update
+    dependencies in glim". Reacting to events belongs to Huginn, and each
+    part's own fixed loops stay in that part. Any program that serves this
+    contract and passes `ygg check dellingr <url>` can replace the built-in
+    one (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - A schedule is cron plus a time zone. Words ("every weekday at 8") are
+      turned into cron once, by `POST /v1/parse`, shown back to you, and
+      saved as cron. They are never read again at run time.
+    - A job an agent creates (any caller but the owner) starts disabled, and
+      only the owner can enable it.
+    - A goal job drafts the goal in Sindri. It starts agents only when the
+      owner set `autoStart` on that job.
+    - Runs missed while the machine slept run once on wake, never once per
+      missed tick.
+    - Asks go to Norn with `to: norn` and `/local ` in front, so Norn answers
+      itself and never hands them to an agent.
+    - A job that fails 3 runs in a row is raised on Gjallar as
+      `failing:<job id>` (warning).
+servers:
+  - url: http://127.0.0.1:8778
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/parse:
+    post:
+      summary: Turn words into a schedule, and say when it would run next, to show back before saving. Saves nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 200, example: every weekday at 8 }
+                timezone: { type: string, description: Defaults to this machine's. }
+      responses:
+        "200":
+          description: The schedule.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cron, timezone, said, next]
+                properties:
+                  cron: { type: string, example: 0 8 * * 1-5 }
+                  timezone: { type: string }
+                  said: { type: string, description: "The schedule in plain words: Monday to Friday at 08:00." }
+                  next: { type: array, maxItems: 3, items: { type: string, format: date-time } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/jobs:
+    get:
+      summary: Every job, by next run.
+      responses:
+        "200":
+          description: The jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs: { type: array, items: { $ref: "#/components/schemas/Job" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: A new job. Enabled when the owner makes it, disabled when anyone else does.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobInput" }
+      responses:
+        "201":
+          description: Made.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/jobs/{id}:
+    get:
+      summary: One job and its last 20 runs.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job, runs]
+                properties:
+                  job: { $ref: "#/components/schemas/Job" }
+                  runs: { type: array, items: { $ref: "#/components/schemas/Run" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Change a job, or switch it on or off. Enabling and autoStart are owner only.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/JobInput" }
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Remove a job. A part may remove only the jobs it made.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/jobs/{id}/run:
+    post:
+      summary: Run it now, once, whether it is enabled or not. Owner only. Its schedule is unchanged.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "202":
+          description: Running.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/runs:
+    get:
+      summary: Every job's runs lately, newest first. Kept for 30 days. The widget reads this.
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs: { type: array, items: { $ref: "#/components/schemas/Run" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: The request doesn't make sense.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not yours to do.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such job.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    JobInput:
+      type: object
+      required: [name, cron, action]
+      properties:
+        name: { type: string, maxLength: 100 }
+        cron: { type: string, description: Five fields, as `POST /v1/parse` returns. }
+        timezone: { type: string, description: Defaults to this machine's. }
+        action: { $ref: "#/components/schemas/Action" }
+        deliver:
+          type: array
+          items: { type: string, enum: [phone, widget] }
+          description: Defaults to both.
+    Job:
+      allOf:
+        - { $ref: "#/components/schemas/JobInput" }
+      type: object
+      required: [id, enabled, createdBy, timezone, deliver, said]
+      properties:
+        id: { type: string }
+        enabled: { type: boolean }
+        createdBy: { type: string, description: owner, or the name of the part or agent that made it. }
+        said: { type: string, description: The schedule in plain words. }
+        nextRunAt: { type: string, format: date-time }
+        lastRunAt: { type: string, format: date-time }
+        lastResult: { type: string, enum: [done, failed, skipped] }
+        failingSince: { type: string, format: date-time }
+    Action:
+      type: object
+      required: [kind]
+      description: |
+        - notify: push `text`.
+        - ask: send `text` to Norn's `POST /v1/ask` and deliver the answer.
+        - goal: draft a goal in Sindri (`POST /v1/goals`) with `title`,
+          `repos` and `text` as its context, and start it only when
+          `autoStart` is true.
+      properties:
+        kind: { type: string, enum: [notify, ask, goal] }
+        text: { type: string, maxLength: 4000 }
+        title: { type: string, maxLength: 200, description: goal only. }
+        repos: { type: array, maxItems: 4, items: { type: string }, description: goal only. }
+        autoStart: { type: boolean, description: goal only. Owner only. }
+    Run:
+      type: object
+      required: [id, jobId, jobName, startedAt, state, missed]
+      properties:
+        id: { type: string }
+        jobId: { type: string }
+        jobName: { type: string }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+        state: { type: string, enum: [running, done, failed, skipped] }
+        missed: { type: boolean, description: Run on wake for a time the machine slept through. }
+        byHand: { type: boolean, description: "Started with POST /v1/jobs/{id}/run." }
+        text: { type: string, description: What was delivered. }
+        goalId: { type: string, description: The goal it drafted, for a goal job. }
+        error: { type: string }

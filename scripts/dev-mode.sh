@@ -6,7 +6,8 @@
 #   scripts/dev-mode.sh off      the installed parts again
 #   scripts/dev-mode.sh logs     follow both halves' logs
 #
-# Dev mode is two halves: the dev container (Norn, Gjallar, Munin, Huginn) and
+# Dev mode is two halves: the dev container (Norn, Gjallar, Munin, Huginn,
+# Dellingr) and
 # ygg-dev.service (Sindri, Veðrfölnir, Ratatoskr, which need the host).
 set -eu
 cd "$(dirname "$0")/.."
@@ -18,7 +19,7 @@ on)
 	systemctl --user daemon-reload
 	systemctl --user disable --now $host_units
 	systemctl --user enable --now ygg-dev.service
-	docker compose stop norn gjallar munin huginn >/dev/null 2>&1 || true
+	docker compose stop norn gjallar munin huginn dellingr >/dev/null 2>&1 || true
 	docker compose --profile dev up -d --build dev
 	echo "Dev mode on. Logs: scripts/dev-mode.sh logs"
 	;;

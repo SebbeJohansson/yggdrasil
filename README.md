@@ -13,8 +13,10 @@ Why one process per part: [docs/architecture.md](docs/architecture.md).
 | **Norn** | assistant: inbox, calendars, sign-ins, memory, the front desk | 8771 | container |
 | **Sindri** | coding: agents, worktrees, review, checks | 8772 | host unit |
 | **Huginn** | reacts to what just happened: messages, meetings, alerts | 8777 | container |
+| **Dellingr** | runs the jobs you put on a clock | 8778 | container |
 
-None of the watching parts fixes anything, and Huginn only tells you things. Everything listens on 127.0.0.1 only.
+None of the watching parts fixes anything. Huginn only tells you things;
+Dellingr acts only as far as you set a job up to. Everything listens on 127.0.0.1 only.
 
 ## Contracts
 
@@ -39,7 +41,7 @@ The host has no Go; `scripts/go` runs the toolchain in Docker.
 ```sh
 scripts/install.sh                 # build, write settings and tokens, start the host units
 cp .env.example .env               # pick the container parts (COMPOSE_PROFILES)
-docker compose up -d --build       # Norn, Gjallar, Munin, Huginn, and LanguageTool for Norn
+docker compose up -d --build       # Norn, Gjallar, Munin, Huginn, Dellingr, and LanguageTool for Norn
 curl localhost:8775/health
 ```
 
@@ -78,7 +80,7 @@ scripts/dev-mode.sh logs    # follow it
 scripts/dev-mode.sh off     # the installed parts again
 ```
 
-Norn, Gjallar, Munin and Huginn then run in the `dev` container (compose profile
+Norn, Gjallar, Munin, Huginn and Dellingr then run in the `dev` container (compose profile
 `dev`), and Sindri, Veðrfölnir and Ratatoskr in `ygg-dev.service` on the host,
 since they need your repos and toolchain, the host's `/proc` and systemd, or
 must outlive Docker. `on` disables the installed units and stops the
@@ -180,3 +182,20 @@ urgent direct message, a brief for a meeting added or moved into the next
 hour (asked of Norn), and what a critical alert stops. A rule with `hold`
 waits while you are in a meeting and goes out when it ends. A stream down for
 5 minutes is `stream:<part>` (warning).
+
+### Dellingr
+
+| Route | What it does |
+| --- | --- |
+| `POST /v1/parse` | `{ text: "every weekday at 8" }` → `{ cron, timezone, said, next }`, to show back before saving |
+| `GET /v1/jobs` | every job, by next run |
+| `POST /v1/jobs` | `{ name, cron, timezone?, action: { kind: notify\|ask\|goal, text, title?, repos?, autoStart? }, deliver? }`. Disabled unless the owner makes it |
+| `GET /v1/jobs/{id}` | the job and its last 20 runs |
+| `PATCH /v1/jobs/{id}` | change it; enabling and `autoStart` are owner only |
+| `DELETE /v1/jobs/{id}` | remove it |
+| `POST /v1/jobs/{id}/run` | run it now, once. Owner only |
+| `GET /v1/runs` | every job's runs in the last 30 days. The widget reads this |
+
+A goal job drafts the goal in Sindri, and starts it only with `autoStart`.
+Runs the machine slept through run once on wake, never once per missed tick.
+A job that fails 3 times in a row is `failing:<job id>` (warning).

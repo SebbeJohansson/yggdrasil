@@ -39,7 +39,7 @@ never call each other's Go code. They talk over HTTP only:
 - `internal/contract`: reads a part's spec and checks a running service
   against it (`ygg check`).
 - `internal/call`: one part calling another's JSON routes with its token,
-  and asking Norn (Huginn).
+  and asking Norn (Huginn, Dellingr).
 - `internal/sse`: following another part's event stream, reconnecting with
   `Last-Event-ID` (Huginn).
 
@@ -63,6 +63,7 @@ hold it to its spec: the same routes, and every answer in the spec's shape.
 | Ratatoskr: watchdog | 8775 | host unit, outside compose | none | built |
 | Munin: external checks | 8776 | container | none | built |
 | Huginn: reacts to events | 8777 | container | `huginn.db`: rules, reactions | built |
+| Dellingr: scheduled jobs | 8778 | container | `dellingr.db`: jobs, runs | built |
 
 ## Tokens
 
@@ -132,8 +133,8 @@ go back the same way.
 
 ## Doing things without being asked
 
-Huginn acts without a message from you, and is built so that Glim can
-replace it later through its contract.
+Two parts act without a message from you, and both are built so that Glim
+can replace them later through their contracts.
 
 - **Huginn** reacts to events. Norn sends what changed on
   `GET /v1/events/stream`: summaries and links only, since raw inbox text
@@ -141,5 +142,10 @@ replace it later through its contract.
   suggests and tells; it never sends, starts or changes anything. Its
   questions to Norn go with `to: norn` and `/local`, so Norn answers itself
   and never hands them to an agent.
+- **Dellingr** runs jobs on a clock. my-agent's roadmap (section 2) planned
+  one scheduler per part; one part replaced that, since a job's work lives in
+  Norn or Sindri anyway, and Ratatoskr reports Dellingr down like any other
+  part. Each part's own fixed loops stay in that part.
 
-A rule made by anyone but you starts disabled, and only you can enable it.
+A rule or job made by anyone but you starts disabled, and only you can
+enable it. Only you can let a goal job start agents (`autoStart`).

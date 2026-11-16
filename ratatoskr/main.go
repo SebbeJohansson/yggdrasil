@@ -15,7 +15,7 @@ import (
 
 // DefaultWatch is every other part. A machine that doesn't run one (at work,
 // say) leaves it out of RATATOSKR_WATCH.
-const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn"
+const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr"
 
 // Main runs Ratatoskr until ctx ends. Settings:
 //

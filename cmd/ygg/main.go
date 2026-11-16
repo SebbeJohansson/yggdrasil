@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"yggdrasil/api"
+	"yggdrasil/dellingr"
 	"yggdrasil/gjallar"
 	"yggdrasil/huginn"
 	"yggdrasil/internal/contract"
@@ -42,6 +43,7 @@ var parts = map[string]struct {
 	"munin":      {"checks the systems outside Yggdrasil that the parts depend on", munin.Main},
 	"vedrfolnir": {"reports on the machine: CPU, GPU, disks, services, containers", vedrfolnir.Main},
 	"huginn":     {"reacts to what just happened: messages, meetings, alerts", huginn.Main},
+	"dellingr":   {"runs the jobs you put on a clock", dellingr.Main},
 }
 
 func usage() {

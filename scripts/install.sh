@@ -58,7 +58,7 @@ part_token() {
 gjallar_token() {
 	part_token gjallar "$1"
 }
-for part in munin vedrfolnir ratatoskr norn sindri huginn; do
+for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr; do
 	gjallar_token "$part" >/dev/null
 done
 
@@ -134,7 +134,7 @@ EOF
 	done
 fi
 
-# Huginn calls Norn and Sindri with tokens of its own. After a
+# Huginn and Dellingr call Norn and Sindri with tokens of their own. After a
 # token is added there, restart Norn and Sindri (docker compose up -d, and
 # systemctl --user restart ygg-sindri).
 write huginn.env <<EOF
@@ -142,6 +142,17 @@ HUGINN_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token huginn)
 NORN_TOKEN=$(part_token norn huginn)
 SINDRI_TOKEN=$(part_token sindri huginn)
+TIME_ZONE=Europe/Stockholm
+# Your phone push topic, the same as Gjallar's. Empty: the widget only.
+NTFY_URL=
+NTFY_TOKEN=
+YGG_CORS_ORIGINS=$origins
+EOF
+write dellingr.env <<EOF
+DELLINGR_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token dellingr)
+NORN_TOKEN=$(part_token norn dellingr)
+SINDRI_TOKEN=$(part_token sindri dellingr)
 TIME_ZONE=Europe/Stockholm
 # Your phone push topic, the same as Gjallar's. Empty: the widget only.
 NTFY_URL=
@@ -161,12 +172,13 @@ write parts.env <<'EOF'
 #YGG_RATATOSKR_URL=http://127.0.0.1:8775
 #YGG_MUNIN_URL=http://127.0.0.1:8776
 #YGG_HUGINN_URL=http://127.0.0.1:8777
+#YGG_DELLINGR_URL=http://127.0.0.1:8778
 
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
-RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn
+RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr
 EOF
 if ! grep -q '^RATATOSKR_WATCH=.*huginn' "$config/parts.env"; then
-	echo "  Note: add huginn to RATATOSKR_WATCH in $config/parts.env if this machine runs them"
+	echo "  Note: add huginn,dellingr to RATATOSKR_WATCH in $config/parts.env if this machine runs them"
 fi
 
 umask 022
