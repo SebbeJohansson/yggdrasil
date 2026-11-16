@@ -132,6 +132,42 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /v1/focus:
+    get:
+      summary: Whether you are focusing, until when, and on which goal. While you are, every message but an urgent one is held until it ends.
+      responses:
+        "200":
+          description: The focus.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Focus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Focus until a time, at most 12 hours ahead, on a goal or on nothing in particular. Again while focusing changes the time or the goal and keeps when it started. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FocusInput" }
+      responses:
+        "200":
+          description: Focusing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Focus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      summary: Stop focusing now; what was held goes out at once. Owner only.
+      responses:
+        "200":
+          description: Not focusing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Focus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 components:
   securitySchemes:
     bearer:
@@ -218,6 +254,26 @@ components:
         sentAt: { type: string, format: date-time }
         seenAt: { type: string, format: date-time }
         deliveries: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
+    FocusGoal:
+      type: object
+      required: [id, title]
+      properties:
+        id: { type: integer }
+        title: { type: string, maxLength: 300 }
+    FocusInput:
+      type: object
+      required: [until]
+      properties:
+        until: { type: string, format: date-time }
+        goal: { $ref: "#/components/schemas/FocusGoal" }
+    Focus:
+      type: object
+      required: [on]
+      properties:
+        on: { type: boolean }
+        until: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        goal: { $ref: "#/components/schemas/FocusGoal" }
     Delivery:
       type: object
       required: [channel, ok, at]

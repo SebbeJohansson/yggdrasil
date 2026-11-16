@@ -135,6 +135,82 @@ func TestLaterHoldsEvenUrgentUntilItsTime(t *testing.T) {
 	}
 }
 
+func TestFocusHoldsAllButUrgentUntilItEnds(t *testing.T) {
+	now := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
+	h, _, other := newTest(t, &now, "")
+	until := now.Add(90 * time.Minute)
+	if err := h.setFocus(context.Background(), Focus{Until: &until, StartedAt: &now, Goal: &FocusGoal{ID: 14, Title: "Retries"}}); err != nil {
+		t.Fatal(err)
+	}
+	if f := h.focusNow(); !f.On || f.Goal.ID != 14 {
+		t.Fatalf("focus %+v", f)
+	}
+	held := h.Take(context.Background(), Message{ID: "1", Title: "Inbox", Priority: "high", Push: true, At: now})
+	listed := h.Take(context.Background(), Message{ID: "2", Title: "For the widget", Priority: "normal", Push: false, At: now})
+	urgent := h.Take(context.Background(), Message{ID: "3", Title: "Norn is down", Priority: "urgent", Push: true, At: now})
+	if held.State != "held" || held.Reason != "you are focusing until 11:30" || listed.State != "held" || urgent.State != "sent" {
+		t.Fatalf("%+v / %+v / %+v", held, listed, urgent)
+	}
+	// Its time up, the focus is off by itself and what waited goes.
+	now = until
+	if f := h.focusNow(); f.On {
+		t.Fatalf("still on %+v", f)
+	}
+	if err := h.release(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := h.message(context.Background(), "1"); m.State != "sent" || len(other.sent) != 2 {
+		t.Fatalf("after focus %+v, other %d", m, len(other.sent))
+	}
+	if m, _ := h.message(context.Background(), "2"); m.State != "listed" {
+		t.Fatalf("widget one after focus %+v", m)
+	}
+}
+
+func TestFocusOverHTTPIsTheOwnersAndOutlivesARestart(t *testing.T) {
+	now := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
+	path := t.TempDir() + "/hermodr.db"
+	open := func() *Hermodr {
+		h, err := New(path, nil, nil, Quiet{}, time.UTC, call.New("norn", "", "", time.Second), alert.NewClient("", ""), t.Logf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.now = func() time.Time { return now }
+		return h
+	}
+	h := open()
+	p := part.New(Name, contracttest.Tokens(), nil)
+	h.Mount(p)
+	server := httptest.NewServer(p)
+	defer server.Close()
+	do := func(method, token, body string) int {
+		req, _ := http.NewRequest(method, server.URL+"/v1/focus", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	if code := do("PUT", contracttest.Sender, `{"until":"2026-11-17T11:00:00Z"}`); code != http.StatusForbidden {
+		t.Fatalf("sender: %d", code)
+	}
+	if code := do("PUT", contracttest.Owner, `{"until":"2026-11-18T11:00:00Z"}`); code != http.StatusBadRequest {
+		t.Fatalf("a day: %d", code)
+	}
+	if code := do("PUT", contracttest.Owner, `{"until":"2026-11-17T11:00:00Z","goal":{"id":3,"title":"Dark mode"}}`); code != http.StatusOK {
+		t.Fatalf("owner: %d", code)
+	}
+	h.Close()
+	again := open()
+	defer again.Close()
+	if f := again.focusNow(); !f.On || f.Goal == nil || f.Goal.Title != "Dark mode" {
+		t.Fatalf("after a restart %+v", f)
+	}
+}
+
 func TestTheSenderIsItsTokenAndOnlyYouMarkSeen(t *testing.T) {
 	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
 	h, _, _ := newTest(t, &now, "")

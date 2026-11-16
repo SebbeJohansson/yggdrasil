@@ -149,6 +149,7 @@ type Hermodr struct {
 	mu       sync.Mutex
 	meetings []meeting
 	states   map[string]*channelState
+	focus    Focus
 }
 
 const schema = `CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, at INTEGER NOT NULL, state TEXT NOT NULL, body TEXT NOT NULL);
@@ -161,12 +162,17 @@ func New(path string, channels []Channel, min map[string]string, quiet Quiet, zo
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + focusSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("hermodr schema: %w", err)
 	}
-	return &Hermodr{db: db, Channels: channels, Min: min, Quiet: quiet, Zone: zone, Norn: norn, Gjallar: gjallar,
-		now: time.Now, logf: logf, states: map[string]*channelState{}}, nil
+	h := &Hermodr{db: db, Channels: channels, Min: min, Quiet: quiet, Zone: zone, Norn: norn, Gjallar: gjallar,
+		now: time.Now, logf: logf, states: map[string]*channelState{}}
+	if err := h.loadFocus(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("hermodr focus: %w", err)
+	}
+	return h, nil
 }
 
 // Close closes the store.
@@ -181,6 +187,9 @@ func (h *Hermodr) Mount(p *part.Part) {
 	p.Handle("POST /v1/messages/{id}/seen", h.seen)
 	p.Handle("GET /v1/channels", h.channels)
 	p.Handle("POST /v1/channels/{name}/test", h.test)
+	p.Handle("GET /v1/focus", h.getFocus)
+	p.Handle("PUT /v1/focus", h.putFocus)
+	p.Handle("DELETE /v1/focus", h.endFocus)
 	p.Loop("meetings", 2*time.Minute, h.readMeetings)
 	p.Loop("release", 30*time.Second, h.release)
 }
@@ -288,6 +297,9 @@ func (h *Hermodr) holdFor(m Message) (string, bool) {
 	now := h.now().In(h.Zone)
 	if m.NotBefore != nil && now.Before(*m.NotBefore) {
 		return "later, at " + m.NotBefore.In(h.Zone).Format("Mon 15:04"), true
+	}
+	if f := h.focusNow(); f.On && m.Priority != "urgent" {
+		return "you are focusing until " + f.Until.In(h.Zone).Format("15:04"), true
 	}
 	if !m.Push || m.Priority == "urgent" {
 		return "", false
