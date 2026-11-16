@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"yggdrasil/internal/linear"
 
@@ -68,6 +69,9 @@ type Norn struct {
 	HTTP   *http.Client
 	// Gjallar is where Norn raises what is its to raise: a sign-in that ended.
 	Gjallar *alert.Client
+	// Vault is your Obsidian vault, nil when OBSIDIAN_VAULT is not set; vaultMu guards it.
+	Vault   *Vault
+	vaultMu sync.Mutex
 	// modelFailing is what the model-health loop last told Gjallar; modelChecked, that it has.
 	modelFailing, modelChecked bool
 	Accounts                   *Accounts
@@ -132,6 +136,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountWrite(p)
 	n.mountEvents(p)
 	n.mountDrafts(p)
+	n.mountVault(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

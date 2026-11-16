@@ -26,10 +26,14 @@ services:
     environment:
       NORN_DB: /data/norn.db
       PROFILE_PATH: /profile/profile.md
+      # Your Obsidian vault, for meeting notes (OBSIDIAN_VAULT_DIR in .env).
+      OBSIDIAN_VAULT: ${OBSIDIAN_VAULT_DIR:+/vault}
+      OBSIDIAN_VAULT_NAME: ${OBSIDIAN_VAULT_NAME:-}
     volumes:
       # The database and the sign-ins (Microsoft, Google, Slack), beside it.
       - ./data:/data
       - ./profile:/profile:ro
+      - ${OBSIDIAN_VAULT_DIR:-./data/no-vault}:/vault
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8771/health"]
       interval: 30s
@@ -182,8 +186,11 @@ services:
       GOMODCACHE: /gomod
       GOCACHE: /gocache
       CGO_ENABLED: "0"
+      OBSIDIAN_VAULT: ${OBSIDIAN_VAULT_DIR:+/vault}
+      OBSIDIAN_VAULT_NAME: ${OBSIDIAN_VAULT_NAME:-}
     volumes:
       - .:${HOME}/projects/yggdrasil
+      - ${OBSIDIAN_VAULT_DIR:-./data/no-vault}:/vault
       - ${HOME}/.config/yggdrasil:${HOME}/.config/yggdrasil:ro
       - ${HOME}/go/pkg/mod:/gomod
       - ${HOME}/.cache/go-build:/gocache

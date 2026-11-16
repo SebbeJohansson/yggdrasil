@@ -733,6 +733,54 @@ paths:
                 properties:
                   replies: { type: array, items: { $ref: "#/components/schemas/CopiedReply" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/notes/meeting:
+    get:
+      summary: For a meeting, your Obsidian note for its day (when you wrote one) and the earlier meeting notes sharing a first name or a subject word with it, newest first. Titles and obsidian:// links only, never note text. The vault's root and Notes/Meetings are read. `on` is false without a vault (OBSIDIAN_VAULT).
+      parameters:
+        - { name: subject, in: query, required: true, example: Sprint review, schema: { type: string, maxLength: 300 } }
+        - { name: start, in: query, required: false, example: 1794900000000, schema: { type: integer }, description: "Epoch ms; else the calendar's meeting with that subject." }
+      responses:
+        "200":
+          description: The notes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [on, related]
+                properties:
+                  on: { type: boolean }
+                  note: { $ref: "#/components/schemas/VaultNote" }
+                  related: { type: array, items: { $ref: "#/components/schemas/VaultNote" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add lines to the meeting's Obsidian note for its day, under "## Efter mötet", or make "<subject> - <YYYY-MM-DD>.md" at the vault's root when you have not written one. Your own text in the note is never changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, start, text]
+              properties:
+                subject: { type: string }
+                start: { type: integer, description: Epoch ms. }
+                attendees: { type: array, items: { type: string } }
+                text: { type: string, maxLength: 4000 }
+      responses:
+        "201":
+          description: Written.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [note, made]
+                properties:
+                  note: { $ref: "#/components/schemas/VaultNote" }
+                  made: { type: boolean, description: A new note; false when added to yours. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v1/inbox/summary:
     post:
       summary: Phrase a sentence for ranked items the caller collected. Never fails because of the model; falls back to the plain count, as it does when the model names someone the items don't hold.
@@ -1220,6 +1268,15 @@ components:
         online: { type: boolean }
         id: { type: string, description: The same meeting keeps the same id when it moves. }
         attendees: { type: array, items: { type: string }, description: "Who is invited, by name (or address), at most 30. Google leaves you out; Outlook lists you too." }
+    VaultNote:
+      type: object
+      required: [path, title, link]
+      properties:
+        path: { type: string, description: In the vault, with the .md. }
+        title: { type: string }
+        date: { type: string, description: The YYYY-MM-DD ending the title. }
+        link: { type: string, description: obsidian://open for it. }
+        why: { type: array, items: { type: string }, description: The first names and subject words it shares with the meeting. }
     CopiedReply:
       type: object
       required: [at, item, source, draft, sent]

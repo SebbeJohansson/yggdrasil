@@ -67,7 +67,7 @@ type AskResponse struct {
 const askSystem = "You are a personal assistant running locally for one person. Answer briefly and plainly. For general knowledge (facts, definitions, how-tos), answer normally from what you know. For questions about the person themselves -- their colleagues, projects, schedule -- use only what is written below; if it is not there, say you do not know. You have no tools and nothing runs after you answer: never say you will check, look, or do something."
 
 // AskSystemPrompt is the local answer's system prompt.
-func AskSystemPrompt(profile string, recalled []Memory, inbox, agent, overview, calendar []string) string {
+func AskSystemPrompt(profile string, recalled []Memory, inbox, agent, overview, calendar, notes []string) string {
 	parts := []string{askSystem}
 	if calendar != nil {
 		parts = append(parts, "",
@@ -91,6 +91,10 @@ func AskSystemPrompt(profile string, recalled []Memory, inbox, agent, overview, 
 		for _, line := range agent {
 			parts = append(parts, "- "+line)
 		}
+	}
+	if len(notes) > 0 {
+		parts = append(parts, "", "For the meeting asked about: who is invited, and the reader's own notes from earlier meetings with these people or on this subject (newest first). Use what bears on this meeting:")
+		parts = append(parts, notes...)
 	}
 	if profile != "" {
 		parts = append(parts, "", "About the reader, in their own words:", profile)
@@ -434,6 +438,12 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 
 	inbox := n.Inbox.InboxForQuestion(question, now)
 	calendar := n.calendarLines(question, now)
+	// Your Obsidian notes are read for a /local question only: nothing from
+	// the vault is handed to Sindri.
+	var notes []string
+	if route == "local" {
+		notes = n.briefNoteLines(question, now)
+	}
 	hasCalendar := n.Accounts.Work.Current(now) != nil || n.Accounts.Personal.Current(now) != nil
 	decidedLocal := false
 	if sindri && route == "" && n.Config.DispatchModel != "off" {
@@ -604,7 +614,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 			agentLines = append(agentLines, "Its last message: "+clipText(agent.LastText, 400))
 		}
 	}
-	messages := append([]llm.Message{{Role: "system", Content: AskSystemPrompt(LoadProfile(n.Config.ProfilePath), a.recalled, inbox, agentLines, append(OverviewLines(everyone, now), SessionLines(a.yours)...), calendar)}}, a.history...)
+	messages := append([]llm.Message{{Role: "system", Content: AskSystemPrompt(LoadProfile(n.Config.ProfilePath), a.recalled, inbox, agentLines, append(OverviewLines(everyone, now), SessionLines(a.yours)...), calendar, notes)}}, a.history...)
 	messages = append(messages, llm.Message{Role: "user", Content: question})
 	options := llm.Options{Purpose: "answer", Model: n.Config.AskModel, Temperature: 0.5, TopP: 0.9, MaxTokens: 400}
 	if calendar != nil {

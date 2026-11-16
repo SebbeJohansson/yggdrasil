@@ -37,6 +37,7 @@ import (
 //	YGG_SINDRI_URL   Sindri, for coding and questions that need tools; SINDRI_TOKEN is Norn's token there (unset: agents off)
 //	INBOX_JUDGE      laya, typesafe, xestrata, ollama or off (laya; when Laya doesn't answer, Ollama, or XeStrata with Ollama off); INBOX_JUDGE_MODEL, TYPESAFE_KEY
 //	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  your own Google "Desktop app" OAuth client; unset is no Google
+//	OBSIDIAN_VAULT   your Obsidian vault's folder, for meeting notes both ways (unset: off); OBSIDIAN_VAULT_NAME is what Obsidian calls it (the folder's name)
 //	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Norn's token there (a sign-in that ended is raised)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("NORN_TOKENS")
@@ -105,7 +106,7 @@ func Main(ctx context.Context) error {
 		GoogleClientSecret: env.String("GOOGLE_CLIENT_SECRET", ""),
 		LayaShadowURL:      env.String("LAYA_SHADOW_URL", "http://127.0.0.1:8000"),
 		LayaShadowKey:      env.String("LAYA_SHADOW_KEY", ""),
-		DashboardURL:  env.String("DASHBOARD_URL", "http://localhost:17420"),
+		DashboardURL:       env.String("DASHBOARD_URL", "http://localhost:17420"),
 		Write: WriteConfig{
 			LanguageToolURL: env.String("LANGUAGETOOL_URL", "http://127.0.0.1:8010"),
 			Model:           env.String("WRITE_MODEL", "qwen2.5:7b"),
@@ -127,6 +128,10 @@ func Main(ctx context.Context) error {
 		n.Sindri.URL, n.Sindri.Token = where.URL("sindri"), token
 	}
 	n.Linear = &linear.Client{Key: env.String("LINEAR_KEY", "")}
+	n.Vault = OpenVault(env.String("OBSIDIAN_VAULT", ""), env.String("OBSIDIAN_VAULT_NAME", ""))
+	if dir := env.String("OBSIDIAN_VAULT", ""); dir != "" && n.Vault == nil {
+		p.Logf("OBSIDIAN_VAULT %s is not an Obsidian vault (no .obsidian); meeting notes are off", dir)
+	}
 	// Read-only lookups through your MCP servers, before an agent. LOOKUP=off turns them off.
 	if key := env.String("LINEAR_KEY", ""); key != "" && env.String("LOOKUP", "auto") != "off" {
 		n.Lookup = &Lookup{Chat: client.ToolChat, Model: env.String("LOOKUP_MODEL", "lookup"), Zone: n.Zone, Servers: []LookupServer{
