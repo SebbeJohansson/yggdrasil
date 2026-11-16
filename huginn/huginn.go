@@ -101,7 +101,7 @@ type Reaction struct {
 }
 
 // Events are the events a trigger can name.
-var Events = []string{"inbox.arrived", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo"}
+var Events = []string{"inbox.arrived", "draft.ready", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo"}
 
 var (
 	yes      = true
@@ -501,6 +501,27 @@ func (h *Huginn) FromNorn(event sse.Event) (Fired, bool) {
 		return Fired{Kind: event.Kind, Key: "inbox:" + item.ID, At: time.UnixMilli(item.At), Title: item.From + relation,
 			Link: item.Link, Urgent: item.Band == "urgent", Inbox: &item,
 			Fields: map[string]string{"from": item.From, "source": item.Source, "summary": item.Summary, "relation": item.Relation, "band": item.Band, "link": item.Link}}, true
+	case event.Kind == "draft.ready":
+		// The same fields as inbox.arrived, so a rule filters it the same way.
+		var item InboxArrived
+		if json.Unmarshal([]byte(event.Data), &item) != nil {
+			return Fired{}, false
+		}
+		var draft struct {
+			Tone string `json:"tone"`
+		}
+		_ = json.Unmarshal([]byte(event.Data), &draft)
+		relation := ""
+		if item.Relation != "" {
+			relation = " (" + item.Relation + ")"
+		}
+		link := item.Link
+		if h.DashboardURL != "" {
+			link = strings.TrimRight(h.DashboardURL, "/") + "/dashboard/inbox"
+		}
+		return Fired{Kind: event.Kind, Key: "draft:" + item.ID, At: time.UnixMilli(item.At), Title: "Reply drafted to " + item.From + relation,
+			Link: link, Urgent: item.Band == "urgent", Inbox: &item,
+			Fields: map[string]string{"from": item.From, "source": item.Source, "relation": item.Relation, "band": item.Band, "tone": draft.Tone, "link": link}}, true
 	case strings.HasPrefix(event.Kind, "calendar."):
 		var change CalendarChange
 		if json.Unmarshal([]byte(event.Data), &change) != nil {

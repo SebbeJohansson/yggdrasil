@@ -509,6 +509,8 @@ paths:
 
         - `event: inbox.arrived`, data InboxArrived: a poll found an item it
           had not seen before, ranked urgent or notable.
+        - `event: draft.ready`, data DraftReady: Norn wrote a reply draft by
+          itself for an inbox item (the drafts pass, not one you asked for).
         - `event: calendar.added`, data CalendarChange: a meeting that starts
           within the next 24 hours appeared.
         - `event: calendar.moved`, data CalendarChange with previousStart and
@@ -1178,6 +1180,21 @@ components:
         online: { type: boolean }
         id: { type: string, description: The same meeting keeps the same id when it moves. }
         attendees: { type: array, items: { type: string }, description: "Who is invited, by name (or address), at most 30. Google leaves you out; Outlook lists you too." }
+    DraftReady:
+      type: object
+      required: [id, source, from, band, direct, mentionsMe, at]
+      description: The inbox item a reply draft was written for, without its text or the draft's.
+      properties:
+        id: { type: string }
+        source: { type: string, enum: [outlook, teams, slack, gmail] }
+        from: { type: string }
+        relation: { type: string, enum: [manager, above, leadership, report, peer] }
+        band: { type: string }
+        direct: { type: boolean }
+        mentionsMe: { type: boolean }
+        tone: { type: string, description: How the draft reads, by Laya. }
+        link: { type: string }
+        at: { type: integer, description: When the draft was written, epoch ms. }
     InboxArrived:
       type: object
       required: [id, source, from, band, reasons, direct, mentionsMe, summary, at]

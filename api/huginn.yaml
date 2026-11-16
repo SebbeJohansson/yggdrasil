@@ -27,6 +27,9 @@ info:
       and only the owner can enable it.
     - Missed events are fetched again with `Last-Event-ID` after a
       reconnect. An event older than an hour is recorded, not delivered.
+    - draft.ready: Norn wrote a reply draft by itself for an inbox item.
+      It matches on the item's relation, band, direct and mentionsMe like
+      inbox.arrived, and links to the dashboard's inbox, where the draft is.
     - linear.todo: one of your Linear tickets is in Todo (state type
       unstarted), no goal has it (Sindri's `GET /v1/goals/candidates`), and
       Norn, asked with `/local`, says it is development work. Each ticket is
@@ -245,11 +248,11 @@ components:
       properties:
         event:
           type: string
-          enum: [inbox.arrived, calendar.added, calendar.moved, calendar.removed, calendar.ended, alert.opened, alert.escalated, alert.resolved, linear.todo]
-        relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived only. }
-        band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived only. }
-        direct: { type: boolean, description: inbox.arrived only. }
-        mentionsMe: { type: boolean, description: inbox.arrived only. }
+          enum: [inbox.arrived, draft.ready, calendar.added, calendar.moved, calendar.removed, calendar.ended, alert.opened, alert.escalated, alert.resolved, linear.todo]
+        relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived and draft.ready only. }
+        band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived and draft.ready only. }
+        direct: { type: boolean, description: inbox.arrived and draft.ready only. }
+        mentionsMe: { type: boolean, description: inbox.arrived and draft.ready only. }
         startsWithinMinutes: { type: integer, minimum: 1, maximum: 1440, description: calendar.* only. }
         calendar: { type: string, enum: [work, personal], description: calendar.* only. }
         severity: { type: array, items: { type: string, enum: [info, warning, critical] }, description: alert.* only. }

@@ -324,9 +324,15 @@ func (n *Norn) draftPass(ctx context.Context) error {
 		if !WantsDraft(entry, now) || n.hasDraft(ctx, entry.Item.ID) {
 			continue
 		}
-		if _, err := n.WriteDraft(ctx, n.Inbox.fuller(entry.Item), true); err != nil {
+		draft, err := n.WriteDraft(ctx, n.Inbox.fuller(entry.Item), true)
+		if err != nil {
 			return err
 		}
+		n.Events.Publish("draft.ready", DraftReady{
+			ID: entry.Item.ID, Source: entry.Item.Source, From: entry.Item.From, Relation: entry.Item.Relation,
+			Band: entry.Band, Direct: entry.Item.Direct, MentionsMe: entry.Item.MentionsMe, Tone: draft.Tone,
+			Link: entry.Item.Link, At: draft.At,
+		})
 		written++
 	}
 	return nil

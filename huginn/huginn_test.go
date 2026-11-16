@@ -103,6 +103,34 @@ func TestAMessageFromYourManagerIsPushedOnce(t *testing.T) {
 	}
 }
 
+func TestADraftReadyRuleFiltersLikeAMessageAndLinksToTheInbox(t *testing.T) {
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	h, fake := newTest(t, now)
+	h.DashboardURL = "http://localhost:17420/"
+	rule := Rule{ID: "draft-from-manager", Name: "Draft for my manager", On: Trigger{Event: "draft.ready", Relation: []string{"manager"}},
+		Action: Action{Kind: "notify", Text: "A {tone} reply to {from} is ready"}, Deliver: []string{"phone"}, Hold: true, Enabled: true}
+	if err := h.Store.PutRule(context.Background(), rule); err != nil {
+		t.Fatal(err)
+	}
+	peer, ok := h.FromNorn(norn("draft.ready", map[string]any{"id": "m2", "source": "teams", "from": "Bo", "relation": "peer", "band": "notable", "direct": true, "at": now.UnixMilli()}))
+	if !ok {
+		t.Fatal("not read")
+	}
+	h.Handle(context.Background(), peer)
+	if len(fake.pushed) != 0 {
+		t.Fatalf("a peer's draft was told: %+v", fake.pushed)
+	}
+	manager, _ := h.FromNorn(norn("draft.ready", map[string]any{"id": "m1", "source": "teams", "from": "Kim", "relation": "manager", "band": "notable", "direct": true, "tone": "friendly", "at": now.UnixMilli()}))
+	h.Handle(context.Background(), manager)
+	if len(fake.pushed) != 1 {
+		t.Fatalf("pushed %+v", fake.pushed)
+	}
+	told := fake.pushed[0]
+	if told.Text != "A friendly reply to Kim is ready" || told.Title != "Reply drafted to Kim (manager)" || told.Link != "http://localhost:17420/dashboard/inbox" || !told.Hold {
+		t.Fatalf("told %+v", told)
+	}
+}
+
 func TestAMeetingBriefIsAskedOfNornAndHandedToHermodrToHold(t *testing.T) {
 	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
 	h, fake := newTest(t, now)

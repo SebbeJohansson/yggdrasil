@@ -1,8 +1,8 @@
 package norn
 
 // What just changed, as server-sent events, for parts that react to it
-// (Huginn): an inbox item worth your attention, and meetings that appear,
-// move, go away or end. Events carry Norn's summaries, never raw inbox text.
+// (Huginn): an inbox item worth your attention, a reply draft written for one,
+// and meetings that appear, move, go away or end. Events carry Norn's summaries, never raw inbox text.
 // The last 500 are kept in memory, so a listener that reconnects with
 // Last-Event-ID gets what it missed while Norn kept running.
 
@@ -41,6 +41,22 @@ type InboxArrived struct {
 	Conversation string   `json:"conversation,omitempty"`
 	Link         string   `json:"link,omitempty"`
 	At           int64    `json:"at"`
+}
+
+// DraftReady is a reply draft Norn wrote by itself, for the inbox item it
+// answers: the item's fields as inbox.arrived has them, without its text or
+// the draft's, and how the draft reads.
+type DraftReady struct {
+	ID         string `json:"id"`
+	Source     string `json:"source"`
+	From       string `json:"from"`
+	Relation   string `json:"relation,omitempty"`
+	Band       string `json:"band"`
+	Direct     bool   `json:"direct"`
+	MentionsMe bool   `json:"mentionsMe"`
+	Tone       string `json:"tone,omitempty"`
+	Link       string `json:"link,omitempty"`
+	At         int64  `json:"at"`
 }
 
 // CalendarChange is a meeting that appeared, moved, went away or ended.
