@@ -211,6 +211,49 @@ func TestFocusOverHTTPIsTheOwnersAndOutlivesARestart(t *testing.T) {
 	}
 }
 
+func TestFocusHistoryLogsEachFocusAndGoal(t *testing.T) {
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	h, _, _ := newTest(t, &now, "")
+	ctx := context.Background()
+	focusFor := func(minutes int, goal *FocusGoal) {
+		before := h.focusNow()
+		until := now.Add(time.Duration(minutes) * time.Minute)
+		if err := h.setFocus(ctx, Focus{Until: &until, StartedAt: &now, Goal: goal}); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.logFocus(ctx, before, h.focusNow(), now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	focusFor(25, nil) // 09:00, general
+	now = now.Add(20 * time.Minute)
+	focusFor(30, nil) // 09:20, more time: the same one, until 09:50
+	now = now.Add(10 * time.Minute)
+	focusFor(50, &FocusGoal{ID: 7, Title: "Retries"}) // 09:30, on a goal: a new one
+	now = now.Add(2 * time.Hour)                      // 11:30: it ran out at 10:20
+	focusFor(25, nil)                                 // a new one, now going on
+
+	sessions, err := h.focusHistory(ctx, time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, s := range sessions {
+		line := s.StartedAt.Format("15:04") + "-"
+		if s.EndedAt != nil {
+			line += s.EndedAt.Format("15:04")
+		}
+		if s.Goal != nil {
+			line += " " + s.Goal.Title
+		}
+		got = append(got, line)
+	}
+	want := []string{"09:00-09:30", "09:30-10:20 Retries", "11:30-"}
+	if strings.Join(got, ", ") != strings.Join(want, ", ") {
+		t.Fatalf("history %v, want %v", got, want)
+	}
+}
+
 func TestTheSenderIsItsTokenAndOnlyYouMarkSeen(t *testing.T) {
 	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
 	h, _, _ := newTest(t, &now, "")

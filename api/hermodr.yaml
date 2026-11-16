@@ -168,6 +168,23 @@ paths:
               schema: { $ref: "#/components/schemas/Focus" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/focus/history:
+    get:
+      summary: Every focus that started since a time (30 days back by default), oldest first, each from its start to its end and on which goal. A new goal while focusing starts a new one; more time does not.
+      parameters:
+        - { name: since, in: query, required: false, schema: { type: integer, minimum: 0 }, description: Milliseconds since 1970. }
+      responses:
+        "200":
+          description: The focus sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions: { type: array, items: { $ref: "#/components/schemas/FocusSession" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 components:
   securitySchemes:
     bearer:
@@ -273,6 +290,14 @@ components:
         on: { type: boolean }
         until: { type: string, format: date-time }
         startedAt: { type: string, format: date-time }
+        goal: { $ref: "#/components/schemas/FocusGoal" }
+    FocusSession:
+      type: object
+      required: [startedAt, until]
+      properties:
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time, description: Unset only on the focus going on now. }
+        until: { type: string, format: date-time, description: When it was set to end. }
         goal: { $ref: "#/components/schemas/FocusGoal" }
     Delivery:
       type: object

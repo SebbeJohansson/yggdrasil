@@ -3,7 +3,8 @@ package hermodr
 // Focus: for a while you are working and nothing that can wait reaches you.
 // Every message but an urgent one is held until it ends, on the phone and in
 // the widget alike, and goes out then, as a held one does after a meeting.
-// Kept in the store, so a restart does not end it early.
+// Kept in the store, so a restart does not end it early. Each focus is also
+// logged, start to end and on which goal, for the widget's week (focus history).
 
 import (
 	"context"
@@ -11,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -35,7 +37,100 @@ type Focus struct {
 	Goal      *FocusGoal `json:"goal,omitempty"`
 }
 
-const focusSchema = `CREATE TABLE IF NOT EXISTS focus (id INTEGER PRIMARY KEY CHECK (id = 1), body TEXT NOT NULL);`
+const focusSchema = `CREATE TABLE IF NOT EXISTS focus (id INTEGER PRIMARY KEY CHECK (id = 1), body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS focus_log (id INTEGER PRIMARY KEY AUTOINCREMENT, started INTEGER NOT NULL, ended INTEGER,
+  until INTEGER NOT NULL, goal_id INTEGER, goal_title TEXT);
+CREATE INDEX IF NOT EXISTS focus_log_started ON focus_log (started);`
+
+// FocusSession is one focus, from its start to its end. A focus that ran out
+// ended at its time; EndedAt is unset only on the one going on now.
+type FocusSession struct {
+	StartedAt time.Time  `json:"startedAt"`
+	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	Until     time.Time  `json:"until"`
+	Goal      *FocusGoal `json:"goal,omitempty"`
+}
+
+// logFocus keeps the log in step with a focus that starts, changes or ends at
+// now: a new goal, or a new focus, is a new session; more time is the same one.
+func (h *Hermodr) logFocus(ctx context.Context, before, after Focus, now time.Time) error {
+	sameGoal := (before.Goal == nil) == (after.Goal == nil) && (before.Goal == nil || before.Goal.ID == after.Goal.ID)
+	if before.On && after.On && sameGoal {
+		_, err := h.db.ExecContext(ctx, `UPDATE focus_log SET until = ? WHERE ended IS NULL`, after.Until.UnixMilli())
+		return err
+	}
+	if before.On {
+		if _, err := h.db.ExecContext(ctx, `UPDATE focus_log SET ended = ? WHERE ended IS NULL`, now.UnixMilli()); err != nil {
+			return err
+		}
+	}
+	// One that ran out on its own, never closed: it ended at its time.
+	if _, err := h.db.ExecContext(ctx, `UPDATE focus_log SET ended = until WHERE ended IS NULL AND until <= ?`, now.UnixMilli()); err != nil {
+		return err
+	}
+	if !after.On {
+		return nil
+	}
+	var goalID sql.NullInt64
+	var goalTitle sql.NullString
+	if after.Goal != nil {
+		goalID, goalTitle = sql.NullInt64{Int64: int64(after.Goal.ID), Valid: true}, sql.NullString{String: after.Goal.Title, Valid: true}
+	}
+	_, err := h.db.ExecContext(ctx, `INSERT INTO focus_log (started, until, goal_id, goal_title) VALUES (?, ?, ?, ?)`,
+		now.UnixMilli(), after.Until.UnixMilli(), goalID, goalTitle)
+	return err
+}
+
+// focusHistory is every focus that started since `since`, oldest first.
+func (h *Hermodr) focusHistory(ctx context.Context, since time.Time) ([]FocusSession, error) {
+	rows, err := h.db.QueryContext(ctx, `SELECT started, ended, until, goal_id, goal_title FROM focus_log WHERE started >= ? ORDER BY started`, since.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	now := h.now()
+	sessions := []FocusSession{}
+	for rows.Next() {
+		var started, until int64
+		var ended, goalID sql.NullInt64
+		var goalTitle sql.NullString
+		if err := rows.Scan(&started, &ended, &until, &goalID, &goalTitle); err != nil {
+			return nil, err
+		}
+		s := FocusSession{StartedAt: time.UnixMilli(started), Until: time.UnixMilli(until)}
+		switch {
+		case ended.Valid:
+			t := time.UnixMilli(ended.Int64)
+			s.EndedAt = &t
+		case !now.Before(s.Until):
+			t := s.Until
+			s.EndedAt = &t
+		}
+		if goalID.Valid {
+			s.Goal = &FocusGoal{ID: int(goalID.Int64), Title: goalTitle.String}
+		}
+		sessions = append(sessions, s)
+	}
+	return sessions, rows.Err()
+}
+
+func (h *Hermodr) getFocusHistory(w http.ResponseWriter, r *http.Request) {
+	since := h.now().Add(-30 * 24 * time.Hour)
+	if raw := r.URL.Query().Get("since"); raw != "" {
+		ms, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || ms < 0 {
+			part.Error(w, http.StatusBadRequest, "since is milliseconds since 1970")
+			return
+		}
+		since = time.UnixMilli(ms)
+	}
+	sessions, err := h.focusHistory(r.Context(), since)
+	if err != nil {
+		part.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	part.JSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+}
 
 // focusNow is the focus as it stands: off once its time is up.
 func (h *Hermodr) focusNow() Focus {
@@ -112,9 +207,13 @@ func (h *Hermodr) putFocus(w http.ResponseWriter, r *http.Request) {
 		started = *current.StartedAt
 	}
 	f := Focus{Until: in.Until, StartedAt: &started, Goal: in.Goal}
+	before := h.focusNow()
 	if err := h.setFocus(r.Context(), f); err != nil {
 		part.Error(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if err := h.logFocus(r.Context(), before, h.focusNow(), now); err != nil {
+		h.logf("logging a focus: %v", err)
 	}
 	part.JSON(w, http.StatusOK, h.focusNow())
 }
@@ -124,9 +223,13 @@ func (h *Hermodr) endFocus(w http.ResponseWriter, r *http.Request) {
 		part.Error(w, http.StatusForbidden, "only the owner may end a focus")
 		return
 	}
+	before := h.focusNow()
 	if err := h.setFocus(r.Context(), Focus{}); err != nil {
 		part.Error(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if err := h.logFocus(r.Context(), before, Focus{}, h.now()); err != nil {
+		h.logf("logging a focus: %v", err)
 	}
 	// What waited goes now, not at the next release.
 	if err := h.release(r.Context()); err != nil {

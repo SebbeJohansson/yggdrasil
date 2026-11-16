@@ -190,6 +190,7 @@ func (h *Hermodr) Mount(p *part.Part) {
 	p.Handle("GET /v1/focus", h.getFocus)
 	p.Handle("PUT /v1/focus", h.putFocus)
 	p.Handle("DELETE /v1/focus", h.endFocus)
+	p.Handle("GET /v1/focus/history", h.getFocusHistory)
 	p.Loop("meetings", 2*time.Minute, h.readMeetings)
 	p.Loop("release", 30*time.Second, h.release)
 }
