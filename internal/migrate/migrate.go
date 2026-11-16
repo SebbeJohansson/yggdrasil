@@ -174,6 +174,16 @@ func quote(path string) string {
 // refusing when main already has rows unless replace.
 func moveTables(tx *sql.Tx, tables []table, replace bool, report *Report) error {
 	for _, t := range tables {
+		// A source that never made the table (my-agent creates some only
+		// once they are first used) has nothing to move.
+		var present int
+		if err := tx.QueryRow(`SELECT count(*) FROM src.sqlite_master WHERE type = 'table' AND name = ?`, t.name).Scan(&present); err != nil {
+			return fmt.Errorf("%s: %w", t.name, err)
+		}
+		if present == 0 {
+			report.count(t.name, 0)
+			continue
+		}
 		var existing int64
 		if err := tx.QueryRow(`SELECT count(*) FROM main.` + t.name).Scan(&existing); err != nil {
 			return fmt.Errorf("%s: %w", t.name, err)
