@@ -263,3 +263,19 @@ func TestEveryRouteButHealthNeedsAToken(t *testing.T) {
 		t.Fatalf("health: %d %v", status, body)
 	}
 }
+
+func TestMineIsThePartsOwnActiveAlerts(t *testing.T) {
+	f := newFixture(t)
+	f.call("POST", "/v1/alerts", muninToken, alert.Raise{Key: "down:laya", Severity: alert.Warning, Title: "Laya is down"})
+	f.call("POST", "/v1/alerts", muninToken, alert.Raise{Key: "down:gone", Severity: alert.Warning, Title: "gone"})
+	f.call("POST", "/v1/alerts/resolve", muninToken, map[string]string{"key": "down:gone"})
+	f.call("POST", "/v1/alerts", ratToken, alert.Raise{Key: "down:norn", Severity: alert.Critical, Title: "Norn is down"})
+	status, body := f.call("GET", "/v1/alerts/mine", muninToken, nil)
+	alerts, _ := body["alerts"].([]any)
+	if status != http.StatusOK || len(alerts) != 1 || alerts[0].(map[string]any)["key"] != "down:laya" {
+		t.Fatalf("mine = %d %v, want only down:laya", status, body)
+	}
+	if _, body := f.call("GET", "/v1/alerts/mine", ownerToken, nil); len(body["alerts"].([]any)) != 0 {
+		t.Fatalf("the owner has alerts of its own: %v", body)
+	}
+}

@@ -271,6 +271,15 @@ func gjallarScenario(ctx context.Context, c *checker) {
 	c.call(ctx, "raise without a token", http.MethodPost, "/v1/alerts", "", raise, http.StatusUnauthorized, nil)
 	c.call(ctx, "raise a bad severity", http.MethodPost, "/v1/alerts", c.options.SenderToken,
 		map[string]any{"key": key, "severity": "loud", "title": "x"}, http.StatusBadRequest, nil)
+	c.call(ctx, "GET /v1/alerts/mine", http.MethodGet, "/v1/alerts/mine", c.options.SenderToken, nil, http.StatusOK, func(body any) error {
+		alerts, _ := field(body, "alerts").([]any)
+		for _, a := range alerts {
+			if field(a, "key") == key {
+				return nil
+			}
+		}
+		return fmt.Errorf("the raised alert %s is not among the sender's own", key)
+	})
 	if c.options.OwnerToken != "" {
 		c.call(ctx, "GET /v1/alerts/{id}", http.MethodGet, fmt.Sprintf("/v1/alerts/%v", id), c.options.OwnerToken, nil, http.StatusOK, nil)
 	}

@@ -85,3 +85,15 @@ func TestOfflineSkipsTheInternetTargets(t *testing.T) {
 		t.Fatalf("slack was checked while offline")
 	}
 }
+
+func TestOnlyTheKeysOfTheTargetsInTheSettingsAreChecked(t *testing.T) {
+	m := New([]Target{{Name: "ollama", Kind: Ollama}, {Name: "anthropic-status", Kind: Statuspage}}, nil, "", nil)
+	for key, want := range map[string]bool{
+		"down:ollama": true, "models:ollama": true, "incident:anthropic-status": true, OfflineKey: true,
+		"down:runner": false, "models:anthropic-status": false,
+	} {
+		if got := m.checked(key); got != want {
+			t.Errorf("checked(%q) = %v, want %v", key, got, want)
+		}
+	}
+}

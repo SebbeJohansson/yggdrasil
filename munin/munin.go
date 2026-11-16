@@ -172,6 +172,8 @@ func (m *Munin) round(ctx context.Context, local bool) error {
 	}
 	wg.Wait()
 	m.watch.Observe(results)
+	// A target taken out of the settings is dropped, and its alerts resolved.
+	m.watch.Forget(m.checked)
 	err := m.watch.Sync(ctx, m.Gjallar)
 	if err == alert.ErrOff {
 		return nil
@@ -179,8 +181,21 @@ func (m *Munin) round(ctx context.Context, local bool) error {
 	return err
 }
 
-// keys every check a target can have, so an offline round skips them all.
-func skipAll(target Target) []watch.Result {
+// checked is whether a key belongs to a check Munin still runs.
+func (m *Munin) checked(key string) bool {
+	if key == OfflineKey {
+		return true
+	}
+	for _, target := range m.Targets {
+		if slices.Contains(keys(target), key) {
+			return true
+		}
+	}
+	return false
+}
+
+// keys is every check a target can have.
+func keys(target Target) []string {
 	keys := []string{downKey(target.Name)}
 	switch target.Kind {
 	case Ollama:
@@ -188,6 +203,12 @@ func skipAll(target Target) []watch.Result {
 	case Statuspage:
 		keys = append(keys, incidentKey(target.Name))
 	}
+	return keys
+}
+
+// skipAll skips every check of a target, for a round while offline.
+func skipAll(target Target) []watch.Result {
+	keys := keys(target)
 	results := make([]watch.Result, len(keys))
 	for i, key := range keys {
 		results[i] = watch.Result{Key: key, Skip: true}

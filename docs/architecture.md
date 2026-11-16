@@ -29,8 +29,10 @@ never call each other's Go code. They talk over HTTP only:
 - `internal/part`: the server every part runs: loopback HTTP, named bearer
   tokens, `/health` with each loop's last run, graceful shutdown.
 - `internal/alert`: the Gjallar client.
-- `internal/watch`: two failures to go down, two passes to come back, and
-  re-sending what Gjallar didn't take. Used by Ratatoskr, Munin and Veðrfölnir.
+- `internal/watch`: two failures to go down, two passes to come back,
+  re-sending what Gjallar didn't take, and, after a restart, taking back the
+  alerts Gjallar still holds (`GET /v1/alerts/mine`) so they get resolved.
+  Used by Ratatoskr, Munin and Veðrfölnir.
 - `internal/ntfy`: phone pushes.
 - `internal/env`: settings.
 - `internal/where`: where each part is found (`YGG_<PART>_URL`).

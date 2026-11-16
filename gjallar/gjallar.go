@@ -19,6 +19,7 @@
 //	POST /v1/alerts                  sender: raise or update { key, severity, title, detail?, link?, traceId?, expiresAt? }
 //	POST /v1/alerts/resolve          sender: { key }, the condition is gone
 //	GET  /v1/alerts                  ?state=active|open|acknowledged|resolved|all &limit=
+//	GET  /v1/alerts/mine             sender: its own open and acknowledged alerts (owner: none)
 //	GET  /v1/alerts/stream           server-sent events: every change, as `alert`
 //	GET  /v1/alerts/{id}             the alert and its history
 //	POST /v1/alerts/{id}/ack         owner
@@ -86,6 +87,7 @@ func (g *Gjallar) Mount(p *part.Part) {
 	p.Handle("POST /v1/alerts/resolve", g.resolve)
 	p.Handle("GET /v1/alerts", g.list)
 	p.Handle("GET /v1/alerts/stream", g.stream)
+	p.Handle("GET /v1/alerts/mine", g.mine)
 	p.Handle("GET /v1/alerts/{id}", g.get)
 	p.Handle("POST /v1/alerts/{id}/ack", g.owner(g.ack))
 	p.Handle("POST /v1/alerts/{id}/snooze", g.owner(g.snooze))
@@ -237,6 +239,23 @@ func (g *Gjallar) list(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	alerts, err := g.Store.List(r.Context(), filter, limit)
+	if err != nil {
+		part.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	part.JSON(w, http.StatusOK, map[string]any{"alerts": alerts})
+}
+
+// mine is the caller's own active alerts: what a part raised before it
+// restarted, so it can resolve them when they come back. The owner raises
+// none, so it has none.
+func (g *Gjallar) mine(w http.ResponseWriter, r *http.Request) {
+	source := part.Caller(r)
+	if source == part.Owner {
+		part.JSON(w, http.StatusOK, map[string]any{"alerts": []Alert{}})
+		return
+	}
+	alerts, err := g.Store.Held(r.Context(), source)
 	if err != nil {
 		part.Error(w, http.StatusInternalServerError, err.Error())
 		return

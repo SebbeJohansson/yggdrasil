@@ -1,5 +1,6 @@
 // Package alert is how a part talks to Gjallar: the shape of an alert and a
-// client that raises, resolves and sends heartbeats.
+// client that raises, resolves, reads back what it raised and sends
+// heartbeats.
 //
 // A sender never depends on Gjallar. Every call has a short timeout, and the
 // caller logs a failure and moves on.
@@ -87,6 +88,35 @@ func (c *Client) Resolve(ctx context.Context, key string) error {
 // Heartbeat tells Gjallar the sender is alive.
 func (c *Client) Heartbeat(ctx context.Context) error {
 	return c.post(ctx, "/v1/heartbeat", map[string]string{})
+}
+
+// Held is the sender's own open and acknowledged alerts, as Gjallar holds
+// them: what it raised before it restarted.
+func (c *Client) Held(ctx context.Context) ([]Raise, error) {
+	if c == nil || c.URL == "" {
+		return nil, ErrOff
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL+"/v1/alerts/mine", nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+c.Token)
+	response, err := c.HTTP.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 300 {
+		text, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+		return nil, fmt.Errorf("gjallar answered %d: %s", response.StatusCode, strings.TrimSpace(string(text)))
+	}
+	var body struct {
+		Alerts []Raise `json:"alerts"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	return body.Alerts, nil
 }
 
 func (c *Client) post(ctx context.Context, path string, body any) error {

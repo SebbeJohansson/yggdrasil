@@ -4,7 +4,8 @@
 //
 // Sync raises and resolves through Gjallar, and keeps trying on the next
 // round when Gjallar did not take it, so an alert is never lost because
-// Gjallar was briefly away.
+// Gjallar was briefly away. The first Sync reads back the alerts Gjallar
+// still holds from before a restart, so they are resolved when they pass.
 package watch
 
 import (
@@ -55,9 +56,10 @@ type Watch struct {
 	// Gjallar itself, which it reports another way.
 	OutOfBand func(key string) bool
 
-	mu     sync.Mutex
-	states map[string]*State
-	now    func() time.Time
+	mu      sync.Mutex
+	states  map[string]*State
+	now     func() time.Time
+	adopted bool
 }
 
 // New makes a watch that goes down after 2 failures and up after 2 passes.
@@ -114,10 +116,42 @@ func (w *Watch) Forget(keep func(key string) bool) {
 	}
 }
 
+// Adopt takes the alerts Gjallar holds from before a restart. Each counts
+// as down and raised until it passes PassAfter times; one no longer checked
+// is resolved once Forget drops it.
+func (w *Watch) Adopt(held []alert.Raise) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.adopted = true
+	for _, raise := range held {
+		if w.OutOfBand != nil && w.OutOfBand(raise.Key) {
+			continue
+		}
+		state, known := w.states[raise.Key]
+		if !known {
+			state = &State{Key: raise.Key, Since: w.now(), Fails: w.FailAfter}
+			w.states[raise.Key] = state
+		}
+		if !state.Down {
+			state.Down = true
+			state.Severity, state.Title, state.Detail = raise.Severity, raise.Title, raise.Detail
+		}
+		state.Raised = true
+	}
+}
+
 // Sync raises every down check Gjallar does not hold yet, and resolves every
 // check that came back. It returns the first error; the rest are tried anyway.
 func (w *Watch) Sync(ctx context.Context, client *alert.Client) error {
 	var first error
+	if !w.adopted {
+		held, err := client.Held(ctx)
+		if err == nil {
+			w.Adopt(held)
+		} else {
+			first = err
+		}
+	}
 	for _, state := range w.States() {
 		if w.OutOfBand != nil && w.OutOfBand(state.Key) {
 			continue

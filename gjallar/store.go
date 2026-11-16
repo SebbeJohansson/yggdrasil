@@ -339,7 +339,17 @@ func (s *Store) List(ctx context.Context, filter Filter, limit int) ([]Alert, er
 	default:
 		where, args = `WHERE a.state = ?`, []any{string(filter)}
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM alerts a `+where+` ORDER BY a.last_seen DESC LIMIT ?`, append(args, limit)...)
+	return s.query(ctx, `SELECT `+columns+` FROM alerts a `+where+` ORDER BY a.last_seen DESC LIMIT ?`, append(args, limit)...)
+}
+
+// Held is every alert of this source not yet resolved, so a part that
+// restarted knows what it raised before.
+func (s *Store) Held(ctx context.Context, source string) ([]Alert, error) {
+	return s.query(ctx, `SELECT `+columns+` FROM alerts a WHERE a.source = ? AND a.state != ? ORDER BY a.key`, source, Resolved)
+}
+
+func (s *Store) query(ctx context.Context, sql string, args ...any) ([]Alert, error) {
+	rows, err := s.db.QueryContext(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}

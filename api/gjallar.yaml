@@ -115,6 +115,20 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/alerts/mine:
+    get:
+      summary: The caller's own open and acknowledged alerts, by key. A part reads this on start, to resolve what it raised before a restart. The owner has none.
+      responses:
+        "200":
+          description: The alerts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alerts]
+                properties:
+                  alerts: { type: array, items: { $ref: "#/components/schemas/Alert" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/alerts/stream:
     get:
       summary: "Every change, as server-sent events (`event: alert`, data is an Alert). Needs the token, so read it with fetch, not EventSource."
