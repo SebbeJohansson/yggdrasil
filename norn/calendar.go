@@ -52,6 +52,9 @@ type CalendarEvent struct {
 	// Attendees is who is invited, by name (or address when there is no
 	// name), you left out where the calendar says which is you, rooms left out. At most maxAttendees.
 	Attendees []string `json:"attendees,omitempty"`
+	// Series is the recurring meeting it is one of, the same for every
+	// occurrence; empty for a one-off.
+	Series string `json:"series,omitempty"`
 }
 
 // maxAttendees keeps an all-hands from filling the snapshot.
@@ -191,7 +194,7 @@ func GraphCalendarURL(from, to time.Time) string {
 	params := url.Values{
 		"startDateTime": {from.UTC().Format(time.RFC3339Nano)},
 		"endDateTime":   {to.UTC().Format(time.RFC3339Nano)},
-		"$select":       {"id,subject,start,end,isAllDay,location,organizer,attendees,responseStatus,showAs,isOnlineMeeting,isCancelled"},
+		"$select":       {"id,subject,start,end,isAllDay,location,organizer,attendees,responseStatus,showAs,isOnlineMeeting,isCancelled,seriesMasterId"},
 		"$orderby":      {"start/dateTime"},
 		"$top":          {"200"},
 	}
@@ -220,6 +223,7 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 	var page struct {
 		Value []struct {
 			ID              string                       `json:"id"`
+			SeriesMasterID  string                       `json:"seriesMasterId"`
 			Subject         string                       `json:"subject"`
 			Start           struct{ DateTime string }    `json:"start"`
 			End             struct{ DateTime string }    `json:"end"`
@@ -266,7 +270,7 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 		events = append(events, CalendarEvent{
 			Subject: subject, Start: start, End: end, AllDay: raw.IsAllDay, Online: raw.IsOnlineMeeting,
 			Location: strings.TrimSpace(raw.Location.DisplayName), Organizer: raw.Organizer.EmailAddress.Name,
-			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID, Attendees: attendees,
+			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID, Attendees: attendees, Series: raw.SeriesMasterID,
 		})
 	}
 	return events, page.Next
@@ -365,6 +369,7 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 	var page struct {
 		Items []struct {
 			ID             string          `json:"id"`
+			RecurringEvent string          `json:"recurringEventId"`
 			Status         string          `json:"status"`
 			Summary        string          `json:"summary"`
 			Start          googleTime      `json:"start"`
@@ -397,7 +402,7 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 			continue
 		}
 		event := CalendarEvent{Subject: strings.TrimSpace(raw.Summary), Start: start, End: end, AllDay: allDay,
-			Online: raw.HangoutLink != "" || len(raw.ConferenceData) > 0, Location: strings.TrimSpace(raw.Location), ShowAs: "busy", ID: raw.ID}
+			Online: raw.HangoutLink != "" || len(raw.ConferenceData) > 0, Location: strings.TrimSpace(raw.Location), ShowAs: "busy", ID: raw.ID, Series: raw.RecurringEvent}
 		if event.Subject == "" {
 			event.Subject = "(no title)"
 		}

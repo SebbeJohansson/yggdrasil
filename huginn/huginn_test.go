@@ -155,6 +155,18 @@ func TestAMeetingBriefIsAskedOfNornAndHandedToHermodrToHold(t *testing.T) {
 	}
 }
 
+func TestAMeetingBriefAsksWithWhatYouAddedForItsSeries(t *testing.T) {
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	h, fake := newTest(t, now)
+	meeting := map[string]any{"calendar": "work", "prompt": "Focus on the budget.",
+		"event": map[string]any{"id": "x", "subject": "Budget", "start": now.Add(25 * time.Minute).UnixMilli(), "end": now.Add(70 * time.Minute).UnixMilli()}}
+	fired, _ := h.FromNorn(norn("calendar.soon", meeting))
+	h.Handle(context.Background(), fired)
+	if len(fake.asked) != 1 || !strings.HasSuffix(fake.asked[0], "At most five short lines. Also: Focus on the budget.") {
+		t.Fatalf("asked %q", fake.asked)
+	}
+}
+
 func TestAMeetingMovedIntoTheHourIsBriefedOnceNotAgainWhenItComesClose(t *testing.T) {
 	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
 	h, fake := newTest(t, now)

@@ -105,7 +105,7 @@ var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar
 
 var (
 	yes      = true
-	briefAsk = `Brief me for my meeting "{subject}" at {start}{organizerWith}: who will be there, what is open with them in my inbox and memory, and what I should bring. At most five short lines.`
+	briefAsk = `Brief me for my meeting "{subject}" at {start}{organizerWith}: who will be there, what is open with them in my inbox and memory, and what I should bring. At most five short lines.{also}`
 )
 
 // BuiltIn is the rules Huginn ships with. They can be switched off, never
@@ -464,6 +464,8 @@ type CalendarChange struct {
 	Calendar      string        `json:"calendar"`
 	Event         CalendarEvent `json:"event"`
 	PreviousStart int64         `json:"previousStart"`
+	// Prompt is what you add to this meeting's brief, kept per series.
+	Prompt string `json:"prompt"`
 }
 
 // Alert is Gjallar's alert, as its stream sends it.
@@ -538,6 +540,10 @@ func (h *Huginn) FromNorn(event sse.Event) (Fired, bool) {
 		}
 		fields := map[string]string{"subject": meeting.Subject, "start": h.clock(meeting.Start), "end": h.clock(meeting.End),
 			"organizer": meeting.Organizer, "organizerWith": with, "location": meeting.Location, "calendar": change.Calendar}
+		fields["also"] = ""
+		if change.Prompt != "" {
+			fields["also"], fields["prompt"] = " Also: "+change.Prompt, change.Prompt
+		}
 		if change.PreviousStart != 0 {
 			fields["previousStart"] = h.clock(change.PreviousStart)
 		}

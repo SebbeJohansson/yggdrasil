@@ -146,7 +146,7 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + draftSchema); err != nil {
+	if _, err := db.Exec(schema + draftSchema + meetingPrepSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("norn schema: %w", err)
 	}

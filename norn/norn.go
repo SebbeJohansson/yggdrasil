@@ -103,6 +103,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 		Accounts:    NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Inbox = NewInbox(n, config.DataDir)
 	n.Events = NewEvents(time.Now())
+	n.Events.PromptFor = n.prepPrompt
 	n.Brain = &Brain{
 		Store:      store,
 		EmbedModel: config.EmbedModel,
@@ -137,6 +138,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountEvents(p)
 	n.mountDrafts(p)
 	n.mountVault(p)
+	n.mountMeetingPrep(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

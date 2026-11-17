@@ -69,6 +69,9 @@ type CalendarChange struct {
 	Event         CalendarEvent `json:"event"`
 	PreviousStart int64         `json:"previousStart,omitempty"`
 	PreviousEnd   int64         `json:"previousEnd,omitempty"`
+	// Prompt is what you add to the brief's prompt for this meeting (its
+	// series), on calendar.soon, .added and .moved.
+	Prompt string `json:"prompt,omitempty"`
 }
 
 // StreamEvent is one event as it goes out.
@@ -94,6 +97,8 @@ type Events struct {
 	// is not told about, so a restart doesn't repeat it.
 	soonFrom time.Time
 	soonSent map[string]bool
+	// PromptFor is your addition to a meeting's brief prompt; nil for none.
+	PromptFor func(CalendarEvent) string
 }
 
 // NewEvents starts with nothing seen; meetings that end from now on count.
@@ -195,6 +200,9 @@ func (e *Events) Calendar(calendar string, events []CalendarEvent, now time.Time
 	nowMs, horizon := now.UnixMilli(), now.Add(EventsAhead).UnixMilli()
 	soon := func(start int64) bool { return start > nowMs && start <= horizon }
 	send := func(kind string, change CalendarChange) {
+		if kind != "calendar.removed" {
+			change.Prompt = e.prompt(change.Event)
+		}
 		payload, err := json.Marshal(change)
 		if err == nil {
 			e.publishLocked(kind, payload)
@@ -262,12 +270,19 @@ func (e *Events) Soon(now time.Time) {
 				continue
 			}
 			e.soonSent[key] = true
-			payload, err := json.Marshal(CalendarChange{Calendar: calendar, Event: event})
+			payload, err := json.Marshal(CalendarChange{Calendar: calendar, Event: event, Prompt: e.prompt(event)})
 			if err == nil {
 				e.publishLocked("calendar.soon", payload)
 			}
 		}
 	}
+}
+
+func (e *Events) prompt(event CalendarEvent) string {
+	if e.PromptFor == nil {
+		return ""
+	}
+	return e.PromptFor(event)
 }
 
 // inboxEvents sends inbox.arrived for each new item worth it, each with a
