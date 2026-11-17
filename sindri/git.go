@@ -888,6 +888,31 @@ func (w *Worktree) Remove(force bool) (string, error) {
 	return strings.Join(done, "; "), nil
 }
 
+// Restore puts a removed worktree back at its path: on its branch when that
+// is still there, else on the branch made again from the base, so its agent
+// can carry on where it was.
+func (w *Worktree) Restore() error {
+	if exists(w.Path) {
+		return nil
+	}
+	_, _ = tryGit(w.Repo, "worktree", "prune")
+	if w.branchExists() {
+		if _, err := git(w.Repo, "worktree", "add", w.Path, w.Branch); err != nil {
+			return err
+		}
+	} else {
+		if _, err := git(w.Repo, "worktree", "add", "-b", w.Branch, w.Path, w.Base); err != nil {
+			return err
+		}
+		if commit, ok := tryGit(w.Repo, "rev-parse", "--short", w.Base); ok {
+			w.BaseCommit = commit
+		}
+	}
+	linkModules(w.Repo, w.Path)
+	linkSiblings(w.Repo, w.Path)
+	return nil
+}
+
 // IsEmpty is whether the branch holds no work: no commit past its base and
 // nothing uncommitted. A branch already gone, or one git cannot read, is not.
 func (w *Worktree) IsEmpty() bool {

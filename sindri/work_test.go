@@ -216,7 +216,7 @@ func TestAnAgentStoppedMidWorkKeepsItsWorktree(t *testing.T) {
 	}
 }
 
-func TestAPartWhoseWorktreeIsGoneStartsAgainOnRestartAndOnLookAgain(t *testing.T) {
+func TestAPartWhoseWorktreeIsGoneGetsItBackOnLookAgainAndStartsAfreshOnRestart(t *testing.T) {
 	w, _ := newWork(t)
 	goal, _ := w.Store.AddGoal("Leave it as it is", []string{"demo"}, "manual", "", "goal-1")
 	started, _, _ := w.StartGoal(goal.ID, nil)
@@ -226,14 +226,14 @@ func TestAPartWhoseWorktreeIsGoneStartsAgainOnRestartAndOnLookAgain(t *testing.T
 	feedUntil(t, w, func() bool { return !exists(path) })
 
 	told, failed, err := w.RelookGoal(goal.ID)
-	if err != nil || len(failed) != 0 || len(told) != 1 || told[0].AgentID == first {
-		t.Fatalf("look again did not start the part again: %+v %v %v", told, failed, err)
+	if err != nil || len(failed) != 0 || len(told) != 1 || told[0].AgentID != first {
+		t.Fatalf("look again did not reach the part: %+v %v %v", told, failed, err)
 	}
-	second := told[0].AgentID
-	waitFor(t, w.Agents, second, func(a *Agent) bool { return a.Status == Waiting })
-	if view := must2(w.goalView(goal.ID)); view.State == "needs-you" {
-		t.Fatalf("the old part still counts: %+v", view)
+	if !exists(path) || !a.Worktree.branchExists() {
+		t.Fatalf("look again did not make the worktree again")
 	}
+	waitFor(t, w.Agents, first, func(a *Agent) bool { return a.Status == Waiting })
+	second := first
 
 	restarted, failed, err := w.RestartPart(goal.ID, "demo")
 	if err != nil || len(failed) != 0 || len(restarted) != 1 || restarted[0].AgentID == second {

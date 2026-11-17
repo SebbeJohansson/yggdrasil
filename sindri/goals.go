@@ -407,7 +407,9 @@ func RelookText(goal Goal) string {
 	return fmt.Sprintf("Look at the goal again: it may have changed since you started. It reads now:\n\n%s%s\n\nRepos: %s. (Goal %d.) Compare it with what you have done and planned, adjust your work if it differs, and carry on. If nothing differs, say so in one line.", goal.Title, context, repos, goal.ID)
 }
 
-// RelookGoal tells each of a goal's agents to read it again.
+// RelookGoal tells each part's newest agent to read the goal again, making
+// its worktree again when it was removed. A part whose agent is gone starts
+// afresh.
 func (w *Work) RelookGoal(id int64) ([]Started, []string, error) {
 	goal, err := w.Store.Goal(id)
 	if err != nil || goal == nil {
@@ -421,17 +423,13 @@ func (w *Work) RelookGoal(id int64) ([]Started, []string, error) {
 	var restart []string
 	for _, repo := range slices.Sorted(maps.Keys(latest)) {
 		t := latest[repo]
-		if agent, err := w.Agents.Get(t.Agent); (err != nil || !exists(agent.Cwd)) && slices.Contains(goal.Repos, repo) {
-			restart = append(restart, repo) // its agent or folder is gone: start the part again
-			continue
-		}
 		_, err := w.Tell(t.Agent, RelookText(*goal))
 		var gone *HTTPError
 		switch {
 		case err == nil:
 			told = append(told, Started{AgentID: t.Agent, Project: repo})
 		case errors.As(err, &gone) && (gone.Status == 404 || gone.Status == 410) && slices.Contains(goal.Repos, repo):
-			restart = append(restart, repo) // its agent or folder is gone: start the part again
+			restart = append(restart, repo) // its agent is gone, or its worktree could not be made again: start the part afresh
 		default:
 			failed = append(failed, "Could not tell the "+cmp.Or(repo, "goal")+" agent: "+err.Error())
 		}

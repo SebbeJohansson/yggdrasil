@@ -615,6 +615,12 @@ func (m *Manager) Prompt(id, text string, images []string, queue bool) (*Agent, 
 	if text == "" {
 		return nil, httpErr(400, "`text` must be a non-empty string")
 	}
+	if a.Worktree != nil && !exists(a.Cwd) {
+		if err := a.Worktree.Restore(); err != nil {
+			return nil, httpErr(410, "its folder %s is gone and could not be made again: %v", a.Cwd, err)
+		}
+		a.addLog(LogEntry{At: m.ms(), Kind: "prompt", Text: "made its worktree again at " + a.Worktree.Path})
+	}
 	if a.Herdr != nil {
 		if busy(a.Status) && !queue {
 			return nil, httpErr(409, "agent is %s; wait for the turn to end", a.Status)

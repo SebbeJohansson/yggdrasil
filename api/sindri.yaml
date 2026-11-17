@@ -1078,7 +1078,7 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
   /v1/goals/{id}/relook:
     post:
-      summary: Tell each part's newest agent to read the goal again. A part whose agent or worktree is gone starts again with a fresh agent.
+      summary: Tell each part's newest agent to read the goal again. A removed worktree is made again first, on its branch; a part whose agent is gone starts again with a fresh agent.
       parameters: [{ $ref: "#/components/parameters/GoalID" }]
       responses:
         "200": { $ref: "#/components/responses/GoalStarted" }
