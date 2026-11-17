@@ -11,7 +11,7 @@ import (
 
 func TestGraphEvents(t *testing.T) {
 	events, next := GraphEvents([]byte(`{"value":[
-		{"subject":" Standup ","start":{"dateTime":"2026-10-08T07:00:00.0000000"},"end":{"dateTime":"2026-10-08T07:15:00.0000000"},"isOnlineMeeting":true,"organizer":{"emailAddress":{"name":"Ada"}},"attendees":[{"emailAddress":{"name":"Ada","address":"ada@x"}},{"emailAddress":{"address":"bo@x"}},{"emailAddress":{"name":"Ada"}}],"responseStatus":{"response":"accepted"},"showAs":"busy"},
+		{"subject":" Standup ","start":{"dateTime":"2026-10-08T07:00:00.0000000"},"end":{"dateTime":"2026-10-08T07:15:00.0000000"},"isOnlineMeeting":true,"organizer":{"emailAddress":{"name":"Ada"}},"attendees":[{"emailAddress":{"name":"Ada","address":"ada@x"}},{"emailAddress":{"address":"bo@x"}},{"emailAddress":{"name":"Ada"}},{"type":"resource","emailAddress":{"name":"Mountain Top","address":"room@x"}}],"responseStatus":{"response":"accepted"},"showAs":"busy"},
 		{"subject":"Gone","isCancelled":true,"start":{"dateTime":"2026-10-08T08:00:00"},"end":{"dateTime":"2026-10-08T09:00:00"}},
 		{"subject":"","start":{"dateTime":"2026-10-09T00:00:00Z"},"end":{"dateTime":"2026-10-10T00:00:00Z"},"isAllDay":true}
 	],"@odata.nextLink":"https://next"}`))
@@ -31,7 +31,7 @@ func TestGraphEvents(t *testing.T) {
 
 func TestGoogleEvents(t *testing.T) {
 	events, _ := GoogleEvents([]byte(`{"items":[
-		{"summary":"Dinner","start":{"dateTime":"2026-10-08T18:00:00+02:00"},"end":{"dateTime":"2026-10-08T20:00:00+02:00"},"organizer":{"displayName":"Sam"},"attendees":[{"self":true,"responseStatus":"tentative","displayName":"Me"},{"displayName":"Kim"}],"transparency":"transparent"},
+		{"summary":"Dinner","start":{"dateTime":"2026-10-08T18:00:00+02:00"},"end":{"dateTime":"2026-10-08T20:00:00+02:00"},"organizer":{"displayName":"Sam"},"attendees":[{"self":true,"responseStatus":"tentative","displayName":"Me"},{"displayName":"Kim"},{"displayName":"Room 3","resource":true}],"transparency":"transparent"},
 		{"summary":"Mine","start":{"date":"2026-10-09"},"end":{"date":"2026-10-10"},"organizer":{"self":true},"hangoutLink":"x"},
 		{"status":"cancelled","summary":"x","start":{"date":"2026-10-09"},"end":{"date":"2026-10-10"}}
 	]}`))

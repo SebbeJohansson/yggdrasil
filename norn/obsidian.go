@@ -12,6 +12,7 @@ package norn
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -401,11 +402,12 @@ var briefAsk = regexp.MustCompile(`(?i)^brief me for my meeting "([^"]+)"`)
 // briefNoteLines is your earlier notes for the meeting a brief is asked about:
 // who is invited (from the calendar), then each related note's start. Nil
 // when the question is not a brief or there is no vault.
-func (n *Norn) briefNoteLines(question string, now time.Time) []string {
+func (n *Norn) briefNoteLines(ctx context.Context, question string, now time.Time) []string {
 	match := briefAsk.FindStringSubmatch(strings.TrimSpace(question))
 	if match == nil || !n.Vault.On() {
 		return nil
 	}
+	me := n.selfNames(ctx)
 	n.vaultMu.Lock()
 	defer n.vaultMu.Unlock()
 	subject := match[1]
@@ -414,7 +416,7 @@ func (n *Norn) briefNoteLines(question string, now time.Time) []string {
 	if len(meeting.Attendees) > 0 {
 		lines = append(lines, "Invited: "+strings.Join(meeting.Attendees, ", "))
 	}
-	for _, note := range n.Vault.Related(meeting.Attendees, subject, "", briefNotes, now) {
+	for _, note := range n.Vault.Related(othersThan(meeting.Attendees, me), withoutNames(subject, me), "", briefNotes, now) {
 		text, err := n.Vault.Excerpt(note.Path, noteExcerptChars)
 		if err != nil || text == "" {
 			continue
@@ -451,10 +453,63 @@ func (n *Norn) findMeeting(subject string, now time.Time) Meeting {
 	return found
 }
 
-// meetingPeople is the organizer and the attendees, each once.
+// selfNames is your name and address on the work account, to leave out of a
+// meeting's people: your own first name would tie every note titled with it
+// ("Dragon farming idle game") to every meeting. Empty when it is not known.
+func (n *Norn) selfNames(ctx context.Context) []string {
+	if n.Inbox == nil || n.Accounts.Microsoft.Status().State != "signed-in" {
+		return nil
+	}
+	token, err := n.Accounts.Microsoft.Token(ctx)
+	if err != nil {
+		return nil
+	}
+	me, err := n.Inbox.Graph.Me(ctx, token.AccessToken)
+	if err != nil {
+		return nil
+	}
+	return []string{me.DisplayName, me.Address}
+}
+
+// othersThan is people without anyone in me, by name or address.
+func othersThan(people, me []string) []string {
+	return slices.DeleteFunc(slices.Clone(people), func(person string) bool {
+		return slices.ContainsFunc(me, func(self string) bool {
+			return self != "" && strings.EqualFold(strings.TrimSpace(person), strings.TrimSpace(self))
+		})
+	})
+}
+
+// withoutNames is a subject without the words of anyone in me: "One-to-one
+// Alex & Johan" would otherwise tie every note with your first name
+// in its title to the meeting.
+func withoutNames(subject string, me []string) string {
+	var mine []string
+	for _, self := range me {
+		if at := strings.IndexByte(self, '@'); at > 0 {
+			self = strings.NewReplacer(".", " ", "_", " ").Replace(self[:at])
+		}
+		for _, word := range words.FindAllString(self, -1) {
+			mine = append(mine, fold(word))
+		}
+	}
+	return words.ReplaceAllStringFunc(subject, func(word string) string {
+		if slices.Contains(mine, fold(word)) {
+			return ""
+		}
+		return word
+	})
+}
+
+// meetingPeople is the organizer and the attendees, each once. The organizer
+// is left out when it is you (Outlook names you there).
 func meetingPeople(event CalendarEvent) []string {
 	var people []string
-	for _, name := range append([]string{event.Organizer}, event.Attendees...) {
+	organizer := event.Organizer
+	if event.Response == "organizer" {
+		organizer = ""
+	}
+	for _, name := range append([]string{organizer}, event.Attendees...) {
 		if name != "" && !slices.Contains(people, name) {
 			people = append(people, name)
 		}
@@ -485,6 +540,7 @@ func (n *Norn) meetingNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
+	me := n.selfNames(r.Context())
 	n.vaultMu.Lock()
 	defer n.vaultMu.Unlock()
 	meeting := n.findMeeting(subject, now)
@@ -502,7 +558,7 @@ func (n *Norn) meetingNotes(w http.ResponseWriter, r *http.Request) {
 			answer["note"] = own
 		}
 	}
-	answer["related"] = n.Vault.Related(meeting.Attendees, meeting.Subject, own.Path, 5, now)
+	answer["related"] = n.Vault.Related(othersThan(meeting.Attendees, me), withoutNames(meeting.Subject, me), own.Path, 5, now)
 	part.JSON(w, http.StatusOK, answer)
 }
 

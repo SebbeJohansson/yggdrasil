@@ -735,7 +735,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/notes/meeting:
     get:
-      summary: For a meeting, your Obsidian note for its day (when you wrote one) and the earlier meeting notes sharing a first name or a subject word with it, newest first. Titles and obsidian:// links only, never note text. The vault's root and Notes/Meetings are read. `on` is false without a vault (OBSIDIAN_VAULT).
+      summary: For a meeting, your Obsidian note for its day (when you wrote one) and the earlier meeting notes sharing a first name (yours left out) or a subject word with it, newest first. Titles and obsidian:// links only, never note text. The vault's root and Notes/Meetings are read. `on` is false without a vault (OBSIDIAN_VAULT).
       parameters:
         - { name: subject, in: query, required: true, example: Sprint review, schema: { type: string, maxLength: 300 } }
         - { name: start, in: query, required: false, example: 1794900000000, schema: { type: integer }, description: "Epoch ms; else the calendar's meeting with that subject." }

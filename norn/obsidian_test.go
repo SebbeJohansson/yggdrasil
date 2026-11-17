@@ -165,3 +165,27 @@ func jsonNumber(n int64) string {
 	raw, _ := json.Marshal(n)
 	return string(raw)
 }
+
+func TestOthersThanLeavesYouOut(t *testing.T) {
+	got := othersThan([]string{"Alex Morgan Svensson", "Johan Berg", "me@example.com"}, []string{"alex morgan svensson", "ME@example.com", ""})
+	if len(got) != 1 || got[0] != "Johan Berg" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestMeetingPeopleLeavesOutYouAsOrganizer(t *testing.T) {
+	got := meetingPeople(CalendarEvent{Organizer: "Alex Morgan Svensson", Response: "organizer", Attendees: []string{"Johan Berg"}})
+	if len(got) != 1 || got[0] != "Johan Berg" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestWithoutNamesDropsYourNameFromTheSubject(t *testing.T) {
+	got := withoutNames("One-to-one Alex & Johan", []string{"Alex Morgan Svensson", "alex.svensson@example.com"})
+	if strings.Contains(strings.ToLower(got), "dragon") || !strings.Contains(got, "Johan") {
+		t.Fatalf("got %q", got)
+	}
+	if got := withoutNames("Sprint review", nil); got != "Sprint review" {
+		t.Fatalf("got %q", got)
+	}
+}

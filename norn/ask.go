@@ -442,7 +442,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 	// the vault is handed to Sindri.
 	var notes []string
 	if route == "local" {
-		notes = n.briefNoteLines(question, now)
+		notes = n.briefNoteLines(ctx, question, now)
 	}
 	hasCalendar := n.Accounts.Work.Current(now) != nil || n.Accounts.Personal.Current(now) != nil
 	decidedLocal := false

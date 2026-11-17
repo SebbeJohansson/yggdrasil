@@ -50,7 +50,7 @@ type CalendarEvent struct {
 	// ID stays the same when the meeting moves.
 	ID string `json:"id,omitempty"`
 	// Attendees is who is invited, by name (or address when there is no
-	// name), you left out where the calendar says which is you. At most maxAttendees.
+	// name), you left out where the calendar says which is you, rooms left out. At most maxAttendees.
 	Attendees []string `json:"attendees,omitempty"`
 }
 
@@ -231,6 +231,7 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 				EmailAddress struct{ Name string } `json:"emailAddress"`
 			} `json:"organizer"`
 			Attendees []struct {
+				Type         string                         `json:"type"`
 				EmailAddress struct{ Name, Address string } `json:"emailAddress"`
 			} `json:"attendees"`
 			ResponseStatus struct{ Response string } `json:"responseStatus"`
@@ -252,6 +253,10 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 		}
 		var attendees []string
 		for _, attendee := range raw.Attendees {
+			// A booked room is an attendee too, not a person.
+			if attendee.Type == "resource" {
+				continue
+			}
 			name := attendee.EmailAddress.Name
 			if name == "" {
 				name = attendee.EmailAddress.Address
@@ -378,6 +383,7 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 				ResponseStatus string `json:"responseStatus"`
 				DisplayName    string `json:"displayName"`
 				Email          string `json:"email"`
+				Resource       bool   `json:"resource"`
 			} `json:"attendees"`
 		} `json:"items"`
 		NextPageToken string `json:"nextPageToken"`
@@ -412,7 +418,7 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 			}
 		}
 		for _, attendee := range raw.Attendees {
-			if attendee.Self {
+			if attendee.Self || attendee.Resource {
 				continue
 			}
 			name := attendee.DisplayName
