@@ -3,7 +3,7 @@ package norn
 // How you want a meeting's brief written, kept per recurring series: what you
 // add to the prompt, and whether the local model or Claude writes it. The
 // meeting prep card reads and sets it; calendar.soon, .added and .moved carry
-// the prompt, so Huginn's brief asks with it too.
+// the prompt and the model, so Huginn's brief asks with them too.
 
 import (
 	"context"
@@ -80,16 +80,16 @@ const ClaudeBriefRules = "How to write this brief: look for what is going on bet
 	"something I promised or was asked for), naming who it is with. No heading, no preamble. " +
 	"Write in the language the sources are in."
 
-// prepPrompt is your addition to the brief's prompt for event, for the
-// calendar events Huginn briefs on.
-func (n *Norn) prepPrompt(event CalendarEvent) string {
+// prepFor is the meeting's prep (your addition to the prompt, and the model
+// that writes it), for the calendar events Huginn briefs on.
+func (n *Norn) prepFor(event CalendarEvent) MeetingPrep {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	prep, err := n.Store.MeetingPrep(ctx, PrepKey(event))
 	if err != nil {
 		n.logf("reading a meeting's prep: %v", err)
 	}
-	return prep.Prompt
+	return prep
 }
 
 func (n *Norn) mountMeetingPrep(p *part.Part) {

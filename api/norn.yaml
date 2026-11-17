@@ -925,7 +925,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
     put:
-      summary: Keep how a meeting's (series') brief is written. A prompt and model both empty removes it. Huginn's meeting briefs ask with the prompt.
+      summary: Keep how a meeting's (series') brief is written. A prompt and model both empty removes it. Huginn's meeting briefs ask with the prompt, and with Claude when the model is claude.
       requestBody:
         required: true
         content:
@@ -1487,6 +1487,7 @@ components:
         previousStart: { type: integer, description: Epoch ms; calendar.moved only. }
         previousEnd: { type: integer }
         prompt: { type: string, description: "What you add to this meeting's brief prompt (kept per series, /v1/meetings/prep); on calendar.soon, .added and .moved, left out when none." }
+        model: { type: string, enum: [local, claude], description: "What writes this meeting's brief (kept per series); with claude, Huginn asks a Claude agent. Left out when never picked." }
     MeetingPrep:
       type: object
       required: [key, prompt, model]

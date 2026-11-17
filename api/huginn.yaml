@@ -29,7 +29,11 @@ info:
       reconnect. An event older than an hour is recorded, not delivered.
     - calendar.soon: a meeting starts within 30 minutes, told once per
       meeting and start. The built-in meeting-prep rule briefs on it, so
-      every meeting gets a brief, not only one just added. A meeting that
+      every meeting gets a brief, not only one just added. The brief names
+      who is invited. When the meeting's series is set to Claude (Norn's
+      `/v1/meetings/prep`), a Claude agent writes it, in the Norn
+      conversation the dashboard's meeting card reads, and Huginn waits up
+      to ten minutes for it before telling you. A meeting that
       is added, moved and about to start is one thing to tell: a second
       rule of the same kind on it stays quiet.
     - draft.ready: Norn wrote a reply draft by itself for an inbox item.

@@ -70,8 +70,10 @@ type CalendarChange struct {
 	PreviousStart int64         `json:"previousStart,omitempty"`
 	PreviousEnd   int64         `json:"previousEnd,omitempty"`
 	// Prompt is what you add to the brief's prompt for this meeting (its
-	// series), on calendar.soon, .added and .moved.
+	// series), and Model what writes it ("local", "claude" or "" when you
+	// never picked one), on calendar.soon, .added and .moved.
 	Prompt string `json:"prompt,omitempty"`
+	Model  string `json:"model,omitempty"`
 }
 
 // StreamEvent is one event as it goes out.
@@ -97,8 +99,9 @@ type Events struct {
 	// is not told about, so a restart doesn't repeat it.
 	soonFrom time.Time
 	soonSent map[string]bool
-	// PromptFor is your addition to a meeting's brief prompt; nil for none.
-	PromptFor func(CalendarEvent) string
+	// PrepFor is how a meeting's brief is written (your addition to its
+	// prompt, and the model); nil for none.
+	PrepFor func(CalendarEvent) MeetingPrep
 }
 
 // NewEvents starts with nothing seen; meetings that end from now on count.
@@ -201,7 +204,8 @@ func (e *Events) Calendar(calendar string, events []CalendarEvent, now time.Time
 	soon := func(start int64) bool { return start > nowMs && start <= horizon }
 	send := func(kind string, change CalendarChange) {
 		if kind != "calendar.removed" {
-			change.Prompt = e.prompt(change.Event)
+			prep := e.prep(change.Event)
+			change.Prompt, change.Model = prep.Prompt, prep.Model
 		}
 		payload, err := json.Marshal(change)
 		if err == nil {
@@ -270,7 +274,8 @@ func (e *Events) Soon(now time.Time) {
 				continue
 			}
 			e.soonSent[key] = true
-			payload, err := json.Marshal(CalendarChange{Calendar: calendar, Event: event, Prompt: e.prompt(event)})
+			prep := e.prep(event)
+			payload, err := json.Marshal(CalendarChange{Calendar: calendar, Event: event, Prompt: prep.Prompt, Model: prep.Model})
 			if err == nil {
 				e.publishLocked("calendar.soon", payload)
 			}
@@ -278,11 +283,11 @@ func (e *Events) Soon(now time.Time) {
 	}
 }
 
-func (e *Events) prompt(event CalendarEvent) string {
-	if e.PromptFor == nil {
-		return ""
+func (e *Events) prep(event CalendarEvent) MeetingPrep {
+	if e.PrepFor == nil {
+		return MeetingPrep{}
 	}
-	return e.PromptFor(event)
+	return e.PrepFor(event)
 }
 
 // inboxEvents sends inbox.arrived for each new item worth it, each with a

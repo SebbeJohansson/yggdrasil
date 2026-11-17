@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -82,4 +83,38 @@ func (p *Part) Ask(ctx context.Context, question, session string) (string, error
 	}
 	err := p.Do(ctx, http.MethodPost, "/v1/ask", map[string]string{"question": "/local " + question, "to": "norn", "session": session}, &answer)
 	return strings.TrimSpace(answer.Answer), err
+}
+
+// Handed is what Norn did with a question sent on to Claude: Delegated is
+// false when nothing was handed over, and Answer says why.
+type Handed struct {
+	Answer    string `json:"answer"`
+	Delegated *struct {
+		AgentID string `json:"agentId"`
+	} `json:"delegated"`
+}
+
+// AskClaude sends a question to Norn with `/claude` in front, so Norn hands
+// it to a Claude agent, which answers later in session (read it with Chat).
+func (p *Part) AskClaude(ctx context.Context, question, session string) (Handed, error) {
+	var handed Handed
+	err := p.Do(ctx, http.MethodPost, "/v1/ask", map[string]string{"question": "/claude " + question, "to": "norn", "session": session}, &handed)
+	return handed, err
+}
+
+// Turn is one message in a Norn conversation.
+type Turn struct {
+	ID      int64   `json:"id"`
+	Role    string  `json:"role"`
+	Content string  `json:"content"`
+	Author  *string `json:"author"`
+}
+
+// Chat is a Norn conversation's messages after the id given.
+func (p *Part) Chat(ctx context.Context, session string, after int64) ([]Turn, error) {
+	var chat struct {
+		Messages []Turn `json:"messages"`
+	}
+	err := p.Do(ctx, http.MethodGet, fmt.Sprintf("/v1/chat?session=%s&after=%d", url.QueryEscape(session), after), nil, &chat)
+	return chat.Messages, err
 }

@@ -105,7 +105,7 @@ var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar
 
 var (
 	yes      = true
-	briefAsk = `Brief me for my meeting "{subject}" at {start}{organizerWith}: who will be there, what is open with them in my inbox and memory, and what I should bring. At most five short lines.{also}`
+	briefAsk = `Brief me for my meeting "{subject}" at {start}{organizerWith}: who will be there, what is open with them in my inbox and memory, and what I should bring. At most five short lines.{invited}{also}`
 )
 
 // BuiltIn is the rules Huginn ships with. They can be switched off, never
@@ -448,15 +448,16 @@ type InboxArrived struct {
 
 // CalendarEvent is a meeting as Norn sends it.
 type CalendarEvent struct {
-	ID        string `json:"id"`
-	Subject   string `json:"subject"`
-	Start     int64  `json:"start"`
-	End       int64  `json:"end"`
-	AllDay    bool   `json:"allDay"`
-	Location  string `json:"location"`
-	Organizer string `json:"organizer"`
-	Response  string `json:"response"`
-	ShowAs    string `json:"showAs"`
+	ID        string   `json:"id"`
+	Subject   string   `json:"subject"`
+	Start     int64    `json:"start"`
+	End       int64    `json:"end"`
+	AllDay    bool     `json:"allDay"`
+	Location  string   `json:"location"`
+	Organizer string   `json:"organizer"`
+	Response  string   `json:"response"`
+	ShowAs    string   `json:"showAs"`
+	Attendees []string `json:"attendees"`
 }
 
 // CalendarChange is Norn's calendar.* event.
@@ -464,8 +465,10 @@ type CalendarChange struct {
 	Calendar      string        `json:"calendar"`
 	Event         CalendarEvent `json:"event"`
 	PreviousStart int64         `json:"previousStart"`
-	// Prompt is what you add to this meeting's brief, kept per series.
+	// Prompt is what you add to this meeting's brief, and Model what writes
+	// it ("claude" asks a Claude agent), kept per series.
 	Prompt string `json:"prompt"`
+	Model  string `json:"model"`
 }
 
 // Alert is Gjallar's alert, as its stream sends it.
@@ -540,7 +543,10 @@ func (h *Huginn) FromNorn(event sse.Event) (Fired, bool) {
 		}
 		fields := map[string]string{"subject": meeting.Subject, "start": h.clock(meeting.Start), "end": h.clock(meeting.End),
 			"organizer": meeting.Organizer, "organizerWith": with, "location": meeting.Location, "calendar": change.Calendar}
-		fields["also"] = ""
+		fields["also"], fields["invited"] = "", ""
+		if people := meetingPeople(meeting); len(people) > 0 {
+			fields["invited"] = " Invited: " + strings.Join(people[:min(12, len(people))], ", ") + "."
+		}
 		if change.Prompt != "" {
 			fields["also"], fields["prompt"] = " Also: "+change.Prompt, change.Prompt
 		}
@@ -703,6 +709,9 @@ func (h *Huginn) content(ctx context.Context, rule Rule, f Fired) (string, error
 	case "notify":
 		return Fill(rule.Action.Text, f.Fields), nil
 	case "ask":
+		if f.Change != nil && f.Change.Model == "claude" {
+			return h.claudeBrief(ctx, Fill(rule.Action.Text, f.Fields), f.Change.Event)
+		}
 		return h.Norn.Ask(ctx, Fill(rule.Action.Text, f.Fields), AskSession)
 	case "alert-impact":
 		return h.impact(ctx, f), nil

@@ -107,7 +107,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 		Accounts:    NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Inbox = NewInbox(n, config.DataDir)
 	n.Events = NewEvents(time.Now())
-	n.Events.PromptFor = n.prepPrompt
+	n.Events.PrepFor = n.prepFor
 	n.Brain = &Brain{
 		Store:      store,
 		EmbedModel: config.EmbedModel,

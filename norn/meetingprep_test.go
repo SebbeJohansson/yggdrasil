@@ -2,7 +2,6 @@ package norn
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 )
@@ -42,7 +41,7 @@ func TestMeetingPrepIsKeptPerSeriesAndRidesOnCalendarSoon(t *testing.T) {
 
 	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
 	e := NewEvents(now)
-	e.PromptFor = n.prepPrompt
+	e.PrepFor = n.prepFor
 	meeting := CalendarEvent{ID: "occ-2", Series: "weekly", Subject: "1:1 Kim", Start: now.Add(2 * time.Hour).UnixMilli(), End: now.Add(150 * time.Minute).UnixMilli()}
 	e.Calendar("work", []CalendarEvent{meeting}, now)
 	e.Soon(now.Add(95 * time.Minute))
@@ -52,8 +51,8 @@ func TestMeetingPrepIsKeptPerSeriesAndRidesOnCalendarSoon(t *testing.T) {
 			_ = json.Unmarshal(event.Data, &change)
 		}
 	}
-	if change.Prompt != "focus on the budget" {
-		t.Fatalf("calendar.soon carried %q", change.Prompt)
+	if change.Prompt != "focus on the budget" || change.Model != "claude" {
+		t.Fatalf("calendar.soon carried %q, %q", change.Prompt, change.Model)
 	}
 
 	// Emptied, it is gone.
@@ -62,7 +61,7 @@ func TestMeetingPrepIsKeptPerSeriesAndRidesOnCalendarSoon(t *testing.T) {
 	if got, _ := body.(map[string]any); got["prompt"] != "" || got["model"] != "" {
 		t.Fatalf("still kept: %v", body)
 	}
-	if strings.TrimSpace(n.prepPrompt(meeting)) != "" {
+	if prep := n.prepFor(meeting); prep.Prompt != "" || prep.Model != "" {
 		t.Fatal("still asked with it")
 	}
 }
