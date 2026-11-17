@@ -142,6 +142,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountEvents(p)
 	n.mountDrafts(p)
 	n.mountVault(p)
+	n.mountMeetingActions(p)
 	n.mountMeetingPrep(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }

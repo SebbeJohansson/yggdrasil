@@ -102,3 +102,36 @@ func TestMove(t *testing.T) {
 		t.Errorf("want not found, got %v", err)
 	}
 }
+
+func TestCreateAssignsYouInTheTeam(t *testing.T) {
+	var input map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		data, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(data, &body)
+		switch {
+		case strings.HasPrefix(body.Query, "mutation"):
+			input = body.Variables["input"].(map[string]any)
+			_, _ = io.WriteString(w, `{"data":{"issueCreate":{"success":true,"issue":{"identifier":"AI-9","title":"Stäm av","url":"https://linear.app/x/AI-9","state":{"name":"Todo","type":"unstarted"},"updatedAt":"2026-11-17T10:00:00Z"}}}}`)
+		case body.Variables["key"] == "NOPE":
+			_, _ = io.WriteString(w, `{"data":{"viewer":{"id":"me"},"teams":{"nodes":[]}}}`)
+		default:
+			_, _ = io.WriteString(w, `{"data":{"viewer":{"id":"me"},"teams":{"nodes":[{"id":"team-ai","key":"AI","name":"AI engineering"}]}}}`)
+		}
+	}))
+	defer server.Close()
+	c := &Client{Key: "key", URL: server.URL, HTTP: server.Client()}
+	issue, err := c.Create(context.Background(), NewIssue{Team: "ai", Title: "Stäm av", Description: "Från mötet"})
+	if err != nil || issue.Identifier != "AI-9" {
+		t.Fatalf("%+v %v", issue, err)
+	}
+	if input["teamId"] != "team-ai" || input["assigneeId"] != "me" || input["title"] != "Stäm av" || input["description"] != "Från mötet" {
+		t.Errorf("input %v", input)
+	}
+	if _, err := c.Create(context.Background(), NewIssue{Team: "NOPE", Title: "x"}); err == nil {
+		t.Error("an unknown team made an issue")
+	}
+}

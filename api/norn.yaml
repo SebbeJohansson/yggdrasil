@@ -811,6 +811,97 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/notes/meeting/actions:
+    post:
+      summary: Suggest the actions in the notes taken during a meeting, for you to approve before any goes to Linear. The local model reads the notes; they never leave the machine. Empty notes have no actions. `team` is the Linear team key an action goes to unless you pick another.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, text]
+              properties:
+                subject: { type: string }
+                attendees: { type: array, items: { type: string } }
+                text: { type: string, maxLength: 20000 }
+            example: { subject: "Budget", text: "" }
+      responses:
+        "200":
+          description: The suggested actions, at most 8.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actions, team]
+                properties:
+                  actions:
+                    type: array
+                    items:
+                      type: object
+                      required: [title, description]
+                      properties:
+                        title: { type: string, description: A short imperative in the notes' language. }
+                        description: { type: string, description: The context from the notes. }
+                  team: { type: string, example: AI }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/linear/teams:
+    get:
+      summary: The Linear teams an issue can be made in, and the key of the one meeting actions go to by default. `on` is false, and the list empty, without LINEAR_KEY.
+      responses:
+        "200":
+          description: The teams, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [on, teams, team]
+                properties:
+                  on: { type: boolean }
+                  teams:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, key, name]
+                      properties:
+                        id: { type: string }
+                        key: { type: string, example: AI }
+                        name: { type: string, example: AI engineering }
+                  team: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/linear/issues:
+    post:
+      summary: Make a Linear issue assigned to you in the team with key `team`, from an action you approved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [team, title]
+              properties:
+                team: { type: string, example: AI }
+                title: { type: string, maxLength: 250 }
+                description: { type: string, maxLength: 10000 }
+      responses:
+        "201":
+          description: Made.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [identifier, title, url]
+                properties:
+                  identifier: { type: string, example: AI-142 }
+                  title: { type: string }
+                  url: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v1/meetings/prep:
     get:
       summary: How a meeting's brief is written, kept per recurring series so every occurrence shares it. Empty prompt and model when nothing is kept.

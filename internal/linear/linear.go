@@ -339,3 +339,72 @@ func KeyOf(source string) string {
 	}
 	return key
 }
+
+// --- making issues ------------------------------------------------------------
+
+// Team is one Linear team, by its key (AI) and name (AI engineering).
+type Team struct {
+	ID   string `json:"id"`
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+// Teams is every team in the workspace, by name.
+func (c *Client) Teams(ctx context.Context) ([]Team, error) {
+	var data struct {
+		Teams struct {
+			Nodes []Team `json:"nodes"`
+		} `json:"teams"`
+	}
+	if err := c.query(ctx, 8*time.Second, `query { teams(first: 100) { nodes { id key name } } }`, nil, &data); err != nil {
+		return nil, err
+	}
+	sort.Slice(data.Teams.Nodes, func(i, j int) bool { return data.Teams.Nodes[i].Name < data.Teams.Nodes[j].Name })
+	return data.Teams.Nodes, nil
+}
+
+// NewIssue is an issue to make in the team with key Team, assigned to the key's owner.
+type NewIssue struct {
+	Team        string
+	Title       string
+	Description string
+}
+
+// Create makes the issue, assigned to you, and answers it with its key and link.
+func (c *Client) Create(ctx context.Context, issue NewIssue) (*Issue, error) {
+	var found struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
+		Teams struct {
+			Nodes []Team `json:"nodes"`
+		} `json:"teams"`
+	}
+	if err := c.query(ctx, 8*time.Second,
+		`query($key: String!) { viewer { id } teams(filter: { key: { eqIgnoreCase: $key } }) { nodes { id key name } } }`,
+		map[string]any{"key": issue.Team}, &found); err != nil {
+		return nil, err
+	}
+	if len(found.Teams.Nodes) == 0 {
+		return nil, fmt.Errorf("no Linear team with the key %s", issue.Team)
+	}
+	input := map[string]any{"teamId": found.Teams.Nodes[0].ID, "title": issue.Title, "assigneeId": found.Viewer.ID}
+	if issue.Description != "" {
+		input["description"] = issue.Description
+	}
+	var made struct {
+		IssueCreate struct {
+			Success bool   `json:"success"`
+			Issue   *Issue `json:"issue"`
+		} `json:"issueCreate"`
+	}
+	if err := c.query(ctx, 8*time.Second,
+		`mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { identifier title url state { name type } updatedAt } } }`,
+		map[string]any{"input": input}, &made); err != nil {
+		return nil, err
+	}
+	if !made.IssueCreate.Success || made.IssueCreate.Issue == nil {
+		return nil, errors.New("Linear did not make the issue")
+	}
+	return made.IssueCreate.Issue, nil
+}
