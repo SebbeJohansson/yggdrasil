@@ -38,6 +38,8 @@ const (
 	briefNotes = 3
 	// afterHeading is where a dashboard note goes in a meeting's note.
 	afterHeading = "## Efter mötet"
+	// actionsHeading is where the Linear issues made from the meeting are linked.
+	actionsHeading = "## Åtgärder"
 	// duringHeading is where notes taken during the meeting go.
 	duringHeading = "## Under mötet"
 	// maxLiveNote is how long notes taken during a meeting may get.
@@ -319,16 +321,28 @@ type Meeting struct {
 // its day, making the note when you have not written one. Your own text in
 // the note is never changed: the new lines go at the end of that section.
 func (v *Vault) AddMeetingNote(meeting Meeting, text string, zone *time.Location, now time.Time) (VaultNote, bool, error) {
+	return v.addUnder(meeting, afterHeading, bullets(text), zone, now)
+}
+
+// AddMeetingIssue links a Linear issue made from the meeting under "Åtgärder"
+// in the meeting's note for its day, making the note when there is none.
+func (v *Vault) AddMeetingIssue(meeting Meeting, identifier, title, link string, zone *time.Location, now time.Time) (VaultNote, bool, error) {
+	title = strings.Join(strings.Fields(title), " ")
+	return v.addUnder(meeting, actionsHeading, fmt.Sprintf("- [%s](%s) %s", identifier, link, title), zone, now)
+}
+
+// addUnder writes lines at the end of the `heading` section in the meeting's
+// note for its day, making the note when there is none.
+func (v *Vault) addUnder(meeting Meeting, heading, lines string, zone *time.Location, now time.Time) (VaultNote, bool, error) {
 	day := time.UnixMilli(meeting.Start).In(zone).Format("2006-01-02")
 	note := v.MeetingNote(meeting.Subject, day, now)
-	lines := bullets(text)
 	if note.Path == "" {
 		note = v.note(NoteName(meeting.Subject, day))
 		var b strings.Builder
 		if len(meeting.Attendees) > 0 {
 			fmt.Fprintf(&b, "Deltagare: %s\n\n", strings.Join(meeting.Attendees, ", "))
 		}
-		b.WriteString(afterHeading + "\n\n" + lines + "\n")
+		b.WriteString(heading + "\n\n" + lines + "\n")
 		full := filepath.Join(v.Dir, filepath.FromSlash(note.Path))
 		file, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err != nil {
@@ -346,7 +360,7 @@ func (v *Vault) AddMeetingNote(meeting Meeting, text string, zone *time.Location
 	if err != nil {
 		return VaultNote{}, false, err
 	}
-	after := appendUnder(string(before), afterHeading, lines)
+	after := appendUnder(string(before), heading, lines)
 	return note, false, os.WriteFile(full, []byte(after), 0o644)
 }
 

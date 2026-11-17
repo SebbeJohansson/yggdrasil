@@ -874,7 +874,7 @@ paths:
         "502": { $ref: "#/components/responses/BadGateway" }
   /v1/linear/issues:
     post:
-      summary: Make a Linear issue assigned to you in the team with key `team`, from an action you approved.
+      summary: Make a Linear issue assigned to you in the team with key `team`, from an action you approved. With `meeting`, the issue is also linked under "## Åtgärder" in that meeting's Obsidian note for its day (made when there is none); the issue is made even when the note cannot be written, and `noteError` says why.
       requestBody:
         required: true
         content:
@@ -886,6 +886,13 @@ paths:
                 team: { type: string, example: AI }
                 title: { type: string, maxLength: 250 }
                 description: { type: string, maxLength: 10000 }
+                meeting:
+                  type: object
+                  required: [subject, start]
+                  properties:
+                    subject: { type: string }
+                    start: { type: integer, description: Epoch ms. }
+                    attendees: { type: array, items: { type: string } }
       responses:
         "201":
           description: Made.
@@ -898,6 +905,8 @@ paths:
                   identifier: { type: string, example: AI-142 }
                   title: { type: string }
                   url: { type: string }
+                  note: { $ref: "#/components/schemas/VaultNote" }
+                  noteError: { type: string, description: Why the meeting's note did not get the link. }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "502": { $ref: "#/components/responses/BadGateway" }

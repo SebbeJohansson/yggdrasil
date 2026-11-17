@@ -161,12 +161,15 @@ func (n *Norn) linearTeams(w http.ResponseWriter, r *http.Request) {
 	part.JSON(w, http.StatusOK, map[string]any{"on": true, "teams": teams, "team": defaultActionTeam})
 }
 
-// createLinearIssue makes an issue assigned to you, from an action you approved.
+// createLinearIssue makes an issue assigned to you, from an action you
+// approved, and links it under "Åtgärder" in the meeting's Obsidian note when
+// `meeting` names one.
 func (n *Norn) createLinearIssue(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Team        string `json:"team"`
-		Title       string `json:"title"`
-		Description string `json:"description"`
+		Team        string   `json:"team"`
+		Title       string   `json:"title"`
+		Description string   `json:"description"`
+		Meeting     *Meeting `json:"meeting"`
 	}
 	if err := part.Decode(r, &body); err != nil {
 		part.Error(w, http.StatusBadRequest, "send `team`, `title` and `description`")
@@ -186,5 +189,21 @@ func (n *Norn) createLinearIssue(w http.ResponseWriter, r *http.Request) {
 		part.Error(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	part.JSON(w, http.StatusCreated, map[string]any{"identifier": issue.Identifier, "title": issue.Title, "url": issue.URL})
+	answer := map[string]any{"identifier": issue.Identifier, "title": issue.Title, "url": issue.URL}
+	// The issue is made either way; a note that could not be written is only said.
+	if meeting := body.Meeting; meeting != nil && strings.TrimSpace(meeting.Subject) != "" && meeting.Start > 0 && n.Vault.On() {
+		now := time.Now()
+		n.vaultMu.Lock()
+		if len(meeting.Attendees) == 0 {
+			meeting.Attendees = n.findMeeting(meeting.Subject, now).Attendees
+		}
+		note, _, err := n.Vault.AddMeetingIssue(*meeting, issue.Identifier, issue.Title, issue.URL, n.Zone, now)
+		n.vaultMu.Unlock()
+		if err != nil {
+			answer["noteError"] = err.Error()
+		} else {
+			answer["note"] = note
+		}
+	}
+	part.JSON(w, http.StatusCreated, answer)
 }

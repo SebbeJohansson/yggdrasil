@@ -5,8 +5,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"yggdrasil/internal/linear"
 	"yggdrasil/internal/llm"
@@ -63,7 +66,25 @@ func TestCreateLinearIssueRoute(t *testing.T) {
 		t.Fatalf("no title: %d", code)
 	}
 	code, body := call(t, p, "POST", "/v1/linear/issues", map[string]any{"team": "AI", "title": "Stäm av", "description": "Från mötet"})
-	if code != http.StatusCreated || body.(map[string]any)["identifier"] != "AI-9" {
+	if code != http.StatusCreated || body.(map[string]any)["identifier"] != "AI-9" || body.(map[string]any)["note"] != nil {
 		t.Fatalf("%d %v", code, body)
+	}
+	// With the meeting, the issue is linked under Åtgärder in its note, below what you wrote.
+	n.Vault = testVault(t, nil)
+	meeting := Meeting{Subject: "Snacka Jev", Start: time.Now().UnixMilli()}
+	if _, _, err := n.Vault.WriteLiveNote(meeting, "abc123", "- Stäm av med Peter", n.Zone, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		code, body = call(t, p, "POST", "/v1/linear/issues", map[string]any{"team": "AI", "title": "Stäm av", "meeting": meeting})
+		if code != http.StatusCreated || body.(map[string]any)["note"] == nil {
+			t.Fatalf("%d %v", code, body)
+		}
+	}
+	raw, _ := os.ReadFile(filepath.Join(n.Vault.Dir, body.(map[string]any)["note"].(map[string]any)["path"].(string)))
+	got := string(raw)
+	if strings.Count(got, "## Åtgärder") != 1 || strings.Count(got, "- [AI-9](https://linear.app/x/AI-9) Stäm av") != 2 ||
+		strings.Index(got, "## Under mötet") > strings.Index(got, "## Åtgärder") {
+		t.Fatalf("got:\n%s", got)
 	}
 }
