@@ -45,9 +45,10 @@ func Main(ctx context.Context) error {
 	if len(tokens) == 0 {
 		return fmt.Errorf("SINDRI_TOKENS is empty: set at least owner=<token>")
 	}
+	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))
+	UseShellPath(p.Logf)
 	home, _ := os.UserHomeDir()
 	roots := strings.Split(env.String("SINDRI_ROOTS", filepath.Join(home, "projects")), ":")
-	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))
 	agents, err := NewManager(ManagerOptions{
 		ClaudeBin:  env.String("CLAUDE_BIN", filepath.Join(home, ".local/bin/claude")),
 		CopilotBin: env.String("COPILOT_BIN", filepath.Join(home, ".local/bin/copilot")),

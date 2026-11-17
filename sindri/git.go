@@ -4,6 +4,7 @@ package sindri
 // one. Ported from my-agent's runner/src/worktree.ts and review.ts.
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ReviewError is a step that can't be done, in words: answered with a 409.
@@ -130,7 +132,27 @@ func linkModules(repo, path string) {
 	if exists(modules) && !exists(filepath.Join(path, "node_modules")) {
 		_ = os.Symlink(modules, filepath.Join(path, "node_modules"))
 		excludeFromGit(repo, "node_modules")
+		runPostinstall(path)
 	}
+}
+
+// runPostinstall runs the repo's postinstall script in a new worktree, since
+// linking node_modules skips the install that would run it. It makes what
+// the install generates and git ignores, like Nuxt's .nuxt folder.
+func runPostinstall(path string) {
+	if packageScripts(path)["postinstall"] == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	args := []string{"postinstall"}
+	if managerOf(path) == "npm" {
+		args = []string{"run", "postinstall"}
+	}
+	run := exec.CommandContext(ctx, managerOf(path), args...)
+	run.Dir = path
+	run.Env = append(os.Environ(), "CI=1", "FORCE_COLOR=0")
+	_ = run.Run()
 }
 
 // linkSiblings puts the repo's sibling projects beside the worktree, so a
