@@ -217,8 +217,11 @@ func ownWords(history []llm.Message) []llm.Message {
 // reply sends your words to an agent.
 func (a *asker) reply(agent *Agent, text, via string) AskResponse {
 	communication, mode := a.rules()
-	prompted, err := a.n.Sindri.Reply(a.ctx, map[string]any{"session": a.session, "agent": agent.ID, "text": text, "images": a.request.Images, "communication": communication, "mode": mode})
 	task := TaskOf(agent.Label)
+	if chat, err := a.n.Store.Chat(a.ctx, a.session, 0, 10_000); err == nil {
+		text = Missed(chat, agent.ID, task) + text
+	}
+	prompted, err := a.n.Sindri.Reply(a.ctx, map[string]any{"session": a.session, "agent": agent.ID, "text": text, "images": a.request.Images, "communication": communication, "mode": mode})
 	if err != nil {
 		var refused *SindriError
 		if errors.As(err, &refused) && refused.Status == 409 {
@@ -233,6 +236,41 @@ func (a *asker) reply(agent *Agent, text, via string) AskResponse {
 		delegated.Branch = prompted.Worktree.Branch
 	}
 	return AskResponse{Answer: `Sent to the agent on "` + task + `".`, Session: a.session, Recalled: orNone(a.recalled), Via: via, Delegated: delegated}
+}
+
+// Missed is what was said in a conversation after the agent's last message
+// that the agent never saw: answers from Norn or other agents, and your
+// messages to them. Without it an agent denies what another one said.
+func Missed(chat []Turn, agentID, task string) string {
+	last := -1
+	for i, t := range chat {
+		if t.Author != nil && *t.Author == agentID {
+			last = i
+		}
+	}
+	if last < 0 {
+		return ""
+	}
+	var lines []string
+	for _, t := range chat[last+1:] {
+		switch {
+		case t.Author != nil && *t.Author == agentID:
+			continue
+		case t.Role == "user" && t.Label != nil && *t.Label == task:
+			continue
+		case t.Role == "user":
+			lines = append(lines, "The person: "+clipRunes(t.Content, 1500))
+		case t.Author != nil && t.Label != nil:
+			lines = append(lines, `The agent on "`+TaskOf(*t.Label)+`": `+clipRunes(t.Content, 1500))
+		case t.Role == "assistant":
+			lines = append(lines, "my-agent (Norn, not you): "+clipRunes(t.Content, 1500))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "Said in this conversation since your last message, by others; you did not see it:\n\n" +
+		strings.Join(lines, "\n\n") + "\n\n---\n\nThe person's message to you:\n\n"
 }
 
 // ShortName is a task name from a message: its first line, cut at a word.

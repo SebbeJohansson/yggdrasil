@@ -311,3 +311,39 @@ func TestASlowAnswerIsNotAskedAgainWithoutJSON(t *testing.T) {
 		t.Fatalf("asked the model %d times, want once", asked)
 	}
 }
+
+func TestAGoalConversationGoesToItsAgentWithWhatItMissed(t *testing.T) {
+	n, _ := newNorn(t)
+	fake := withSindri(t, n)
+	ctx := context.Background()
+	fake.agents[0].Status = "idle"
+	fake.agents[0].Pending = nil
+	_ = n.Store.BindAgent(ctx, "goal-1", "a1")
+	_, _ = n.Store.AddAgentTurn(ctx, "goal-1", "a1", "my-widget: Fix the DM titles", "Done; the theme was removed in e2e1fa9.")
+	norn := "Norn"
+	_, _ = n.Store.AddTurn(ctx, "goal-1", "user", "who made that commit?", &norn, nil, nil)
+	_, _ = n.Store.AddTurn(ctx, "goal-1", "assistant", "Commit e2e1fa9 was made by you.", nil, nil, nil)
+	if _, err := n.Ask(ctx, AskRequest{Question: "why do you think I made it?", Session: "goal-1"}); err != nil {
+		t.Fatal(err)
+	}
+	call := fake.called("POST /v1/work/reply")
+	if call == "" {
+		t.Fatalf("not sent to the goal's agent: %v", fake.calls)
+	}
+	for _, want := range []string{"who made that commit?", "my-agent (Norn, not you): Commit e2e1fa9 was made by you.", "why do you think I made it?"} {
+		if !strings.Contains(call, want) {
+			t.Fatalf("the reply lacks %q: %s", want, call)
+		}
+	}
+	if strings.Contains(call, "the theme was removed") {
+		t.Fatalf("the agent's own words were sent back to it: %s", call)
+	}
+}
+
+func TestMissedIsEmptyWhenNothingWasSaidByOthers(t *testing.T) {
+	agent, label := "a1", "Fix"
+	chat := []Turn{{Role: "assistant", Author: &agent, Label: &label, Content: "Done."}, {Role: "user", Label: &label, Content: "thanks"}}
+	if got := Missed(chat, "a1", "Fix"); got != "" {
+		t.Fatalf("got %q", got)
+	}
+}
