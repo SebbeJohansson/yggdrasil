@@ -1085,6 +1085,24 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/resume:
+    post:
+      summary: Make the goal's parts waiting for Claude usage due now and start a pass over the agents, so they resume without waiting for their next try.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      responses:
+        "200":
+          description: The goal, and how many of its parts were made due.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [goal, due]
+                properties:
+                  goal: { $ref: "#/components/schemas/Goal" }
+                  due: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/goals/{id}/close:
     post:
       summary: Close the goal without merging the rest. Each branch of it with no commit past its base and nothing uncommitted is removed with its worktree; branches with work stay.

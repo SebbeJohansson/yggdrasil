@@ -6,6 +6,7 @@ package sindri
 
 import (
 	"cmp"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -395,6 +396,37 @@ func (w *Work) RestartPart(id int64, repo string) ([]Started, []string, error) {
 	return started, failed, nil
 }
 
+// ResumeGoal makes the goal's parts waiting for Claude usage due now and
+// starts a pass over the agents, so they resume without waiting for their
+// next try. It returns how many parts it made due.
+func (w *Work) ResumeGoal(ctx context.Context, id int64) (int, error) {
+	goal, err := w.Store.Goal(id)
+	if err != nil || goal == nil {
+		return 0, cmp.Or(err, httpErr(404, "no goal %d", id))
+	}
+	tasks, err := w.Store.ScheduledTasks()
+	if err != nil {
+		return 0, err
+	}
+	due := 0
+	for _, task := range tasks {
+		if task.GoalID == nil || *task.GoalID != id || task.Scheduled == nil {
+			continue
+		}
+		next := *task.Scheduled
+		next.NextTryAt = w.Store.ms()
+		if _, err := w.Store.db.Exec(`UPDATE tasks SET scheduled = ? WHERE id = ?`, mustJSON(next), task.ID); err != nil {
+			return due, err
+		}
+		due++
+	}
+	if due == 0 {
+		return 0, httpErr(409, "no part of goal %d is waiting to resume", id)
+	}
+	go func() { _ = w.Feed(context.WithoutCancel(ctx)) }()
+	return due, nil
+}
+
 // RelookText asks an agent to read its goal again.
 func RelookText(goal Goal) string {
 	context := ""
@@ -637,6 +669,16 @@ func (w *Work) MountWork(p *part.Part) {
 		}
 		view, _ := w.goalView(id)
 		part.JSON(rw, http.StatusOK, map[string]any{"goal": view, "started": started, "failed": failed})
+	})
+	p.Handle("POST /v1/goals/{id}/resume", func(rw http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		due, err := w.ResumeGoal(r.Context(), id)
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		view, _ := w.goalView(id)
+		part.JSON(rw, http.StatusOK, map[string]any{"goal": view, "due": due})
 	})
 	p.Handle("POST /v1/goals/{id}/close", func(rw http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)

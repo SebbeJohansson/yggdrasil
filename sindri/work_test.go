@@ -264,3 +264,28 @@ func TestNeededPartsAndMessages(t *testing.T) {
 		t.Fatalf("got %q", PickedTask("Task: **Fix the DM title**.\nDone"))
 	}
 }
+
+func TestResumingAGoalMakesItsParkedPartsDueNow(t *testing.T) {
+	w, _ := newWork(t)
+	goal, _ := w.Store.AddGoal("Wait for usage", []string{"demo"}, "manual", "", "goal-1")
+	if _, err := w.ResumeGoal(context.Background(), goal.ID); err == nil {
+		t.Fatalf("resumed a goal with nothing waiting")
+	}
+	if _, err := w.Store.AddTask("goal-1", "Wait for usage", "code", "a1", "demo", "", 0, &goal.ID); err != nil {
+		t.Fatal(err)
+	}
+	later := w.Store.now().Add(time.Hour).UnixMilli()
+	if err := w.Store.Schedule("a1", Scheduled{AgentID: "a1", NextTryAt: later}, "usage limit"); err != nil {
+		t.Fatal(err)
+	}
+	w.feeding.Lock() // no pass: only the due time is under test
+	defer w.feeding.Unlock()
+	due, err := w.ResumeGoal(context.Background(), goal.ID)
+	if err != nil || due != 1 {
+		t.Fatalf("got %d %v", due, err)
+	}
+	tasks := must2(w.Store.ScheduledTasks())
+	if len(tasks) != 1 || tasks[0].Scheduled.NextTryAt > w.Store.ms() {
+		t.Fatalf("got %+v", tasks)
+	}
+}
