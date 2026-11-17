@@ -159,6 +159,9 @@ func (a *asker) rules() (string, string) {
 }
 
 // handOver gives a question that needs tools to Sindri's question agent.
+// AnswerTimeout is how long a question's answer may take on the local model.
+var AnswerTimeout = 3 * time.Minute
+
 func (a *asker) handOver(via string, inbox []string) AskResponse {
 	communication, mode := a.rules()
 	agents, _ := a.n.Store.AgentsOf(a.ctx, a.session)
@@ -616,13 +619,16 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 	}
 	messages := append([]llm.Message{{Role: "system", Content: AskSystemPrompt(LoadProfile(n.Config.ProfilePath), a.recalled, inbox, agentLines, append(OverviewLines(everyone, now), SessionLines(a.yours)...), calendar, notes)}}, a.history...)
 	messages = append(messages, llm.Message{Role: "user", Content: question})
-	options := llm.Options{Purpose: "answer", Model: n.Config.AskModel, Temperature: 0.5, TopP: 0.9, MaxTokens: 400}
+	// You wait for this one, and the local model can take a minute just to
+	// read a long question (a meeting brief with notes) while it finishes another call.
+	options := llm.Options{Purpose: "answer", Model: n.Config.AskModel, Temperature: 0.5, TopP: 0.9, MaxTokens: 400, Timeout: AnswerTimeout}
 	if calendar != nil {
 		options.Temperature = 0
 		options.Format = map[string]any{"type": "object", "properties": map[string]any{"answer": map[string]any{"type": "string"}, "enough": map[string]any{"type": "boolean"}}, "required": []string{"answer", "enough"}}
 	}
 	raw, err := n.LLM.Chat(ctx, messages, options)
-	if err != nil && options.Format != nil {
+	// A timeout is the model being slow, not JSON mode: asking again would only wait as long again.
+	if err != nil && options.Format != nil && FailureKind(err.Error()) != failTimeout {
 		// XeStrata's JSON mode gives up on some questions (structured_output_failed).
 		// A plain answer is better than none: asked again without it, and read as
 		// enough unless it says it does not know.

@@ -279,3 +279,35 @@ func TestALocalAnswerSurvivesJSONModeFailing(t *testing.T) {
 		t.Fatalf("asked with JSON mode %v, want once with and then once without", formats)
 	}
 }
+
+func TestASlowAnswerIsNotAskedAgainWithoutJSON(t *testing.T) {
+	var mu sync.Mutex
+	asked := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked++
+		mu.Unlock()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(500 * time.Millisecond):
+		}
+	}))
+	defer model.Close()
+	n, p := newNorn(t)
+	n.LLM = &llm.Client{PrimaryURL: model.URL + "/v1"}
+	was := AnswerTimeout
+	AnswerTimeout = 100 * time.Millisecond
+	defer func() { AnswerTimeout = was }()
+	now := time.Now()
+	n.Accounts.Work.Set(CalendarSnapshot{From: now.Add(-time.Hour).UnixMilli(), To: now.Add(24 * time.Hour).UnixMilli(), At: now.UnixMilli()})
+
+	code, _ := call(t, p, "POST", "/v1/ask", map[string]string{"question": "/local What is on my calendar today?", "to": "norn"})
+	if code == http.StatusOK {
+		t.Fatal("answered without a model")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if asked != 1 {
+		t.Fatalf("asked the model %d times, want once", asked)
+	}
+}
