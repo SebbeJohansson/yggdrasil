@@ -32,6 +32,8 @@ type SlackMe struct {
 	UserID string
 	Handle string
 	URL    string
+	// TeamID is the workspace's id, which the desktop app's slack: links need.
+	TeamID string
 }
 
 // SlackChannel is one conversation.
@@ -87,6 +89,20 @@ func SlackPermalink(workspace, channel, ts, threadTS string) string {
 		link += "?thread_ts=" + url.QueryEscape(threadTS) + "&cid=" + url.QueryEscape(channel)
 	}
 	return link
+}
+
+// SlackAppLink opens the message in the Slack desktop app, without the
+// browser's redirect page in between. thread_ts makes a reply open in its
+// thread rather than in the channel behind it.
+func SlackAppLink(team, channel, ts, threadTS string) string {
+	if team == "" || channel == "" || ts == "" {
+		return ""
+	}
+	query := url.Values{"team": {team}, "id": {channel}, "message": {ts}}
+	if threadTS != "" && threadTS != ts {
+		query.Set("thread_ts", threadTS)
+	}
+	return "slack://channel?" + query.Encode()
 }
 
 var (
@@ -336,7 +352,8 @@ func SlackItems(channel SlackChannel, messages []SlackMessage, me SlackMe, names
 			ID: "slack:" + channel.ID + ":" + m.TS, Source: "slack", From: from, Sender: emails[m.User],
 			Recipients: members, Subject: subject, Preview: preview, Text: full, Context: context, At: at,
 			Direct: channel.IsIM || channel.IsMPIM, MentionsMe: slackMentionsMe(m.Text, me),
-			Link: SlackPermalink(me.URL, channel.ID, m.TS, m.ThreadTS),
+			Link:    SlackPermalink(me.URL, channel.ID, m.TS, m.ThreadTS),
+			AppLink: SlackAppLink(me.TeamID, channel.ID, m.TS, m.ThreadTS),
 		})
 	}
 	return items
@@ -488,11 +505,12 @@ func (s *Slack) Sweep(ctx context.Context, token string, progress func(SweepProg
 		UserID string `json:"user_id"`
 		User   string `json:"user"`
 		URL    string `json:"url"`
+		TeamID string `json:"team_id"`
 	}
 	if err := s.call(ctx, token, "/api/auth.test", &who); err != nil {
 		return nil, err
 	}
-	me := SlackMe{UserID: who.UserID, Handle: who.User, URL: strings.TrimRight(who.URL, "/")}
+	me := SlackMe{UserID: who.UserID, Handle: who.User, URL: strings.TrimRight(who.URL, "/"), TeamID: who.TeamID}
 
 	var listed []SlackChannel
 	cursor := ""

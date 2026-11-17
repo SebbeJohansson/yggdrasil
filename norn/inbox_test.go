@@ -91,7 +91,7 @@ func TestSlack(t *testing.T) {
 	if len(order) != 8 || channels != 2 {
 		t.Fatalf("a quarter of the budget is kept for channels: %d of %d", channels, len(order))
 	}
-	me := SlackMe{UserID: "UME", URL: "https://team.slack.com"}
+	me := SlackMe{UserID: "UME", URL: "https://team.slack.com", TeamID: "T1"}
 	items := SlackItems(SlackChannel{ID: "D1", IsIM: true, User: "U1"}, []SlackMessage{
 		{User: "U1", Text: "hi <@UME>", TS: "1700000000.000100"},
 		{User: "UME", Text: "mine", TS: "1700000001.000100"},
@@ -103,6 +103,12 @@ func TestSlack(t *testing.T) {
 	}
 	if items[0].Link != "https://team.slack.com/archives/D1/p1700000000000100" {
 		t.Fatalf("got %q", items[0].Link)
+	}
+	if items[0].AppLink != "slack://channel?id=D1&message=1700000000.000100&team=T1" {
+		t.Fatalf("got %q", items[0].AppLink)
+	}
+	if got := SlackAppLink("T1", "C1", "2.0", "1.0"); got != "slack://channel?id=C1&message=2.0&team=T1&thread_ts=1.0" {
+		t.Fatalf("a reply opens in its thread: %q", got)
 	}
 }
 

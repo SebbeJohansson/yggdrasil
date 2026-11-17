@@ -57,6 +57,9 @@ type Item struct {
 	// Hidden is why it never reaches the panel, in words.
 	Hidden string `json:"hidden,omitempty"`
 	Link   string `json:"link,omitempty"`
+	// AppLink opens it in the desktop app instead of the browser, where the
+	// source has one (Slack's slack: protocol).
+	AppLink string `json:"appLink,omitempty"`
 }
 
 // SourceStatus is whether a source answered. Carried, not thrown: two of
