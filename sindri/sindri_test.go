@@ -13,12 +13,14 @@ import (
 )
 
 // fakeClaude answers each message with one commit in its folder, and asks
-// for permission first when the message says "ask".
+// for permission first when the message says "ask", and changes nothing when
+// it says "Leave it as it is".
 const fakeClaude = `#!/bin/sh
 echo '{"type":"system","subtype":"init","model":"fake-model"}'
 while read -r line; do
   case "$line" in
     *control_response*) echo '{"type":"result","subtype":"success","result":"Allowed and done.","total_cost_usd":0.02,"num_turns":1}'; continue ;;
+    *"Leave it as it is"*) echo '{"type":"result","subtype":"success","result":"Nothing to change.","num_turns":1}'; continue ;;
     *"Take screenshots"*) echo '{"type":"result","subtype":"success","result":"Nothing visible.","num_turns":1}'; continue ;;
     *ask*) echo '{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"rm -rf build"}}}'; continue ;;
   esac

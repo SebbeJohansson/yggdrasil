@@ -1051,6 +1051,40 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/close:
+    post:
+      summary: Close the goal without merging the rest. Each branch of it with no commit past its base and nothing uncommitted is removed with its worktree; branches with work stay.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      responses:
+        "200":
+          description: The closed goal, and what happened to each unmerged branch.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [goal, branches]
+                properties:
+                  goal: { $ref: "#/components/schemas/Goal" }
+                  branches:
+                    type: array
+                    items:
+                      type: object
+                      required: [repo, branch, removed]
+                      properties:
+                        repo: { type: string }
+                        branch: { type: string }
+                        removed: { type: boolean }
+                        why: { type: string, description: Why the branch stayed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/reopen:
+    post:
+      summary: Open a closed goal again. Removed branches stay removed.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      responses:
+        "200": { $ref: "#/components/responses/Goal" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
   /v1/goals/{id}/images:
     post:
       summary: A picture for the goal. design is how it should look; current is how it looks now.
@@ -1308,8 +1342,9 @@ components:
         source: { type: string }
         context: { type: string }
         session: { type: string }
+        closedAt: { type: [integer, "null"], description: When you closed the goal without merging it all; null while open. }
         images: { type: array, items: { $ref: "#/components/schemas/GoalImage" } }
-        state: { type: string, enum: [draft, running, needs-you, done, merged] }
+        state: { type: string, enum: [draft, running, needs-you, done, merged, closed] }
         tasks:
           type: array
           items:

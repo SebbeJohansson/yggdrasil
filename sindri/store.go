@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS goals (
 	source TEXT NOT NULL,
 	session TEXT NOT NULL,
 	context TEXT NOT NULL DEFAULT '',
-	linear_synced TEXT
+	linear_synced TEXT,
+	closed_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS goal_images (
 	id INTEGER PRIMARY KEY,
@@ -101,6 +102,8 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("sindri schema: %w", err)
 	}
+	// Columns added since a table was made; an error means it is already there.
+	_, _ = db.Exec(`ALTER TABLE goals ADD COLUMN closed_at INTEGER`)
 	return &Store{db: db, now: time.Now}, nil
 }
 
@@ -288,12 +291,14 @@ type Goal struct {
 	Source  string   `json:"source"`
 	Context string   `json:"context"`
 	Session string   `json:"session"`
+	// ClosedAt is when you closed the goal without merging it all; nil while open.
+	ClosedAt *int64 `json:"closedAt"`
 }
 
 func scanGoal(row interface{ Scan(...any) error }) (Goal, error) {
 	var g Goal
 	var repos string
-	err := row.Scan(&g.ID, &g.At, &g.Title, &repos, &g.Source, &g.Session, &g.Context)
+	err := row.Scan(&g.ID, &g.At, &g.Title, &repos, &g.Source, &g.Session, &g.Context, &g.ClosedAt)
 	_ = json.Unmarshal([]byte(repos), &g.Repos)
 	if g.Repos == nil {
 		g.Repos = []string{}
@@ -315,7 +320,7 @@ func (s *Store) AddGoal(title string, repos []string, source, context, session s
 
 // Goal is one goal; nil when there is none.
 func (s *Store) Goal(id int64) (*Goal, error) {
-	g, err := scanGoal(s.db.QueryRow(`SELECT id, at, title, repos, source, session, context FROM goals WHERE id = ?`, id))
+	g, err := scanGoal(s.db.QueryRow(`SELECT id, at, title, repos, source, session, context, closed_at FROM goals WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -324,7 +329,7 @@ func (s *Store) Goal(id int64) (*Goal, error) {
 
 // Goals is every goal, newest first.
 func (s *Store) Goals() ([]Goal, error) {
-	rows, err := s.db.Query(`SELECT id, at, title, repos, source, session, context FROM goals ORDER BY id DESC`)
+	rows, err := s.db.Query(`SELECT id, at, title, repos, source, session, context, closed_at FROM goals ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -359,6 +364,16 @@ func (s *Store) UpdateGoal(id int64, title *string, repos []string, context *str
 		}
 	}
 	return nil
+}
+
+// SetGoalClosed closes a goal now, or opens it again.
+func (s *Store) SetGoalClosed(id int64, closed bool) error {
+	var at any
+	if closed {
+		at = s.ms()
+	}
+	_, err := s.db.Exec(`UPDATE goals SET closed_at = ? WHERE id = ?`, at, id)
+	return err
 }
 
 // DeleteGoal removes the goal record only; its tasks and agents stay.

@@ -866,6 +866,16 @@ func (w *Worktree) Remove(force bool) (string, error) {
 	return strings.Join(done, "; "), nil
 }
 
+// IsEmpty is whether the branch holds no work: no commit past its base and
+// nothing uncommitted. A branch already gone, or one git cannot read, is not.
+func (w *Worktree) IsEmpty() bool {
+	if !w.branchExists() {
+		return false
+	}
+	ahead, ok := tryGit(w.Repo, "rev-list", "--count", w.Base+".."+w.Branch)
+	return ok && ahead == "0" && len(w.uncommitted()) == 0
+}
+
 // Head is the worktree's current commit.
 func (w *Worktree) Head() string {
 	head, _ := tryGit(w.Path, "rev-parse", "--short", "HEAD")

@@ -1059,6 +1059,22 @@ func (m *Manager) RemoveWorktree(id string, force bool) (string, error) {
 	return done.(string), nil
 }
 
+// RemoveIfEmpty removes an agent's worktree and branch when the branch holds
+// no work; false, and nothing touched, when it does or the agent is busy.
+func (m *Manager) RemoveIfEmpty(id string) (bool, error) {
+	removed, err := m.withWorktree(id, true, func(a *Agent) (any, error) {
+		if !a.Worktree.IsEmpty() {
+			return false, nil
+		}
+		_, err := a.Worktree.Remove(false)
+		return err == nil, err
+	})
+	if err != nil {
+		return false, err
+	}
+	return removed.(bool), nil
+}
+
 // FixConflicts asks an agent to rebase its branch and resolve the conflicts.
 func (m *Manager) FixConflicts(id string) (*Agent, error) {
 	text, err := m.withWorktree(id, true, func(a *Agent) (any, error) {

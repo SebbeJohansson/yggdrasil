@@ -8,6 +8,8 @@ package sindri
 //	done                  In Progress  (branches ready, not merged yet)
 //	merged                In Review    (a started state named "review"; else stays In Progress)
 //
+// A closed goal leaves its issue where it is.
+//
 // Never Done: you close the issue once you have checked the work. Forward
 // only: an issue already further along is left alone, and a canceled one is
 // never touched. Each goal remembers the step last written (linear_synced),
@@ -77,7 +79,7 @@ func (w *Work) SyncLinear(ctx context.Context) error {
 	now := time.Now()
 	for _, goal := range views {
 		key := linear.KeyOf(goal.Source)
-		if key == "" {
+		if key == "" || goal.State == "closed" {
 			continue
 		}
 		step := LinearStep(goal.State)

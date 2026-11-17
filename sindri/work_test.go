@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -144,6 +146,41 @@ func TestAGoalStartsItsRepoAndReadsItsStateFromItsTasks(t *testing.T) {
 	}
 	if _, _, err := w.StartGoal(goal.ID, nil); err == nil {
 		t.Fatalf("started the same repo twice")
+	}
+}
+
+func TestClosingAGoalRemovesItsEmptyBranchesAndKeepsTheRest(t *testing.T) {
+	w, _ := newWork(t)
+	goal, _ := w.Store.AddGoal("Leave it as it is", []string{"demo"}, "manual", "", "goal-1")
+	started, _, err := w.StartGoal(goal.ID, nil)
+	if err != nil || len(started) != 1 {
+		t.Fatalf("got %+v %v", started, err)
+	}
+	a := waitFor(t, w.Agents, started[0].AgentID, func(a *Agent) bool { return a.Status == Waiting })
+	path := a.Worktree.Path
+	branches, err := w.CloseGoal(goal.ID)
+	if err != nil || len(branches) != 1 || !branches[0].Removed {
+		t.Fatalf("got %+v %v", branches, err)
+	}
+	if exists(path) || a.Worktree.branchExists() {
+		t.Fatalf("the empty branch is still there")
+	}
+	if view := must2(w.goalView(goal.ID)); view.State != "closed" || view.ClosedAt == nil {
+		t.Fatalf("got %+v", view)
+	}
+	if err := w.Store.SetGoalClosed(goal.ID, false); err != nil || must2(w.goalView(goal.ID)).State == "closed" {
+		t.Fatalf("could not open it again: %v", err)
+	}
+
+	kept, _ := w.Store.AddGoal("Change something", []string{"demo"}, "manual", "", "goal-2")
+	started, _, _ = w.StartGoal(kept.ID, nil)
+	b := waitFor(t, w.Agents, started[0].AgentID, func(a *Agent) bool { return a.Status == Waiting })
+	if err := os.WriteFile(filepath.Join(b.Worktree.Path, "work.txt"), []byte("work"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	branches, err = w.CloseGoal(kept.ID)
+	if err != nil || len(branches) != 1 || branches[0].Removed || !exists(b.Worktree.Path) {
+		t.Fatalf("removed a branch with work: %+v %v", branches, err)
 	}
 }
 

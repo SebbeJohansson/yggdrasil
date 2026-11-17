@@ -5,6 +5,7 @@ package sindri
 // approvals and settings. Ported from my-agent's tasks/goals.ts.
 
 import (
+	"cmp"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -53,7 +54,7 @@ type GoalNext struct {
 type GoalView struct {
 	Goal
 	Images []GoalImage `json:"images"`
-	State  string      `json:"state"` // draft, running, needs-you, done, merged
+	State  string      `json:"state"` // draft, running, needs-you, done, merged, closed
 	Tasks  []GoalTask  `json:"tasks"`
 	Next   GoalNext    `json:"next"`
 }
@@ -159,7 +160,11 @@ func (w *Work) GoalViews() ([]GoalView, error) {
 		if tasks == nil {
 			tasks = []GoalTask{}
 		}
-		views = append(views, GoalView{Goal: goal, Images: images, State: GoalState(tasks), Tasks: tasks, Next: NextFor(tasks)})
+		view := GoalView{Goal: goal, Images: images, State: GoalState(tasks), Tasks: tasks, Next: NextFor(tasks)}
+		if goal.ClosedAt != nil {
+			view.State, view.Next = "closed", GoalNext{Action: "none", Text: "Closed"}
+		}
+		views = append(views, view)
 	}
 	return views, nil
 }
@@ -175,6 +180,48 @@ func (w *Work) goalView(id int64) (*GoalView, error) {
 		}
 	}
 	return nil, httpErr(404, "no goal %d", id)
+}
+
+// ClosedBranch is one branch of a goal being closed: removed when it held no
+// work, kept when it did or its agent was busy.
+type ClosedBranch struct {
+	Repo    string `json:"repo"`
+	Branch  string `json:"branch"`
+	Removed bool   `json:"removed"`
+	Why     string `json:"why,omitempty"`
+}
+
+// CloseGoal closes a goal without merging the rest. Every branch of it that
+// holds no work, no commit past its base and nothing uncommitted, is removed
+// with its worktree; branches with work stay for you to merge or remove.
+func (w *Work) CloseGoal(id int64) ([]ClosedBranch, error) {
+	if goal, err := w.Store.Goal(id); err != nil || goal == nil {
+		return nil, cmp.Or(err, httpErr(404, "no goal %d", id))
+	}
+	linked, err := w.Store.GoalTasks()
+	if err != nil {
+		return nil, err
+	}
+	branches := []ClosedBranch{}
+	seen := map[string]bool{}
+	for _, view := range w.TaskViews(linked) {
+		if *view.GoalID != id || view.Branch == nil || view.Merged || seen[view.Agent] {
+			continue
+		}
+		seen[view.Agent] = true
+		branch := ClosedBranch{Repo: repoOf(GoalTask{Repo: view.Project}), Branch: *view.Branch}
+		removed, err := w.Agents.RemoveIfEmpty(view.Agent)
+		switch {
+		case err != nil:
+			branch.Why = err.Error()
+		case removed:
+			branch.Removed = true
+		default:
+			branch.Why = "has work"
+		}
+		branches = append(branches, branch)
+	}
+	return branches, w.Store.SetGoalClosed(id, true)
 }
 
 var kindText = map[string]string{"design": "design, not built yet: how it should look", "current": "how it looks now"}
@@ -485,6 +532,29 @@ func (w *Work) MountWork(p *part.Part) {
 		}
 		view, _ := w.goalView(id)
 		part.JSON(rw, http.StatusOK, map[string]any{"goal": view, "told": told, "failed": failed})
+	})
+	p.Handle("POST /v1/goals/{id}/close", func(rw http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		branches, err := w.CloseGoal(id)
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		view, _ := w.goalView(id)
+		part.JSON(rw, http.StatusOK, map[string]any{"goal": view, "branches": branches})
+	})
+	p.Handle("POST /v1/goals/{id}/reopen", func(rw http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if goal, _ := w.Store.Goal(id); goal == nil {
+			part.Error(rw, http.StatusNotFound, "no goal "+r.PathValue("id"))
+			return
+		}
+		if err := w.Store.SetGoalClosed(id, false); err != nil {
+			fail(rw, err)
+			return
+		}
+		view, _ := w.goalView(id)
+		part.JSON(rw, http.StatusOK, view)
 	})
 	p.Handle("POST /v1/goals/{id}/images", w.addImage)
 	p.Handle("GET /v1/goals/{id}/images/{imageId}", func(rw http.ResponseWriter, r *http.Request) {
