@@ -9,7 +9,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
 	"slices"
@@ -90,6 +92,22 @@ func GoalState(tasks []GoalTask) string {
 	return "done"
 }
 
+// currentParts is the newest task of each repo, in the order given: a
+// restarted part's older tasks do not count toward the goal's state.
+func currentParts(tasks []GoalTask) []GoalTask {
+	newest := map[string]int64{}
+	for _, t := range tasks {
+		newest[repoOf(t)] = max(newest[repoOf(t)], t.ID)
+	}
+	var current []GoalTask
+	for _, t := range tasks {
+		if newest[repoOf(t)] == t.ID {
+			current = append(current, t)
+		}
+	}
+	return current
+}
+
 func repoOf(t GoalTask) string {
 	if t.Repo == nil {
 		return ""
@@ -166,7 +184,8 @@ func (w *Work) GoalViews() ([]GoalView, error) {
 		if tasks == nil {
 			tasks = []GoalTask{}
 		}
-		view := GoalView{Goal: goal, Images: images, State: GoalState(tasks), Tasks: tasks, Next: NextFor(tasks)}
+		current := currentParts(tasks)
+		view := GoalView{Goal: goal, Images: images, State: GoalState(current), Tasks: tasks, Next: NextFor(current)}
 		if goal.ClosedAt != nil {
 			view.State, view.Next = "closed", GoalNext{Action: "none", Text: "Closed"}
 		}
@@ -283,6 +302,14 @@ func (w *Work) StartGoal(id int64, only []string) ([]Started, []string, error) {
 			return nil, nil, httpErr(400, "%s is not a project under %s", repo, w.Agents.roots[0])
 		}
 	}
+	started, failed := w.startParts(goal, repos)
+	return started, failed, nil
+}
+
+// startParts starts one coding agent per repo for the goal, all on one branch
+// name, with the goal's pictures where they may read them.
+func (w *Work) startParts(goal *Goal, repos []string) ([]Started, []string) {
+	id := goal.ID
 	parts := []string{goal.Title}
 	if goal.Context != "" {
 		parts = append(parts, "Context (background for the goal, not the goal itself):\n"+goal.Context)
@@ -319,7 +346,52 @@ func (w *Work) StartGoal(id int64, only []string) ([]Started, []string, error) {
 			failed = append(failed, "Could not start a coding agent in "+repo)
 		}
 	}
-	return handed.Parts, failed, nil
+	return handed.Parts, failed
+}
+
+// latestPart is the newest task of each of a goal's repos: what its part is
+// now. A restarted part's older tasks are history.
+func (w *Work) latestPart(id int64) (map[string]TaskView, error) {
+	linked, err := w.Store.GoalTasks()
+	if err != nil {
+		return nil, err
+	}
+	latest := map[string]TaskView{}
+	for _, view := range w.TaskViews(linked) {
+		if *view.GoalID != id || view.Agent == "" {
+			continue
+		}
+		repo := nullString(view.Project, "")
+		if old, ok := latest[repo]; !ok || view.ID > old.ID {
+			latest[repo] = view
+		}
+	}
+	return latest, nil
+}
+
+// RestartPart starts a fresh agent for one repo of a started goal, in place
+// of its part that stopped, failed, was lost or needed no changes. The old
+// worktree goes with it when it holds no work; one with work stays to review.
+func (w *Work) RestartPart(id int64, repo string) ([]Started, []string, error) {
+	goal, err := w.Store.Goal(id)
+	if err != nil || goal == nil {
+		return nil, nil, cmp.Or(err, httpErr(404, "no goal %d", id))
+	}
+	if !slices.Contains(goal.Repos, repo) {
+		return nil, nil, httpErr(400, "%s is not one of the goal's repos", repo)
+	}
+	latest, err := w.latestPart(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if old, ok := latest[repo]; ok {
+		if old.Status == "running" {
+			return nil, nil, httpErr(409, "the %s part is still working: stop it first", repo)
+		}
+		_, _ = w.Agents.RemoveIfEmpty(old.Agent)
+	}
+	started, failed := w.startParts(goal, []string{repo})
+	return started, failed, nil
 }
 
 // RelookText asks an agent to read its goal again.
@@ -341,17 +413,32 @@ func (w *Work) RelookGoal(id int64) ([]Started, []string, error) {
 	if err != nil || goal == nil {
 		return nil, nil, httpErr(404, "no goal %d", id)
 	}
-	linked, _ := w.Store.GoalTasks()
+	latest, err := w.latestPart(id)
+	if err != nil {
+		return nil, nil, err
+	}
 	told, failed := []Started{}, []string{}
-	for _, t := range linked {
-		if t.GoalID == nil || *t.GoalID != id || t.Agent == "" {
+	var restart []string
+	for _, repo := range slices.Sorted(maps.Keys(latest)) {
+		t := latest[repo]
+		if agent, err := w.Agents.Get(t.Agent); (err != nil || !exists(agent.Cwd)) && slices.Contains(goal.Repos, repo) {
+			restart = append(restart, repo) // its agent or folder is gone: start the part again
 			continue
 		}
-		if _, err := w.Tell(t.Agent, RelookText(*goal)); err != nil {
-			failed = append(failed, "Could not tell the "+nullString(t.Project, "goal")+" agent")
-			continue
+		_, err := w.Tell(t.Agent, RelookText(*goal))
+		var gone *HTTPError
+		switch {
+		case err == nil:
+			told = append(told, Started{AgentID: t.Agent, Project: repo})
+		case errors.As(err, &gone) && (gone.Status == 404 || gone.Status == 410) && slices.Contains(goal.Repos, repo):
+			restart = append(restart, repo) // its agent or folder is gone: start the part again
+		default:
+			failed = append(failed, "Could not tell the "+cmp.Or(repo, "goal")+" agent: "+err.Error())
 		}
-		told = append(told, Started{AgentID: t.Agent, Project: nullString(t.Project, "")})
+	}
+	if len(restart) > 0 {
+		started, notStarted := w.startParts(goal, restart)
+		told, failed = append(told, started...), append(failed, notStarted...)
 	}
 	if len(told) == 0 && len(failed) == 0 {
 		return nil, nil, httpErr(400, "the goal has no agents to look again: start it first")
@@ -541,6 +628,16 @@ func (w *Work) MountWork(p *part.Part) {
 		}
 		view, _ := w.goalView(id)
 		part.JSON(rw, http.StatusOK, map[string]any{"goal": view, "told": told, "failed": failed})
+	})
+	p.Handle("POST /v1/goals/{id}/parts/{repo}/restart", func(rw http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		started, failed, err := w.RestartPart(id, r.PathValue("repo"))
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		view, _ := w.goalView(id)
+		part.JSON(rw, http.StatusOK, map[string]any{"goal": view, "started": started, "failed": failed})
 	})
 	p.Handle("POST /v1/goals/{id}/close", func(rw http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)

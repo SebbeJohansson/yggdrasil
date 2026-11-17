@@ -216,6 +216,34 @@ func TestAnAgentStoppedMidWorkKeepsItsWorktree(t *testing.T) {
 	}
 }
 
+func TestAPartWhoseWorktreeIsGoneStartsAgainOnRestartAndOnLookAgain(t *testing.T) {
+	w, _ := newWork(t)
+	goal, _ := w.Store.AddGoal("Leave it as it is", []string{"demo"}, "manual", "", "goal-1")
+	started, _, _ := w.StartGoal(goal.ID, nil)
+	first := started[0].AgentID
+	a := waitFor(t, w.Agents, first, func(a *Agent) bool { return a.Status == Waiting })
+	path := a.Worktree.Path
+	feedUntil(t, w, func() bool { return !exists(path) })
+
+	told, failed, err := w.RelookGoal(goal.ID)
+	if err != nil || len(failed) != 0 || len(told) != 1 || told[0].AgentID == first {
+		t.Fatalf("look again did not start the part again: %+v %v %v", told, failed, err)
+	}
+	second := told[0].AgentID
+	waitFor(t, w.Agents, second, func(a *Agent) bool { return a.Status == Waiting })
+	if view := must2(w.goalView(goal.ID)); view.State == "needs-you" {
+		t.Fatalf("the old part still counts: %+v", view)
+	}
+
+	restarted, failed, err := w.RestartPart(goal.ID, "demo")
+	if err != nil || len(failed) != 0 || len(restarted) != 1 || restarted[0].AgentID == second {
+		t.Fatalf("got %+v %v %v", restarted, failed, err)
+	}
+	if _, _, err := w.RestartPart(goal.ID, "other"); err == nil {
+		t.Fatalf("restarted a repo the goal does not have")
+	}
+}
+
 func TestTodoCandidates(t *testing.T) {
 	todo := "# Todo\n- [x] done\n- [ ] Add **dark** mode to [the panel](x.md)\n  with a toggle\n- [ ] Second\n"
 	got := TodoCandidates("demo", todo, map[string]int64{"todo:demo:- [ ] Second": 7})

@@ -1064,9 +1064,21 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/parts/{repo}/restart:
+    post:
+      summary: Start a fresh agent for one repo of the goal, in place of its part. The old worktree is removed when it holds no work; one with work stays to review.
+      parameters:
+        - { $ref: "#/components/parameters/GoalID" }
+        - { name: repo, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/GoalStarted" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/goals/{id}/relook:
     post:
-      summary: Tell each of the goal's agents to read it again.
+      summary: Tell each part's newest agent to read the goal again. A part whose agent or worktree is gone starts again with a fresh agent.
       parameters: [{ $ref: "#/components/parameters/GoalID" }]
       responses:
         "200": { $ref: "#/components/responses/GoalStarted" }
