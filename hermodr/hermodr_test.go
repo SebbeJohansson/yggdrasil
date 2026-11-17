@@ -2,6 +2,7 @@ package hermodr
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -200,13 +201,29 @@ func TestFocusOverHTTPIsTheOwnersAndOutlivesARestart(t *testing.T) {
 	if code := do("PUT", contracttest.Owner, `{"until":"2026-11-18T11:00:00Z"}`); code != http.StatusBadRequest {
 		t.Fatalf("a day: %d", code)
 	}
+	for _, bad := range []string{
+		`{"until":"2026-11-17T11:00:00Z","kind":"deep"}`,
+		`{"until":"2026-11-17T11:00:00Z","kind":"goal"}`,
+		`{"until":"2026-11-17T11:00:00Z","kind":"dev","goal":{"id":3,"title":"Dark mode"}}`,
+		`{"until":"2026-11-17T11:00:00Z","intent":"` + strings.Repeat("x", MaxIntent+1) + `"}`,
+	} {
+		if code := do("PUT", contracttest.Owner, bad); code != http.StatusBadRequest {
+			t.Fatalf("%s: %d", bad, code)
+		}
+	}
+	if code := do("PUT", contracttest.Owner, `{"until":"2026-11-17T11:00:00Z","kind":"dev","intent":" Ship it "}`); code != http.StatusOK {
+		t.Fatalf("dev: %d", code)
+	}
+	if f := h.focusNow(); f.Kind != KindDev || f.Intent != "Ship it" {
+		t.Fatalf("dev focus %+v", f)
+	}
 	if code := do("PUT", contracttest.Owner, `{"until":"2026-11-17T11:00:00Z","goal":{"id":3,"title":"Dark mode"}}`); code != http.StatusOK {
 		t.Fatalf("owner: %d", code)
 	}
 	h.Close()
 	again := open()
 	defer again.Close()
-	if f := again.focusNow(); !f.On || f.Goal == nil || f.Goal.Title != "Dark mode" {
+	if f := again.focusNow(); !f.On || f.Goal == nil || f.Goal.Title != "Dark mode" || f.Kind != KindGoal {
 		t.Fatalf("after a restart %+v", f)
 	}
 }
@@ -299,5 +316,61 @@ func TestQuietHoursCrossMidnight(t *testing.T) {
 	}
 	if _, err := ParseQuiet("22-7"); err == nil {
 		t.Error("22-7 parsed")
+	}
+}
+
+func TestFocusHistoryStartsAnewOnAnotherKindButNotAnotherIntent(t *testing.T) {
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	h, _, _ := newTest(t, &now, "")
+	ctx := context.Background()
+	focusAs := func(minutes int, kind, intent string) {
+		before := h.focusNow()
+		until := now.Add(time.Duration(minutes) * time.Minute)
+		if err := h.setFocus(ctx, Focus{Kind: kind, Until: &until, StartedAt: &now, Intent: intent}); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.logFocus(ctx, before, h.focusNow(), now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	focusAs(50, KindGeneral, "Roadmap") // 09:00
+	now = now.Add(10 * time.Minute)
+	focusAs(50, KindGeneral, "Roadmap draft") // 09:10, a new intent: the same one
+	now = now.Add(10 * time.Minute)
+	focusAs(50, KindDev, "") // 09:20, dev: a new one
+
+	sessions, err := h.focusHistory(ctx, time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 2 || sessions[0].Kind != KindGeneral || sessions[0].Intent != "Roadmap draft" ||
+		sessions[1].Kind != KindDev || sessions[1].EndedAt != nil {
+		t.Fatalf("history %+v", sessions)
+	}
+}
+
+func TestAFocusLogFromBeforeKindsGetsTheirColumns(t *testing.T) {
+	path := t.TempDir() + "/hermodr.db"
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE focus_log (id INTEGER PRIMARY KEY AUTOINCREMENT, started INTEGER NOT NULL, ended INTEGER,
+  until INTEGER NOT NULL, goal_id INTEGER, goal_title TEXT);
+INSERT INTO focus_log (started, ended, until, goal_id, goal_title) VALUES (1, 2, 2, 4, 'Retries');`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	h, err := New(path, nil, nil, Quiet{}, time.UTC, call.New("norn", "", "", time.Second), alert.NewClient("", ""), t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	sessions, err := h.focusHistory(context.Background(), time.UnixMilli(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].Kind != KindGoal {
+		t.Fatalf("old history %+v", sessions)
 	}
 }

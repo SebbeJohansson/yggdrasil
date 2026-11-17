@@ -166,6 +166,10 @@ func New(path string, channels []Channel, min map[string]string, quiet Quiet, zo
 		db.Close()
 		return nil, fmt.Errorf("hermodr schema: %w", err)
 	}
+	if err := addFocusLogColumns(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("hermodr focus log: %w", err)
+	}
 	h := &Hermodr{db: db, Channels: channels, Min: min, Quiet: quiet, Zone: zone, Norn: norn, Gjallar: gjallar,
 		now: time.Now, logf: logf, states: map[string]*channelState{}}
 	if err := h.loadFocus(); err != nil {
