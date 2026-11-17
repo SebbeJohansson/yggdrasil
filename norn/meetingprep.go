@@ -68,6 +68,18 @@ func (s *Store) PutMeetingPrep(ctx context.Context, prep MeetingPrep) error {
 	return err
 }
 
+// ClaudeBriefRules is how Claude writes a meeting brief: from what it finds
+// with and about the people in the meeting, not from your other work.
+const ClaudeBriefRules = "How to write this brief: look for what is going on between me and the people invited, " +
+	"with the Microsoft 365 tools. Search our Teams chats with each of them, one-to-one and group chats " +
+	"(chat_message_search and teams_list_chats), and my email with them (outlook_email_search), from the last 30 days, " +
+	"and read the meeting's invitation for an agenda (outlook_calendar_search). Use only what bears on this meeting " +
+	"and these people: leave out my agent sessions, other projects and anything you cannot tie to them. " +
+	"If nothing turns up, say so in one line instead of filling it out. " +
+	"Write Markdown: at most five short bullets, each one concrete thing (an open question, a decision, " +
+	"something I promised or was asked for), naming who it is with. No heading, no preamble. " +
+	"Write in the language the sources are in."
+
 // prepPrompt is your addition to the brief's prompt for event, for the
 // calendar events Huginn briefs on.
 func (n *Norn) prepPrompt(event CalendarEvent) string {

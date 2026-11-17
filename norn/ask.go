@@ -165,8 +165,14 @@ var AnswerTimeout = 3 * time.Minute
 func (a *asker) handOver(via string, inbox []string) AskResponse {
 	communication, mode := a.rules()
 	agents, _ := a.n.Store.AgentsOf(a.ctx, a.session)
+	prompt := HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, inbox, a.yours, a.history, "")
+	if briefAsk.MatchString(a.question) {
+		// A meeting brief is about the people in it: your agent sessions and
+		// the conversation so far only pull it off the meeting.
+		prompt = HandoverPrompt(a.question+"\n\n"+ClaudeBriefRules, LoadProfile(a.n.Config.ProfilePath), a.recalled, inbox, nil, nil, "")
+	}
 	request := map[string]any{"session": a.session, "name": a.name(), "communication": communication, "mode": mode, "goal": a.question,
-		"prompt": HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, inbox, a.yours, a.history, ""), "followUp": a.question}
+		"prompt": prompt, "followUp": a.question}
 	if len(agents) > 0 {
 		request["agent"] = agents[0]
 	}
