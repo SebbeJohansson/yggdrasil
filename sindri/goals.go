@@ -134,6 +134,9 @@ func NextFor(tasks []GoalTask) GoalNext {
 	if GoalState(tasks) == "merged" {
 		return GoalNext{Action: "none", Text: "Merged"}
 	}
+	if !slices.ContainsFunc(tasks, func(t GoalTask) bool { return t.Status != "no-changes" }) {
+		return GoalNext{Action: "none", Text: "No changes needed"}
+	}
 	return GoalNext{Action: "none", Text: "Nothing to do"}
 }
 
@@ -151,6 +154,9 @@ func (w *Work) GoalViews() ([]GoalView, error) {
 	for _, view := range w.TaskViews(linked) {
 		task := GoalTask{ID: view.ID, Repo: view.Project, Agent: view.Agent, Status: view.Status, Label: view.Label, Branch: view.Branch,
 			Merged: view.Merged, LastActivity: view.LastActivity, Result: view.Result, Scheduled: view.Task.Scheduled}
+		if view.Status == "no-changes" {
+			task.Branch, task.Merged = nil, false // removed unchanged: nothing to review, ship or count as merged
+		}
 		byGoal[*view.GoalID] = append(byGoal[*view.GoalID], task)
 	}
 	views := []GoalView{}

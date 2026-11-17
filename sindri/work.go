@@ -659,6 +659,9 @@ func (w *Work) Feed(ctx context.Context) error {
 				if outcome == "stopped" {
 					result = ""
 				}
+				if outcome == "done" && w.removeIfNoChanges(a) {
+					outcome = "no-changes"
+				}
 				_ = w.Store.EndTask(a.ID, outcome, result)
 			}
 		}
@@ -675,6 +678,23 @@ func (w *Work) Feed(ctx context.Context) error {
 	}
 	w.retryScheduled(ctx)
 	return nil
+}
+
+// removeIfNoChanges removes a finished goal part's worktree and branch when
+// the branch holds no work, so there is nothing of it left to review.
+func (w *Work) removeIfNoChanges(a *Agent) bool {
+	if a.Worktree == nil {
+		return false
+	}
+	task, err := w.Store.TaskOfAgent(a.ID)
+	if err != nil || task == nil || task.GoalID == nil {
+		return false
+	}
+	removed, err := w.Agents.RemoveIfEmpty(a.ID)
+	if err != nil {
+		w.logf("could not remove an unchanged worktree: %v", err)
+	}
+	return removed
 }
 
 // autoAllow answers the pending calls the approval rules allow, and writes each down.
@@ -772,7 +792,7 @@ func nullString(text *string, fallback string) string {
 // TaskView is a task with its live status.
 type TaskView struct {
 	Task
-	// Status is needs-you, running, done, failed, stopped, gone or scheduled.
+	// Status is needs-you, running, done, no-changes, failed, stopped, gone or scheduled.
 	Status       string  `json:"status"`
 	Label        *string `json:"label"`
 	LastActivity int64   `json:"lastActivity"`

@@ -184,6 +184,25 @@ func TestClosingAGoalRemovesItsEmptyBranchesAndKeepsTheRest(t *testing.T) {
 	}
 }
 
+func TestAGoalPartThatChangedNothingLosesItsWorktreeWhenItFinishes(t *testing.T) {
+	w, _ := newWork(t)
+	goal, _ := w.Store.AddGoal("Leave it as it is", []string{"demo"}, "manual", "", "goal-1")
+	started, _, err := w.StartGoal(goal.ID, nil)
+	if err != nil || len(started) != 1 {
+		t.Fatalf("got %+v %v", started, err)
+	}
+	a := waitFor(t, w.Agents, started[0].AgentID, func(a *Agent) bool { return a.Status == Waiting })
+	path := a.Worktree.Path
+	feedUntil(t, w, func() bool { return !exists(path) })
+	if a.Worktree.branchExists() {
+		t.Fatalf("the empty branch is still there")
+	}
+	view := must2(w.goalView(goal.ID))
+	if len(view.Tasks) != 1 || view.Tasks[0].Status != "no-changes" || view.Tasks[0].Branch != nil || view.Next.Text != "No changes needed" {
+		t.Fatalf("got %+v", view)
+	}
+}
+
 func TestTodoCandidates(t *testing.T) {
 	todo := "# Todo\n- [x] done\n- [ ] Add **dark** mode to [the panel](x.md)\n  with a toggle\n- [ ] Second\n"
 	got := TodoCandidates("demo", todo, map[string]int64{"todo:demo:- [ ] Second": 7})

@@ -1344,10 +1344,10 @@ components:
         agent: { type: string }
         partOf: { type: [integer, "null"] }
         goalId: { type: integer }
-        outcome: { type: [string, "null"], enum: [done, asked, failed, stopped, scheduled, null] }
+        outcome: { type: [string, "null"], enum: [done, no-changes, asked, failed, stopped, scheduled, null] }
         result: { type: [string, "null"] }
         endedAt: { type: [integer, "null"] }
-        status: { type: string, enum: [needs-you, running, done, failed, stopped, gone, scheduled] }
+        status: { type: string, enum: [needs-you, running, done, no-changes, failed, stopped, gone, scheduled] }
         label: { type: [string, "null"] }
         lastActivity: { type: integer }
         merged: { type: boolean }

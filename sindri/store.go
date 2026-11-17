@@ -152,7 +152,7 @@ type Task struct {
 	Agent     string     `json:"agent"`
 	PartOf    *int64     `json:"partOf"`
 	GoalID    *int64     `json:"goalId,omitempty"`
-	Outcome   *string    `json:"outcome"` // done, asked, failed, stopped, scheduled; nil while open
+	Outcome   *string    `json:"outcome"` // done, no-changes, asked, failed, stopped, scheduled; nil while open
 	Result    *string    `json:"result"`
 	EndedAt   *int64     `json:"endedAt"`
 	Scheduled *Scheduled `json:"scheduled,omitempty"`
