@@ -205,19 +205,84 @@ func (n *Norn) Summarise(ctx context.Context, top []Ranked, total int, now time.
 		return fallback, false
 	}
 	shown := top[:min(len(top), SummariseTop)]
+	key := summaryKey(shown, total, scope)
+	if text, fromModel, ok := n.cachedSummary(key, now); ok {
+		if !fromModel {
+			return fallback, false
+		}
+		return text, true
+	}
 	raw, err := n.LLM.Chat(ctx, SummaryMessages(shown, now, LoadProfile(n.Config.ProfilePath), scope),
 		llm.Options{Purpose: "summary", Model: n.Config.SummaryModel, Temperature: 0.2, TopP: 0.9, MaxTokens: 80})
 	if err != nil {
 		n.logf("no summary this time; sending the counts instead: %v", err)
+		n.keepSummary(key, "", false, now)
 		return fallback, false
 	}
 	text := CleanSummary(raw)
 	if text == "" {
+		n.keepSummary(key, "", false, now)
 		return fallback, false
 	}
 	if invented := InventedNames(text, shown); len(invented) > 0 {
 		n.logf("the model named someone the inbox does not have (%v); sending the counts instead", invented)
+		n.keepSummary(key, "", false, now)
 		return fallback, false
 	}
+	n.keepSummary(key, text, true, now)
 	return text, true
+}
+
+// A phrased sentence is reused while its items are the same, for up to
+// summaryKept; a failed one is not tried again for summaryRetry. The local
+// model answers one call at a time, and phrasing the same inbox on every
+// refresh kept it too busy for questions.
+const (
+	summaryKept  = 30 * time.Minute
+	summaryRetry = 10 * time.Minute
+	summaryMax   = 200
+)
+
+type cachedSummary struct {
+	text      string
+	fromModel bool
+	at        time.Time
+}
+
+// summaryKey is what a summary says: its scope, the count, and each item with
+// its band.
+func summaryKey(shown []Ranked, total int, scope string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s|%d", scope, total)
+	for _, entry := range shown {
+		b.WriteString("|" + entry.Item.Source + ":" + entry.Item.ID + ":" + entry.Band)
+	}
+	return b.String()
+}
+
+func (n *Norn) cachedSummary(key string, now time.Time) (string, bool, bool) {
+	n.summaryMu.Lock()
+	defer n.summaryMu.Unlock()
+	hit, ok := n.summaryCache[key]
+	if !ok {
+		return "", false, false
+	}
+	keep := summaryKept
+	if !hit.fromModel {
+		keep = summaryRetry
+	}
+	if now.Sub(hit.at) > keep {
+		delete(n.summaryCache, key)
+		return "", false, false
+	}
+	return hit.text, hit.fromModel, true
+}
+
+func (n *Norn) keepSummary(key, text string, fromModel bool, now time.Time) {
+	n.summaryMu.Lock()
+	defer n.summaryMu.Unlock()
+	if n.summaryCache == nil || len(n.summaryCache) >= summaryMax {
+		n.summaryCache = map[string]cachedSummary{}
+	}
+	n.summaryCache[key] = cachedSummary{text: text, fromModel: fromModel, at: now}
 }

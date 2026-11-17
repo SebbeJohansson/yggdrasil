@@ -72,6 +72,10 @@ type Norn struct {
 	// Vault is your Obsidian vault, nil when OBSIDIAN_VAULT is not set; vaultMu guards it.
 	Vault   *Vault
 	vaultMu sync.Mutex
+	// summaryMu guards summaryCache: the inbox's sentences by what they say,
+	// so an unchanged section is not phrased again on every refresh.
+	summaryMu    sync.Mutex
+	summaryCache map[string]cachedSummary
 	// modelFailing is what the model-health loop last told Gjallar; modelChecked, that it has.
 	modelFailing, modelChecked bool
 	Accounts                   *Accounts

@@ -2,10 +2,14 @@ package norn
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"yggdrasil/internal/llm"
 )
 
 func TestText(t *testing.T) {
@@ -186,5 +190,44 @@ func TestAPollWithNothingSignedInSaysSo(t *testing.T) {
 		if s.OK && s.Source != "slack" {
 			t.Errorf("%s is ok without a sign-in", s.Source)
 		}
+	}
+}
+
+func TestAnUnchangedSectionIsNotPhrasedAgain(t *testing.T) {
+	asked := 0
+	fail := false
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		if fail {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Kim needs the numbers."}}]}`))
+	}))
+	defer model.Close()
+	n, _ := newNorn(t)
+	n.LLM = &llm.Client{PrimaryURL: model.URL + "/v1"}
+	now := time.Now()
+	top := []Ranked{{Item: Item{ID: "m1", Source: "outlook", From: "Kim", Subject: "numbers"}, Band: "urgent"}}
+	for range 2 {
+		if text, fromModel := n.Summarise(context.Background(), top, 1, now, "email"); text != "Kim needs the numbers." || !fromModel {
+			t.Fatalf("got %q %v", text, fromModel)
+		}
+	}
+	if asked != 1 {
+		t.Fatalf("asked %d times for the same section", asked)
+	}
+	top[0].Band = "notable"
+	fail = true
+	for range 2 {
+		if _, fromModel := n.Summarise(context.Background(), top, 1, now, "email"); fromModel {
+			t.Fatal("phrased by a failing model")
+		}
+	}
+	if asked != 2 {
+		t.Fatalf("asked %d times, want a failure kept for a while", asked)
+	}
+	if _, fromModel := n.Summarise(context.Background(), top, 1, now.Add(summaryRetry+time.Minute), "email"); fromModel || asked != 3 {
+		t.Fatalf("not tried again later: asked %d", asked)
 	}
 }
