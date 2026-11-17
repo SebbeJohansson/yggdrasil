@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 	"yggdrasil/internal/linear"
+	"yggdrasil/internal/tell"
 )
 
 // MaxParts is the most repositories one task spans.
@@ -88,7 +89,11 @@ type Work struct {
 	// Linear lists issues as goal candidates and moves them as goals move; off without LINEAR_KEY.
 	Linear       *linear.Client
 	linearFailed map[int64]time.Time
-	feeding      sync.Mutex
+	// Hermodr reaches you through Hermóðr: the night shift's morning report.
+	Hermodr tell.Teller
+	// Zone is the time zone the night shift's times are in.
+	Zone    *time.Location
+	feeding sync.Mutex
 }
 
 // CodingAgent is the CLI new agents run on.

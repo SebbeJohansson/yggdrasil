@@ -18,7 +18,7 @@ import (
 // Main runs Hermóðr until ctx ends. Settings:
 //
 //	HERMODR_ADDR      listen address (127.0.0.1:8779)
-//	HERMODR_TOKENS    who may call it: owner=…,huginn=…,dellingr=…,gjallar=…,ratatoskr=…
+//	HERMODR_TOKENS    who may call it: owner=…,huginn=…,dellingr=…,gjallar=…,ratatoskr=…,sindri=…
 //	HERMODR_DB        the SQLite file (data/hermodr.db)
 //	NTFY_URL, NTFY_TOKEN       your phone's ntfy topic; unset is off
 //	NTFY_MIN         the lowest priority ntfy sends (normal)

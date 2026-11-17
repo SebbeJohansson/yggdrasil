@@ -164,6 +164,9 @@ func (w *Work) GoalViews() ([]GoalView, error) {
 		if goal.ClosedAt != nil {
 			view.State, view.Next = "closed", GoalNext{Action: "none", Text: "Closed"}
 		}
+		if goal.Night && view.State == "draft" {
+			view.Next.Text = "Starts tonight"
+		}
 		views = append(views, view)
 	}
 	return views, nil
@@ -706,6 +709,7 @@ type goalBody struct {
 	Repos   []string `json:"repos"`
 	Source  string   `json:"source"`
 	Context *string  `json:"context"`
+	Night   *bool    `json:"night"`
 }
 
 func (b goalBody) check(creating bool) error {
@@ -762,8 +766,8 @@ func (w *Work) patchGoal(rw http.ResponseWriter, r *http.Request) {
 		part.Error(rw, http.StatusBadRequest, err.Error())
 		return
 	}
-	if body.Title == nil && body.Repos == nil && body.Context == nil {
-		part.Error(rw, http.StatusBadRequest, "send `title`, `repos` and/or `context`")
+	if body.Title == nil && body.Repos == nil && body.Context == nil && body.Night == nil {
+		part.Error(rw, http.StatusBadRequest, "send `title`, `repos`, `context` and/or `night`")
 		return
 	}
 	if err := body.check(false); err != nil {
@@ -787,12 +791,20 @@ func (w *Work) patchGoal(rw http.ResponseWriter, r *http.Request) {
 	if body.Repos != nil {
 		repos = slices.Compact(slices.Clone(body.Repos))
 	}
-	if err := w.Store.UpdateGoal(id, title, repos, context); err != nil {
-		fail(rw, err)
-		return
+	if body.Night != nil {
+		if err := w.Store.SetGoalNight(id, *body.Night); err != nil {
+			fail(rw, err)
+			return
+		}
 	}
-	// The agents already started read the goal again, best effort.
-	_, _, _ = w.RelookGoal(id)
+	if title != nil || repos != nil || context != nil {
+		if err := w.Store.UpdateGoal(id, title, repos, context); err != nil {
+			fail(rw, err)
+			return
+		}
+		// The agents already started read the goal again, best effort.
+		_, _, _ = w.RelookGoal(id)
+	}
 	view, err := w.goalView(id)
 	if err != nil {
 		fail(rw, err)

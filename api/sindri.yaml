@@ -720,6 +720,27 @@ paths:
         "200": { $ref: "#/components/responses/Automation" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/night-shift:
+    get:
+      summary: The night shift's times, HH:MM in Sindri's TIME_ZONE. Goals marked night start from start; a report of them goes to Hermóðr at report.
+      responses:
+        "200": { $ref: "#/components/responses/NightShift" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Change them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", example: "22:00" }
+                report: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", example: "07:00" }
+      responses:
+        "200": { $ref: "#/components/responses/NightShift" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/goals:
     get:
       summary: Every goal, newest first, with its state and next step read from its tasks.
@@ -1002,7 +1023,7 @@ paths:
         "503": { $ref: "#/components/responses/Error" }
   /v1/goals/{id}:
     patch:
-      summary: Change a goal's title, repos or context. Its agents are told to read it again.
+      summary: Change a goal's title, repos or context, and its agents are told to read it again; or mark it to start tonight (night).
       parameters: [{ $ref: "#/components/parameters/GoalID" }]
       requestBody:
         required: true
@@ -1014,6 +1035,7 @@ paths:
                 title: { type: string }
                 repos: { type: array, items: { type: string } }
                 context: { type: string }
+                night: { type: boolean, description: Start this draft on its own tonight, in the night shift. }
       responses:
         "200": { $ref: "#/components/responses/Goal" }
         "400": { $ref: "#/components/responses/Error" }
@@ -1214,6 +1236,16 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/GoalImage" }
+    NightShift:
+      description: The night shift's times.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [start, report]
+            properties:
+              start: { type: string, example: "22:00" }
+              report: { type: string, example: "07:00" }
     GoalStarted:
       description: The goal, and which agents started or were told.
       content:
@@ -1343,6 +1375,7 @@ components:
         context: { type: string }
         session: { type: string }
         closedAt: { type: [integer, "null"], description: When you closed the goal without merging it all; null while open. }
+        night: { type: boolean, description: Whether the goal starts on its own tonight. Cleared when the night shift starts it. }
         images: { type: array, items: { $ref: "#/components/schemas/GoalImage" } }
         state: { type: string, enum: [draft, running, needs-you, done, merged, closed] }
         tasks:

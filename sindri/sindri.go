@@ -101,6 +101,8 @@ func (s *Sindri) Mount(p *part.Part) {
 	if s.Work != nil {
 		s.Work.MountWork(p)
 		p.Loop("feed", 3*time.Second, s.Work.Feed)
+		s.Work.mountNight(p)
+		p.Loop("night", time.Minute, s.Work.RunNight)
 		if s.Work.Linear.On() {
 			s.Work.linearFailed = map[int64]time.Time{}
 			p.Loop("linear", 30*time.Second, s.Work.SyncLinear)

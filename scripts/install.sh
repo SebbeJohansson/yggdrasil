@@ -161,7 +161,7 @@ ensure() {
 	printf '%s=%s\n' "$2" "$3" >>"$config/$1"
 	echo "  added $2 to $1"
 }
-for part in gjallar ratatoskr huginn dellingr; do
+for part in gjallar ratatoskr huginn dellingr sindri; do
 	ensure "$part.env" HERMODR_TOKEN "$(part_token hermodr "$part")"
 done
 

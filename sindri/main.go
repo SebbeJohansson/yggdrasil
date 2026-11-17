@@ -12,6 +12,7 @@ import (
 
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/tell"
 	"yggdrasil/internal/where"
 )
 
@@ -34,6 +35,8 @@ import (
 //	SINDRI_ASK_CWD      where question agents run (<root>/yggdrasil/workspace)
 //	AUTO_ALLOW          allow everyday reads, tests and git reads by default (true)
 //	YGG_NORN_URL        Norn, where agents' messages are posted; NORN_TOKEN is Sindri's token there
+//	YGG_HERMODR_URL     Hermóðr, for the night shift's morning report; HERMODR_TOKEN is Sindri's token there
+//	TIME_ZONE           the night shift's times are in this zone (Europe/Stockholm)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("SINDRI_TOKENS")
 	if err != nil {
@@ -62,7 +65,12 @@ func Main(ctx context.Context) error {
 		return err
 	}
 	defer store.Close()
+	zone, err := time.LoadLocation(env.String("TIME_ZONE", "Europe/Stockholm"))
+	if err != nil {
+		return fmt.Errorf("TIME_ZONE: %w", err)
+	}
 	work := &Work{
+		Hermodr: tell.NewHermodr(where.URL("hermodr"), env.String("HERMODR_TOKEN", "")), Zone: zone,
 		Linear: &linear.Client{Key: env.String("LINEAR_KEY", "")},
 		Agents: agents, Store: store, logf: p.Logf,
 		Norn:             &NornClient{URL: where.URL("norn"), Token: env.String("NORN_TOKEN", ""), HTTP: &http.Client{Timeout: 10 * time.Second}},
