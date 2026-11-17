@@ -321,7 +321,6 @@ func (v *Vault) AddMeetingNote(meeting Meeting, text string, zone *time.Location
 	if note.Path == "" {
 		note = v.note(NoteName(meeting.Subject, day))
 		var b strings.Builder
-		fmt.Fprintf(&b, "# %s\n\n", meeting.Subject)
 		if len(meeting.Attendees) > 0 {
 			fmt.Fprintf(&b, "Deltagare: %s\n\n", strings.Join(meeting.Attendees, ", "))
 		}

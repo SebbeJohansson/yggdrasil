@@ -81,7 +81,7 @@ func TestAMeetingNoteGoesIntoTheOneYouWroteThatDayOrANewOne(t *testing.T) {
 		t.Fatalf("%v %v %+v", err, made, note)
 	}
 	text, _ = os.ReadFile(filepath.Join(v.Dir, note.Path))
-	if string(text) != "# Budget: Q4?\n\nDeltagare: Ada, Bo\n\n## Efter mötet\n\n- Siffrorna till fredag\n" {
+	if string(text) != "Deltagare: Ada, Bo\n\n## Efter mötet\n\n- Siffrorna till fredag\n" {
 		t.Fatalf("new note:\n%s", text)
 	}
 }
