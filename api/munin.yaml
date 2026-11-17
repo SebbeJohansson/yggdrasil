@@ -16,6 +16,11 @@ info:
       internet targets as they were.
     - Reachability only. An expired sign-in belongs to the part holding it,
       resource levels to Veðrfölnir, Yggdrasil's own parts to Ratatoskr.
+    - Sources (optional): modules for one outside system each, run only when
+      named in MUNIN_SOURCES. A source's checks are damped like a target's and
+      raised as `<source>:<key>`; alerts from its own feed are raised as
+      `feed:<source>:<key>` without damping, in order, and resolved when the
+      feed says so. A replacement may run none and answer `sources: []`.
 servers:
   - url: http://127.0.0.1:8776
 security:
@@ -65,6 +70,20 @@ paths:
                         up: { type: boolean }
                         detail: { type: string }
                         checkedAt: { type: string, format: date-time }
+                  sources:
+                    type: array
+                    description: The sources this machine runs (MUNIN_SOURCES), as last seen.
+                    items:
+                      type: object
+                      required: [name, up]
+                      properties:
+                        name: { type: string }
+                        up: { type: boolean }
+                        detail: { type: string }
+                        checkedAt: { type: string, format: date-time }
+                        data:
+                          type: object
+                          description: What the source read, for the dashboard. Its shape is the source's own.
                   checks: { type: array, items: { $ref: "#/components/schemas/Check" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 components:

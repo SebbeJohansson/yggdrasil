@@ -67,6 +67,11 @@ services:
       - path: ${HOME}/.config/yggdrasil/parts.env
         required: false
       - ${HOME}/.config/yggdrasil/munin.env
+    environment:
+      MUNIN_STATE: /data/munin.json
+    volumes:
+      # Where each source's alert feed got to, so a restart raises nothing twice.
+      - ./data:/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8776/health"]
       interval: 30s

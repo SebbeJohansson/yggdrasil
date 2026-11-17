@@ -2,6 +2,7 @@ package munin
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"yggdrasil/internal/alert"
@@ -32,6 +33,9 @@ var DefaultTargets = strings.Join([]string{
 //	MUNIN_TARGETS        name=kind:url,… (DefaultTargets)
 //	MUNIN_OLLAMA_MODELS  models Ollama must have, for an ollama target (none: Yggdrasil runs without Ollama)
 //	MUNIN_ONLINE_URL     fetched first to tell "offline" from "that service is down"
+//	MUNIN_SOURCES        the sources this machine runs: tcgpriser,… (none). Each reads
+//	                     its own MUNIN_<SOURCE>_* settings; see its package.
+//	MUNIN_STATE          where feed cursors are kept (data/munin.json)
 //	YGG_GJALLAR_URL      Gjallar (http://127.0.0.1:8774); GJALLAR_TOKEN is Munin's token there
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("MUNIN_TOKENS")
@@ -49,6 +53,16 @@ func Main(ctx context.Context) error {
 	models := env.List("MUNIN_OLLAMA_MODELS")
 	m := New(targets, models, env.String("MUNIN_ONLINE_URL", "https://1.1.1.1/cdn-cgi/trace"),
 		alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", "")))
+	sources, err := MakeSources(env.List("MUNIN_SOURCES"), os.Getenv)
+	if err != nil {
+		return err
+	}
+	statePath := env.String("MUNIN_STATE", "data/munin.json")
+	state, err := LoadState(statePath)
+	if err != nil {
+		return err
+	}
+	m.UseSources(sources, statePath, state)
 	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))
 	m.Mount(p)
 	return p.Run(ctx, where.Addr(Name))

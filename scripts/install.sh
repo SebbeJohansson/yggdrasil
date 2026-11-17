@@ -76,6 +76,9 @@ write munin.env <<EOF
 MUNIN_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token munin)
 YGG_CORS_ORIGINS=$origins
+# Sources this machine runs, e.g. tcgpriser (README, Munin). None by default.
+MUNIN_SOURCES=
+# MUNIN_TCGPRISER_TOKEN=
 EOF
 write vedrfolnir.env <<EOF
 VEDRFOLNIR_TOKENS=owner=$owner

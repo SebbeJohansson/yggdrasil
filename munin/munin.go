@@ -19,10 +19,14 @@
 // 5 minutes. When the internet itself is down that is one alert, `offline`,
 // and the internet targets are left as they were until it is back.
 //
+// Sources (MUNIN_SOURCES, package source) are modules for one outside system
+// each, for what a URL can't tell: tcgpriser reads tcgpriser.se's status,
+// alert feed and usage. One not named does not run.
+//
 // Routes:
 //
 //	GET /health
-//	GET /v1/status   every target as last seen, and every check
+//	GET /v1/status   every target and source as last seen, and every check
 package munin
 
 import (
@@ -41,6 +45,7 @@ import (
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/watch"
+	"yggdrasil/munin/source"
 )
 
 // Name is this part's name, and its source on Gjallar.
@@ -104,26 +109,45 @@ type Munin struct {
 	Gjallar   *alert.Client
 	Local     *http.Client
 	Internet  *http.Client
+	// Sources are the modules this machine runs.
+	Sources []source.Source
+	// StatePath is where feed cursors are kept across restarts ("" for none).
+	StatePath string
 
-	watch *watch.Watch
-	mu    sync.Mutex
-	seen  map[string]Seen
-	now   func() time.Time
+	watch       *watch.Watch
+	mu          sync.Mutex
+	seen        map[string]Seen
+	sourcesSeen map[string]SourceSeen
+	state       State
+	now         func() time.Time
 }
 
 // New makes a checker.
 func New(targets []Target, models []string, onlineURL string, gjallar *alert.Client) *Munin {
 	return &Munin{
-		Targets:   targets,
-		Models:    models,
-		OnlineURL: onlineURL,
-		Gjallar:   gjallar,
-		Local:     &http.Client{Timeout: 2 * time.Second},
-		Internet:  &http.Client{Timeout: 5 * time.Second},
-		watch:     watch.New(),
-		seen:      map[string]Seen{},
-		now:       time.Now,
+		Targets:     targets,
+		Models:      models,
+		OnlineURL:   onlineURL,
+		Gjallar:     gjallar,
+		Local:       &http.Client{Timeout: 2 * time.Second},
+		Internet:    &http.Client{Timeout: 5 * time.Second},
+		watch:       newWatch(),
+		seen:        map[string]Seen{},
+		sourcesSeen: map[string]SourceSeen{},
+		state:       State{Cursors: map[string]string{}},
+		now:         time.Now,
 	}
+}
+
+func newWatch() *watch.Watch {
+	w := watch.New()
+	w.OutOfBand = isFeedKey
+	return w
+}
+
+// UseSources runs these sources, starting each feed from the cursor in state.
+func (m *Munin) UseSources(sources []source.Source, statePath string, state State) {
+	m.Sources, m.StatePath, m.state = sources, statePath, state
 }
 
 // Mount adds the routes and loops to the part.
@@ -131,6 +155,9 @@ func (m *Munin) Mount(p *part.Part) {
 	p.Handle("GET /v1/status", m.status)
 	p.Loop("local", time.Minute, func(ctx context.Context) error { return m.round(ctx, true) })
 	p.Loop("internet", 5*time.Minute, func(ctx context.Context) error { return m.round(ctx, false) })
+	for _, s := range m.Sources {
+		p.Loop(s.Name(), s.Every(), func(ctx context.Context) error { return m.poll(ctx, s) })
+	}
 }
 
 // OfflineKey is the one alert for the internet being down.
@@ -185,7 +212,7 @@ func (m *Munin) round(ctx context.Context, local bool) error {
 
 // checked is whether a key belongs to a check Munin still runs.
 func (m *Munin) checked(key string) bool {
-	if key == OfflineKey {
+	if key == OfflineKey || m.sourceChecked(key) {
 		return true
 	}
 	for _, target := range m.Targets {
@@ -388,17 +415,25 @@ func Incident(body []byte) (string, string, error) {
 // Status is GET /v1/status's answer.
 type Status struct {
 	Targets []Seen        `json:"targets"`
+	Sources []SourceSeen  `json:"sources"`
 	Checks  []watch.State `json:"checks"`
 }
 
 func (m *Munin) status(w http.ResponseWriter, _ *http.Request) {
-	status := Status{Targets: []Seen{}, Checks: m.watch.States()}
+	status := Status{Targets: []Seen{}, Sources: []SourceSeen{}, Checks: m.watch.States()}
 	m.mu.Lock()
 	for _, target := range m.Targets {
 		if seen, ok := m.seen[target.Name]; ok {
 			status.Targets = append(status.Targets, seen)
 		} else {
 			status.Targets = append(status.Targets, Seen{Target: target})
+		}
+	}
+	for _, s := range m.Sources {
+		if seen, ok := m.sourcesSeen[s.Name()]; ok {
+			status.Sources = append(status.Sources, seen)
+		} else {
+			status.Sources = append(status.Sources, SourceSeen{Name: s.Name()})
 		}
 	}
 	m.mu.Unlock()

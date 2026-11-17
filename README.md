@@ -155,7 +155,7 @@ after the loop runs cleanly again.
 
 | Route | What it does |
 | --- | --- |
-| `GET /v1/status` | `{ targets, checks }` |
+| `GET /v1/status` | `{ targets, sources, checks }` |
 
 Targets are `name=kind:url` in `MUNIN_TARGETS`. The kinds are `http` (up when
 anything answers), `openai` (an OpenAI-compatible `/v1/models` has a model
@@ -164,6 +164,20 @@ loaded: XeStrata), `ollama` (also has the models in `MUNIN_OLLAMA_MODELS`) and
 not checked by default: Yggdrasil runs on XeStrata alone. Local
 targets are checked every minute and internet ones every 5 minutes. When this
 machine is offline, that is one `offline` alert.
+
+Sources are modules for one outside system each, for what a URL can't tell.
+A machine runs the ones named in `MUNIN_SOURCES`, and each reads its own
+`MUNIN_<SOURCE>_*` settings; one not named does not run and shows nowhere.
+Munin gives each one a loop on `/health`, damps its checks like a target's,
+and keeps its alert feed's place in `MUNIN_STATE` (`data/munin.json`), so a
+restart raises nothing twice.
+
+| Source | What it watches | Settings |
+| --- | --- | --- |
+| `tcgpriser` | tcgpriser.se: `/health` (`tcgpriser:down`, critical), `/admin/status` (`tcgpriser:status`), every alert the site posts to Discord (`feed:tcgpriser:<key>`, its own severity, closed when the site resolves it or after 24 h), and `/admin/usage` for the last 7 days | `MUNIN_TCGPRISER_TOKEN`, a service token from the API's `API_AUTH_TOKENS` (without it, `/health` only); `MUNIN_TCGPRISER_URL` (`https://api.tcgpriser.se`) |
+
+A new source is a package under `munin/` that implements `munin/source`, and
+one line in `Sources` in `munin/sources.go`.
 
 ### Veðrfölnir
 
