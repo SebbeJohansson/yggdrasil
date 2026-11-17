@@ -96,6 +96,7 @@ func Main(ctx context.Context) error {
 			agents.UseHerdr(herdr, claudeDir)
 		}
 	}
+	agents.RetakeScreenshots()
 	work.Transcripts = filepath.Join(claudeDir, "projects")
 	s := &Sindri{Agents: agents, Root: agents.roots[0], Work: work,
 		ClaudeProjects: env.String("CLAUDE_PROJECTS", filepath.Join(claudeDir, "projects")),

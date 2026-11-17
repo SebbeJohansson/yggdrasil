@@ -82,6 +82,8 @@ type Manager struct {
 	live   map[string]*live
 	checks map[string]map[string]CheckResult
 	saving *time.Timer
+	// retake is the agents whose screenshots a restart stopped.
+	retake []string
 	// herdr runs question agents in its panes while herdrUp; nil is off.
 	herdr      *Herdr
 	herdrUp    bool
@@ -896,6 +898,19 @@ func (m *Manager) photographLocked(a *Agent) {
 	started.ScreenshotFor = a.ID
 }
 
+// RetakeScreenshots starts again the screenshot agents a restart stopped.
+func (m *Manager) RetakeScreenshots() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range m.retake {
+		if a := m.agents[id]; a != nil && !busy(a.Status) {
+			a.ScreenshotHead = ""
+			m.photographLocked(a)
+		}
+	}
+	m.retake = nil
+}
+
 // followThroughLocked runs the branch's tests when a turn ends with a new commit.
 func (m *Manager) followThroughLocked(a *Agent) {
 	w := a.Worktree
@@ -1200,6 +1215,9 @@ func (m *Manager) load() {
 		if running(a.Status) {
 			a.Status, a.Pending, a.Tool = Done, nil, ""
 			a.addLog(LogEntry{At: m.ms(), Kind: "exit", Text: "stopped when Sindri restarted"})
+			if a.ScreenshotFor != "" {
+				m.retake = append(m.retake, a.ScreenshotFor)
+			}
 		}
 		if a.Pending == nil {
 			a.Pending = []Pending{}

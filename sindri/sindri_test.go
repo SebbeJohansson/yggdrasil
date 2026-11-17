@@ -203,3 +203,37 @@ func TestMeetsItsContract(t *testing.T) {
 	(&Sindri{Agents: m, Root: m.roots[0], Work: work}).Mount(p)
 	contracttest.Run(t, p)
 }
+
+func TestScreenshotsStoppedByARestartAreTakenAgain(t *testing.T) {
+	m, _ := setup(t)
+	a, err := m.Start(StartRequest{Cwd: "demo", Prompt: "change it", Worktree: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, m, a.ID, func(a *Agent) bool { return a.Status == Waiting && a.ScreenshotHead != "" })
+	m.mu.Lock()
+	for _, shot := range m.agents {
+		if shot.ScreenshotFor == a.ID {
+			shot.Status = Working // as if Sindri stopped mid-shot
+		}
+	}
+	m.mu.Unlock()
+	m.Save()
+	again, err := NewManager(m.options, t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(again.Shutdown)
+	again.RetakeScreenshots()
+	again.mu.Lock()
+	defer again.mu.Unlock()
+	shots := 0
+	for _, shot := range again.agents {
+		if shot.ScreenshotFor == a.ID {
+			shots++
+		}
+	}
+	if shots != 2 {
+		t.Fatalf("got %d screenshot agents, want the stopped one and a new one", shots)
+	}
+}
