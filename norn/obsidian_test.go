@@ -53,7 +53,7 @@ func TestRelatedNotesShareAFirstNameOrASubjectWord(t *testing.T) {
 	if strings.Join(titles, " | ") != "QBR CS sittning 6 - 2026-11-05 | Snack med Linnea om QBR CS - 2026-10-15 | 1on1 med johan - 2026-10-07" {
 		t.Fatalf("got %v", titles)
 	}
-	if !strings.HasPrefix(got[0].Link, "obsidian://open?vault=Second+Brain&file=QBR+CS+sittning+6") {
+	if !strings.HasPrefix(got[0].Link, "obsidian://open?vault=Second%20Brain&file=QBR%20CS%20sittning%206") {
 		t.Fatalf("link %s", got[0].Link)
 	}
 }

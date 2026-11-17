@@ -121,9 +121,14 @@ func (v *Vault) note(path string) VaultNote {
 	return note
 }
 
-// link is obsidian://open for a note.
+// link is obsidian://open for a note. Spaces are %20: Obsidian reads a + as a
+// plus, so "Second+Brain" is a vault it cannot find.
 func (v *Vault) link(path string) string {
-	return "obsidian://open?vault=" + url.QueryEscape(v.Name) + "&file=" + url.QueryEscape(strings.TrimSuffix(path, ".md"))
+	return "obsidian://open?vault=" + uriEscape(v.Name) + "&file=" + uriEscape(strings.TrimSuffix(path, ".md"))
+}
+
+func uriEscape(text string) string {
+	return strings.ReplaceAll(url.QueryEscape(text), "+", "%20")
 }
 
 var words = regexp.MustCompile(`[\p{L}\p{N}]+`)
