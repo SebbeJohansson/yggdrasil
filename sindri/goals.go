@@ -130,7 +130,7 @@ func NextFor(tasks []GoalTask) GoalNext {
 		}
 	}
 	if len(tasks) == 0 {
-		return GoalNext{Action: "start", Text: "Start the agents"}
+		return GoalNext{Action: "start"}
 	}
 	for _, t := range tasks {
 		why := map[string]string{"needs-you": "Answer", "failed": "Look at the failure of", "stopped": "Pick up the stopped"}[t.Status]
