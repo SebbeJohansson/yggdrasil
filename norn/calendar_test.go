@@ -153,3 +153,35 @@ func TestGoogleIsOffWithoutAClient(t *testing.T) {
 		t.Fatalf("got %+v", grants)
 	}
 }
+
+func TestRoomsAndJoinLinks(t *testing.T) {
+	outlook, _ := GraphEvents([]byte(`{"value":[
+		{"id":"o1","subject":"Snacka Jev","start":{"dateTime":"2026-11-17T12:30:00"},"end":{"dateTime":"2026-11-17T13:00:00"},
+		 "isOnlineMeeting":true,"onlineMeeting":{"joinUrl":"https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc/0"},
+		 "locations":[{"displayName":"Mötesrum Ekeby","locationType":"conferenceRoom"},{"displayName":"Teams","locationType":"default"}],
+		 "attendees":[{"type":"resource","emailAddress":{"name":"Rum Tallen","address":"tallen@x.se"}},{"type":"required","emailAddress":{"name":"Lisa Ek"}}]},
+		{"id":"o2","subject":"Partner","start":{"dateTime":"2026-11-17T14:00:00"},"end":{"dateTime":"2026-11-17T15:00:00"},
+		 "body":{"content":"Join with Google Meet: https://meet.google.com/abc-defg-hij\nOr dial in"}}
+	]}`))
+	if got := outlook[0]; got.Join != "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc/0" ||
+		len(got.Rooms) != 2 || got.Rooms[0] != "Mötesrum Ekeby" || got.Rooms[1] != "Rum Tallen" || len(got.Attendees) != 1 {
+		t.Fatalf("teams meeting: %+v", got)
+	}
+	if got := outlook[1].Join; got != "https://meet.google.com/abc-defg-hij" {
+		t.Fatalf("meet link from the body: %q", got)
+	}
+
+	google, _ := GoogleEvents([]byte(`{"items":[
+		{"id":"g1","summary":"Lunch sync","start":{"dateTime":"2026-11-17T11:00:00Z"},"end":{"dateTime":"2026-11-17T12:00:00Z"},
+		 "description":"<a href=\"https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz/0?context=%7b%7d\">Join</a>",
+		 "attendees":[{"displayName":"Konferensrum Ett","resource":true},{"email":"kim@x.se"}]},
+		{"id":"g2","summary":"Meet","start":{"dateTime":"2026-11-17T13:00:00Z"},"end":{"dateTime":"2026-11-17T14:00:00Z"},
+		 "conferenceData":{"entryPoints":[{"entryPointType":"phone","uri":"tel:+46"},{"entryPointType":"video","uri":"https://meet.google.com/xyz-abcd-efg"}]}}
+	]}`))
+	if got := google[0]; got.Join != "https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz/0?context=%7b%7d" || len(got.Rooms) != 1 || got.Rooms[0] != "Konferensrum Ett" {
+		t.Fatalf("teams link in a google description: %+v", got)
+	}
+	if got := google[1].Join; got != "https://meet.google.com/xyz-abcd-efg" {
+		t.Fatalf("meet entry point: %q", got)
+	}
+}

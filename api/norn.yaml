@@ -1427,6 +1427,8 @@ components:
         id: { type: string, description: The same meeting keeps the same id when it moves. }
         attendees: { type: array, items: { type: string }, description: "Who is invited, by name (or address), at most 30. Google leaves you out; Outlook lists you too." }
         series: { type: string, description: "The recurring meeting it is one of, the same for every occurrence; left out for a one-off." }
+        rooms: { type: array, items: { type: string }, description: "The rooms booked for it, by name; left out when none." }
+        join: { type: string, description: "Its Teams or Google Meet link: the calendar's own, else the first in the invitation's text; left out when none." }
     VaultNote:
       type: object
       required: [path, title, link]

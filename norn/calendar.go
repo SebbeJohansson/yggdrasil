@@ -55,6 +55,25 @@ type CalendarEvent struct {
 	// Series is the recurring meeting it is one of, the same for every
 	// occurrence; empty for a one-off.
 	Series string `json:"series,omitempty"`
+	// Rooms is the rooms booked for it, by name.
+	Rooms []string `json:"rooms,omitempty"`
+	// Join is its Teams or Google Meet link: the calendar's own, else the
+	// first one in the invitation's text.
+	Join string `json:"join,omitempty"`
+}
+
+// joinLink is the first Teams or Google Meet link in text.
+var joinLink = regexp.MustCompile(`https://(?:teams\.microsoft\.com/(?:l/meetup-join|meet)/[^\s<>"')\]]+|teams\.live\.com/meet/[^\s<>"')\]]+|meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:\?[^\s<>"')\]]*)?)`)
+
+// JoinLink is the meeting link to use: the first of links that is set, else
+// the first Teams or Meet link in text.
+func JoinLink(text string, links ...string) string {
+	for _, link := range links {
+		if link = strings.TrimSpace(link); strings.HasPrefix(link, "https://") {
+			return link
+		}
+	}
+	return joinLink.FindString(text)
 }
 
 // maxAttendees keeps an all-hands from filling the snapshot.
@@ -194,7 +213,7 @@ func GraphCalendarURL(from, to time.Time) string {
 	params := url.Values{
 		"startDateTime": {from.UTC().Format(time.RFC3339Nano)},
 		"endDateTime":   {to.UTC().Format(time.RFC3339Nano)},
-		"$select":       {"id,subject,start,end,isAllDay,location,organizer,attendees,responseStatus,showAs,isOnlineMeeting,isCancelled,seriesMasterId"},
+		"$select":       {"id,subject,start,end,isAllDay,location,organizer,attendees,responseStatus,showAs,isOnlineMeeting,onlineMeeting,body,locations,isCancelled,seriesMasterId"},
 		"$orderby":      {"start/dateTime"},
 		"$top":          {"200"},
 	}
@@ -231,7 +250,17 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 			IsCancelled     bool                         `json:"isCancelled"`
 			IsOnlineMeeting bool                         `json:"isOnlineMeeting"`
 			Location        struct{ DisplayName string } `json:"location"`
-			Organizer       struct {
+			Locations       []struct {
+				DisplayName  string `json:"displayName"`
+				LocationType string `json:"locationType"`
+			} `json:"locations"`
+			OnlineMeeting *struct {
+				JoinURL string `json:"joinUrl"`
+			} `json:"onlineMeeting"`
+			Body struct {
+				Content string `json:"content"`
+			} `json:"body"`
+			Organizer struct {
 				EmailAddress struct{ Name string } `json:"emailAddress"`
 			} `json:"organizer"`
 			Attendees []struct {
@@ -255,10 +284,16 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 		if subject == "" {
 			subject = "(no title)"
 		}
-		var attendees []string
+		var attendees, rooms []string
+		for _, location := range raw.Locations {
+			if location.LocationType == "conferenceRoom" {
+				rooms = addAttendee(rooms, location.DisplayName)
+			}
+		}
 		for _, attendee := range raw.Attendees {
 			// A booked room is an attendee too, not a person.
 			if attendee.Type == "resource" {
+				rooms = addAttendee(rooms, attendee.EmailAddress.Name)
 				continue
 			}
 			name := attendee.EmailAddress.Name
@@ -271,9 +306,19 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 			Subject: subject, Start: start, End: end, AllDay: raw.IsAllDay, Online: raw.IsOnlineMeeting,
 			Location: strings.TrimSpace(raw.Location.DisplayName), Organizer: raw.Organizer.EmailAddress.Name,
 			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID, Attendees: attendees, Series: raw.SeriesMasterID,
+			Rooms: rooms, Join: JoinLink(raw.Body.Content, joinURL(raw.OnlineMeeting)),
 		})
 	}
 	return events, page.Next
+}
+
+func joinURL(meeting *struct {
+	JoinURL string `json:"joinUrl"`
+}) string {
+	if meeting == nil {
+		return ""
+	}
+	return meeting.JoinURL
 }
 
 // ReadOutlook is one read of the week. ErrSignedOut when there is no sign-in.
@@ -286,7 +331,7 @@ func ReadOutlook(ctx context.Context, auth *MicrosoftAuth, get bearerGet, now ti
 	snapshot := CalendarSnapshot{Events: []CalendarEvent{}, From: from.UnixMilli(), To: to.UnixMilli(), At: now.UnixMilli()}
 	next := GraphCalendarURL(from, to)
 	for page := 0; next != "" && page < maxPages; page++ {
-		status, body, err := get(ctx, next, token.AccessToken, map[string]string{"Prefer": `outlook.timezone="UTC"`})
+		status, body, err := get(ctx, next, token.AccessToken, map[string]string{"Prefer": `outlook.timezone="UTC", outlook.body-content-type="text"`})
 		if err != nil {
 			return CalendarSnapshot{}, err
 		}
@@ -378,6 +423,7 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 			Transparency   string          `json:"transparency"`
 			HangoutLink    string          `json:"hangoutLink"`
 			ConferenceData json.RawMessage `json:"conferenceData"`
+			Description    string          `json:"description"`
 			Organizer      struct {
 				DisplayName string `json:"displayName"`
 				Email       string `json:"email"`
@@ -422,8 +468,30 @@ func GoogleEvents(body []byte) (events []CalendarEvent, next string) {
 				}
 			}
 		}
+		var conference struct {
+			EntryPoints []struct {
+				Type string `json:"entryPointType"`
+				URI  string `json:"uri"`
+			} `json:"entryPoints"`
+		}
+		_ = json.Unmarshal(raw.ConferenceData, &conference)
+		video := ""
+		for _, entry := range conference.EntryPoints {
+			if entry.Type == "video" && video == "" {
+				video = entry.URI
+			}
+		}
+		event.Join = JoinLink(raw.Description+"\n"+raw.Location, raw.HangoutLink, video)
 		for _, attendee := range raw.Attendees {
-			if attendee.Self || attendee.Resource {
+			if attendee.Resource {
+				name := attendee.DisplayName
+				if name == "" {
+					name = attendee.Email
+				}
+				event.Rooms = addAttendee(event.Rooms, name)
+				continue
+			}
+			if attendee.Self {
 				continue
 			}
 			name := attendee.DisplayName
@@ -674,8 +742,11 @@ func CalendarLines(snapshot CalendarSnapshot, now time.Time, zone *time.Location
 		case "tentative":
 			details = append(details, "shown as tentative")
 		}
-		if event.Online {
+		if event.Online || event.Join != "" {
 			details = append(details, "online")
+		}
+		if len(event.Rooms) > 0 {
+			details = append(details, "in "+strings.Join(event.Rooms, " or "))
 		}
 		line := when + ": " + event.Subject
 		if len(details) > 0 {
