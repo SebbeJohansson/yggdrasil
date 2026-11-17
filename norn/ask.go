@@ -378,8 +378,17 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		}
 	}
 
+	// A goal's conversation belongs to its agents: what you say there goes to
+	// the newest of them. The dispatcher could answer it on the local model,
+	// which has no tools and guesses at code and commits.
+	if request.To == "" && route == "" && sindri && strings.HasPrefix(session, "goal-") && !agentCmd.MatchString(question) && !partCmd.MatchString(question) {
+		if own, _ := n.Store.AgentsOf(ctx, session); len(own) > 0 {
+			request.To = own[0]
+		}
+	}
+
 	// A message to one agent, picked by hand.
-	if request.To != "" && request.To != "norn" && request.To != "my-agent" {
+	if request.To != ""&& request.To != "norn" && request.To != "my-agent" {
 		if !sindri {
 			return a.answered("Agents are off here (no Sindri).", nil, "to: picked"), nil
 		}
