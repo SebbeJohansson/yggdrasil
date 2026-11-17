@@ -256,9 +256,9 @@ func TestFocusHistoryLogsEachFocusAndGoal(t *testing.T) {
 	}
 	got := []string{}
 	for _, s := range sessions {
-		line := s.StartedAt.Format("15:04") + "-"
+		line := s.StartedAt.UTC().Format("15:04") + "-"
 		if s.EndedAt != nil {
-			line += s.EndedAt.Format("15:04")
+			line += s.EndedAt.UTC().Format("15:04")
 		}
 		if s.Goal != nil {
 			line += " " + s.Goal.Title
