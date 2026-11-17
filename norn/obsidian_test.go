@@ -189,3 +189,17 @@ func TestWithoutNamesDropsYourNameFromTheSubject(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestASecondNoteForAShortSubjectGoesIntoTheNoteNornMade(t *testing.T) {
+	zone, _ := time.LoadLocation("Europe/Stockholm")
+	start := time.Date(2026, 11, 17, 10, 0, 0, 0, zone).UnixMilli()
+	v := testVault(t, nil)
+	first, made, err := v.AddMeetingNote(Meeting{Subject: "1:1 Kim", Start: start}, "a", zone, time.UnixMilli(start))
+	if err != nil || !made {
+		t.Fatalf("%v %v", made, err)
+	}
+	second, made, err := v.AddMeetingNote(Meeting{Subject: "1:1 Kim", Start: start}, "b", zone, time.UnixMilli(start))
+	if err != nil || made || second.Path != first.Path {
+		t.Fatalf("%+v %v %v", second, made, err)
+	}
+}

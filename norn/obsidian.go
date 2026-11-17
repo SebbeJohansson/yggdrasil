@@ -231,6 +231,10 @@ func (v *Vault) Related(people []string, subject, except string, limit int, now 
 // MeetingNote is the note you wrote for a meeting on its day: dated that day,
 // sharing a word with its subject. Empty when there is none.
 func (v *Vault) MeetingNote(subject string, day string, now time.Time) VaultNote {
+	// The note Norn made for it, even when the subject has no word to match (1:1 Kim).
+	if own := NoteName(subject, day); fileExists(filepath.Join(v.Dir, filepath.FromSlash(own))) {
+		return v.note(own)
+	}
 	want := titleWords(subject)
 	best, bestShared := VaultNote{}, 0
 	for _, note := range v.Notes(now) {
@@ -248,6 +252,11 @@ func (v *Vault) MeetingNote(subject string, day string, now time.Time) VaultNote
 		}
 	}
 	return best
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // Excerpt is the start of a note, front matter left out.
