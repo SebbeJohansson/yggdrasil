@@ -203,6 +203,19 @@ func TestAGoalPartThatChangedNothingLosesItsWorktreeWhenItFinishes(t *testing.T)
 	}
 }
 
+func TestAnAgentStoppedMidWorkKeepsItsWorktree(t *testing.T) {
+	w, _ := newWork(t)
+	for _, snap := range []snapshot{
+		{agent: Agent{ID: "a", Status: Done, LastText: "", Worktree: &Worktree{}}, turnDone: false},
+		{agent: Agent{ID: "a", Status: Done, LastText: "", Worktree: &Worktree{}}, turnDone: true},
+		{agent: Agent{ID: "a", Status: Waiting, LastText: "Reading the code.", Worktree: &Worktree{}}, turnDone: false},
+	} {
+		if w.removeIfNoChanges(&snap) {
+			t.Fatalf("removed the worktree of %+v", snap)
+		}
+	}
+}
+
 func TestTodoCandidates(t *testing.T) {
 	todo := "# Todo\n- [x] done\n- [ ] Add **dark** mode to [the panel](x.md)\n  with a toggle\n- [ ] Second\n"
 	got := TodoCandidates("demo", todo, map[string]int64{"todo:demo:- [ ] Second": 7})

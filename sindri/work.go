@@ -581,6 +581,9 @@ type snapshot struct {
 	agent     Agent
 	lastError string
 	merged    bool
+	// turnDone is whether the agent's last event is a turn that ended well,
+	// not an interruption, an exit or a restart.
+	turnDone bool
 }
 
 func (w *Work) snapshots() []snapshot {
@@ -591,6 +594,7 @@ func (w *Work) snapshots() []snapshot {
 		s := snapshot{agent: *a}
 		s.agent.Pending = slices.Clone(a.Pending)
 		s.agent.Log = nil
+		s.turnDone = len(a.Log) > 0 && a.Log[len(a.Log)-1].Kind == "result"
 		for i := len(a.Log) - 1; i >= 0; i-- {
 			if a.Log[i].Kind == "error" {
 				s.lastError = a.Log[i].Text
@@ -659,7 +663,7 @@ func (w *Work) Feed(ctx context.Context) error {
 				if outcome == "stopped" {
 					result = ""
 				}
-				if outcome == "done" && w.removeIfNoChanges(a) {
+				if outcome == "done" && w.removeIfNoChanges(&snap) {
 					outcome = "no-changes"
 				}
 				_ = w.Store.EndTask(a.ID, outcome, result)
@@ -681,9 +685,12 @@ func (w *Work) Feed(ctx context.Context) error {
 }
 
 // removeIfNoChanges removes a finished goal part's worktree and branch when
-// the branch holds no work, so there is nothing of it left to review.
-func (w *Work) removeIfNoChanges(a *Agent) bool {
-	if a.Worktree == nil {
+// the branch holds no work, so there is nothing of it left to review. Only a
+// turn that ended well with a final message counts: an agent stopped, killed
+// or restarted mid-work keeps its worktree to be resumed in.
+func (w *Work) removeIfNoChanges(snap *snapshot) bool {
+	a := &snap.agent
+	if a.Worktree == nil || !snap.turnDone || strings.TrimSpace(a.LastText) == "" {
 		return false
 	}
 	task, err := w.Store.TaskOfAgent(a.ID)
