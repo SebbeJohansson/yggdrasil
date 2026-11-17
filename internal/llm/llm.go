@@ -1,7 +1,8 @@
 // Package llm talks to the language models: an OpenAI-compatible server
-// first (XeStrata), Ollama when it is off, slow or broken. Ollama loads its
-// models only when asked, so as a fallback it costs no memory until needed.
-// Embeddings and tool calls each have one backend (Ollama, XeStrata).
+// first (XeStrata, llama.cpp, LM Studio…), Ollama when it is off, slow or
+// broken. Ollama loads its models only when asked, so as a fallback it costs
+// no memory until needed. Without the OpenAI-compatible server, Ollama alone
+// answers everything, tool calls too.
 //
 // Every attempt, failed ones too, is handed to Record, for the chat's debug
 // view. The conversation and message it belongs to ride on the context
@@ -40,7 +41,7 @@ type Options struct {
 	// Format is a JSON schema the reply must match (structured output).
 	Format map[string]any
 	// Think switches a thinking model's reasoning pass; nil leaves it off on
-	// XeStrata and to the model on Ollama.
+	// both backends, since every caller was written for models that do not think.
 	Think *bool
 	// KeepAlive is how long Ollama keeps the model loaded after this call.
 	KeepAlive string
@@ -116,7 +117,8 @@ func WithExchange(ctx context.Context, session string, at time.Time) context.Con
 	return context.WithValue(ctx, exchangeKey{}, exchange{session: session, at: at.UnixMilli()})
 }
 
-// Client chats with XeStrata first and Ollama second, and embeds with Ollama.
+// Client chats with the OpenAI-compatible server first and Ollama second,
+// and embeds with the embedding server or Ollama.
 type Client struct {
 	// PrimaryURL is the OpenAI-compatible base URL, ending in /v1. Empty: Ollama only.
 	PrimaryURL string
@@ -276,12 +278,7 @@ func (c *Client) ollamaChat(ctx context.Context, messages []Message, options Opt
 	if options.Format != nil {
 		payload["format"] = options.Format
 	}
-	if options.Think != nil {
-		payload["think"] = *options.Think
-	}
-	if options.KeepAlive != "" {
-		payload["keep_alive"] = options.KeepAlive
-	}
+	ollamaShared(payload, options)
 	var body struct {
 		Message *struct {
 			Content  *string `json:"content"`
@@ -298,7 +295,25 @@ func (c *Client) ollamaChat(ctx context.Context, messages []Message, options Opt
 	if body.Message == nil || body.Message.Content == nil {
 		return result{}, fmt.Errorf("ollama answered without message.content")
 	}
-	// Ollama's durations are nanoseconds.
+	answer := result{content: *body.Message.Content, usage: ollamaUsage(body.PromptEvalCount, body.PromptEvalDuration, body.EvalCount, body.EvalDuration)}
+	if body.Message.Thinking != nil {
+		answer.thinking = *body.Message.Thinking
+	}
+	return answer, nil
+}
+
+// ollamaShared sets what every Ollama /api/chat call carries: thinking off
+// unless asked for (a Qwen3 thinking pass spends a small num_predict before
+// any answer), and how long the model stays loaded.
+func ollamaShared(payload map[string]any, options Options) {
+	payload["think"] = options.Think != nil && *options.Think
+	if options.KeepAlive != "" {
+		payload["keep_alive"] = options.KeepAlive
+	}
+}
+
+// ollamaUsage turns Ollama's nanosecond counts into a Usage.
+func ollamaUsage(promptCount, promptNS, evalCount, evalNS *float64) Usage {
 	ms := func(ns *float64) *float64 {
 		if ns == nil {
 			return nil
@@ -306,14 +321,7 @@ func (c *Client) ollamaChat(ctx context.Context, messages []Message, options Opt
 		value := *ns / 1e6
 		return &value
 	}
-	answer := result{content: *body.Message.Content, usage: Usage{
-		PromptTokens: intPtr(body.PromptEvalCount), OutputTokens: intPtr(body.EvalCount),
-		PromptMS: ms(body.PromptEvalDuration), OutputMS: ms(body.EvalDuration),
-	}}
-	if body.Message.Thinking != nil {
-		answer.thinking = *body.Message.Thinking
-	}
-	return answer, nil
+	return Usage{PromptTokens: intPtr(promptCount), OutputTokens: intPtr(evalCount), PromptMS: ms(promptNS), OutputMS: ms(evalNS)}
 }
 
 type openaiUsage struct {
@@ -476,8 +484,10 @@ type ToolTurn struct {
 	Usage     Usage
 }
 
-// ToolChat is one turn of a tool conversation, XeStrata only: the 7B models
-// Ollama runs here pick tools too poorly to be worth a fallback.
+// ToolChat is one turn of a tool conversation, on the OpenAI-compatible
+// server, or on Ollama when there is none. Ollama is never a fallback for a
+// failed tool turn: the small models it runs beside XeStrata pick tools too
+// poorly for that.
 func (c *Client) ToolChat(ctx context.Context, messages []ToolMessage, tools []Tool, options Options) (ToolTurn, error) {
 	start := time.Now()
 	plain := make([]Message, len(messages))
@@ -492,11 +502,21 @@ func (c *Client) ToolChat(ctx context.Context, messages []ToolMessage, tools []T
 		}
 		plain[i] = Message{Role: message.Role, Content: text}
 	}
-	call := Call{At: start.UnixMilli(), Purpose: options.Purpose, Backend: "xestrata", Model: options.Model, Messages: clipMessages(plain)}
+	backend := "xestrata"
+	if c.PrimaryURL == "" {
+		backend = "ollama"
+	}
+	call := Call{At: start.UnixMilli(), Purpose: options.Purpose, Backend: backend, Model: options.Model, Messages: clipMessages(plain)}
 	if ex, ok := ctx.Value(exchangeKey{}).(exchange); ok {
 		call.Session, call.Exchange = ex.session, ex.at
 	}
-	turn, err := c.toolChat(ctx, messages, tools, options)
+	var turn ToolTurn
+	var err error
+	if backend == "ollama" {
+		turn, err = c.ollamaToolChat(ctx, messages, tools, options)
+	} else {
+		turn, err = c.toolChat(ctx, messages, tools, options)
+	}
 	call.TotalMS = time.Since(start).Milliseconds()
 	if err != nil {
 		call.Error = err.Error()
@@ -515,9 +535,6 @@ func (c *Client) ToolChat(ctx context.Context, messages []ToolMessage, tools []T
 }
 
 func (c *Client) toolChat(ctx context.Context, messages []ToolMessage, tools []Tool, options Options) (ToolTurn, error) {
-	if c.PrimaryURL == "" {
-		return ToolTurn{}, fmt.Errorf("tool calls need CHAT_URL")
-	}
 	payload := c.openaiPayload(messages, options)
 	payload["tools"] = tools
 	var body struct {
@@ -545,6 +562,89 @@ func (c *Client) toolChat(ctx context.Context, messages []ToolMessage, tools []T
 	}
 	if message.Content != nil {
 		turn.Content = *message.Content
+	}
+	return turn, nil
+}
+
+// ollamaToolChat is one tool turn on Ollama's own /api/chat, which takes and
+// gives a call's arguments as a JSON object rather than OpenAI's string, and
+// gives calls no ids: they are numbered here, in order.
+func (c *Client) ollamaToolChat(ctx context.Context, messages []ToolMessage, tools []Tool, options Options) (ToolTurn, error) {
+	if c.OllamaURL == "" {
+		return ToolTurn{}, ErrNoModel
+	}
+	type ollamaCall struct {
+		Function struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		} `json:"function"`
+	}
+	type ollamaMessage struct {
+		Role      string       `json:"role"`
+		Content   string       `json:"content"`
+		ToolCalls []ollamaCall `json:"tool_calls,omitempty"`
+		ToolName  string       `json:"tool_name,omitempty"`
+	}
+	names := map[string]string{}
+	sent := make([]ollamaMessage, len(messages))
+	for i, message := range messages {
+		out := ollamaMessage{Role: message.Role}
+		if message.Content != nil {
+			out.Content = *message.Content
+		}
+		for _, call := range message.ToolCalls {
+			names[call.ID] = call.Function.Name
+			var oc ollamaCall
+			oc.Function.Name = call.Function.Name
+			oc.Function.Arguments = json.RawMessage(call.Function.Arguments)
+			if !json.Valid(oc.Function.Arguments) {
+				oc.Function.Arguments = json.RawMessage("{}")
+			}
+			out.ToolCalls = append(out.ToolCalls, oc)
+		}
+		if message.ToolCallID != "" {
+			out.ToolName = names[message.ToolCallID]
+		}
+		sent[i] = out
+	}
+	payload := map[string]any{
+		"model":    options.Model,
+		"stream":   false,
+		"messages": sent,
+		"tools":    tools,
+		"options":  map[string]any{"temperature": options.Temperature, "top_p": options.TopP, "num_predict": options.MaxTokens},
+	}
+	ollamaShared(payload, options)
+	var body struct {
+		Message *struct {
+			Content   string       `json:"content"`
+			Thinking  string       `json:"thinking"`
+			ToolCalls []ollamaCall `json:"tool_calls"`
+		} `json:"message"`
+		PromptEvalCount    *float64 `json:"prompt_eval_count"`
+		PromptEvalDuration *float64 `json:"prompt_eval_duration"`
+		EvalCount          *float64 `json:"eval_count"`
+		EvalDuration       *float64 `json:"eval_duration"`
+	}
+	if err := c.post(ctx, c.OllamaURL+"/api/chat", payload, options.Timeout, &body); err != nil {
+		return ToolTurn{}, fmt.Errorf("ollama: %w", err)
+	}
+	if body.Message == nil {
+		return ToolTurn{}, fmt.Errorf("ollama answered without message")
+	}
+	turn := ToolTurn{
+		Content:  body.Message.Content,
+		Thinking: body.Message.Thinking,
+		Usage:    ollamaUsage(body.PromptEvalCount, body.PromptEvalDuration, body.EvalCount, body.EvalDuration),
+	}
+	for i, oc := range body.Message.ToolCalls {
+		call := ToolCall{ID: fmt.Sprintf("call_%d", i), Type: "function"}
+		call.Function.Name = oc.Function.Name
+		call.Function.Arguments = string(oc.Function.Arguments)
+		if call.Function.Arguments == "" || call.Function.Arguments == "null" {
+			call.Function.Arguments = "{}"
+		}
+		turn.ToolCalls = append(turn.ToolCalls, call)
 	}
 	return turn, nil
 }

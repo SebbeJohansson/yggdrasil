@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -102,5 +103,79 @@ func TestEmbedAsksTheEmbeddingServerInOrder(t *testing.T) {
 	}
 	if !c.CanEmbed() || (&Client{}).CanEmbed() {
 		t.Fatal("CanEmbed")
+	}
+}
+
+func TestOllamaThinksOnlyWhenAsked(t *testing.T) {
+	var think []any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		think = append(think, body["think"])
+		_, _ = w.Write([]byte(`{"message":{"content":"ok"}}`))
+	}))
+	defer server.Close()
+	c := &Client{OllamaURL: server.URL}
+	yes := true
+	for _, options := range []Options{{}, {Think: &yes}} {
+		if _, err := c.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, options); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(think) != 2 || think[0] != false || think[1] != true {
+		t.Fatalf("think sent as %v, want [false true]", think)
+	}
+}
+
+func TestToolChatOnOllamaWithoutChatURL(t *testing.T) {
+	var sent struct {
+		Model    string `json:"model"`
+		Messages []struct {
+			Role      string `json:"role"`
+			ToolName  string `json:"tool_name"`
+			ToolCalls []struct {
+				Function struct {
+					Arguments map[string]any `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+		Tools []Tool `json:"tools"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Errorf("asked %s", r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&sent)
+		_, _ = w.Write([]byte(`{"message":{"content":"","tool_calls":[{"function":{"name":"issues","arguments":{"team":"AI"}}}]}}`))
+	}))
+	defer server.Close()
+	var recorded Call
+	c := &Client{OllamaURL: server.URL, Record: func(call Call) { recorded = call }}
+
+	question, earlier := "what's open?", ""
+	previous := ToolCall{ID: "call_0", Type: "function"}
+	previous.Function.Name, previous.Function.Arguments = "cycle", `{"current":true}`
+	result := "cycle 12"
+	var tool Tool
+	tool.Type, tool.Function.Name = "function", "issues"
+	turn, err := c.ToolChat(context.Background(), []ToolMessage{
+		{Role: "user", Content: &question},
+		{Role: "assistant", Content: &earlier, ToolCalls: []ToolCall{previous}},
+		{Role: "tool", Content: &result, ToolCallID: "call_0"},
+	}, []Tool{tool}, Options{Model: "qwen3:4b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turn.ToolCalls) != 1 || turn.ToolCalls[0].Function.Name != "issues" || turn.ToolCalls[0].Function.Arguments != `{"team":"AI"}` || turn.ToolCalls[0].ID == "" {
+		t.Fatalf("turn: %+v", turn)
+	}
+	if sent.Model != "qwen3:4b" || len(sent.Tools) != 1 || len(sent.Messages) != 3 {
+		t.Fatalf("sent: %+v", sent)
+	}
+	if sent.Messages[1].ToolCalls[0].Function.Arguments["current"] != true || sent.Messages[2].ToolName != "cycle" {
+		t.Fatalf("history not in Ollama's shape: %+v", sent.Messages)
+	}
+	if recorded.Backend != "ollama" {
+		t.Fatalf("recorded backend %q", recorded.Backend)
 	}
 }

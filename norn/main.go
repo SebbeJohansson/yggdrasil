@@ -30,8 +30,10 @@ import (
 //	DRAFTS           false stops drafting replies to the inbox by itself (true)
 //	LAYA_URL, LAYA_KEY  Laya, for the judge, the tone badge and /v1/systemone
 //	TIME_ZONE        yours (Europe/Stockholm)
+//	LOCAL_MODEL      one model for every local call below whose own setting is unset, e.g. qwen3:4b on an Ollama-only machine (unset: each its own default)
 //	SUMMARY_MODEL    phrases the inbox summary (llama3.2:1b); ASK_MODEL answers (the summary model)
 //	DISPATCH_MODEL   decides what each message is (qwen2.5:7b); off: the older rules
+//	WRITE_MODEL      the writing checks (qwen2.5:7b); LOOKUP_MODEL the Linear lookups (lookup), on Ollama too when CHAT_URL is off
 //	DISPATCH_KEEP_ALIVE  how long Ollama keeps it loaded after a call (unset: Ollama's own 5m)
 //	WARM_EVERY       how long XeStrata may sit idle before Norn asks it for a token (2m); off: never
 //	YGG_SINDRI_URL   Sindri, for coding and questions that need tools; SINDRI_TOKEN is Norn's token there (unset: agents off)
@@ -80,6 +82,14 @@ func Main(ctx context.Context) error {
 			}
 		},
 	}
+	// model is a call's model: its own setting, else LOCAL_MODEL, else fallback.
+	local := env.String("LOCAL_MODEL", "")
+	model := func(name, fallback string) string {
+		if local != "" {
+			fallback = local
+		}
+		return env.String(name, fallback)
+	}
 	n := New(Config{
 		ProfilePath:       env.String("PROFILE_PATH", "profile/profile.md"),
 		EmbedModel:        env.String("EMBED_MODEL", embedModel),
@@ -88,9 +98,9 @@ func Main(ctx context.Context) error {
 		LayaURL:           env.String("LAYA_URL", "http://127.0.0.1:8000"),
 		LayaKey:           env.String("LAYA_KEY", ""),
 		TimeZone:          env.String("TIME_ZONE", "Europe/Stockholm"),
-		SummaryModel:      env.String("SUMMARY_MODEL", "llama3.2:1b"),
-		AskModel:          env.String("ASK_MODEL", env.String("SUMMARY_MODEL", "llama3.2:1b")),
-		DispatchModel:     env.String("DISPATCH_MODEL", "qwen2.5:7b"),
+		SummaryModel:      model("SUMMARY_MODEL", "llama3.2:1b"),
+		AskModel:          env.String("ASK_MODEL", model("SUMMARY_MODEL", "llama3.2:1b")),
+		DispatchModel:     model("DISPATCH_MODEL", "qwen2.5:7b"),
 		DispatchKeepAlive: env.String("DISPATCH_KEEP_ALIVE", ""),
 		Judge: JudgeSettings{
 			Provider:    env.String("INBOX_JUDGE", "laya"),
@@ -98,7 +108,7 @@ func Main(ctx context.Context) error {
 			LayaKey:     env.String("LAYA_KEY", ""),
 			TypesafeKey: env.String("TYPESAFE_KEY", ""),
 			OllamaURL:   ollamaURL,
-			OllamaModel: env.String("INBOX_JUDGE_MODEL", ""),
+			OllamaModel: model("INBOX_JUDGE_MODEL", ""),
 		},
 		DataDir: filepath.Dir(dbPath),
 		// Your own Google "Desktop app" OAuth client, for Gmail and Google Calendar.
@@ -109,7 +119,7 @@ func Main(ctx context.Context) error {
 		DashboardURL:       env.String("DASHBOARD_URL", "http://localhost:17420"),
 		Write: WriteConfig{
 			LanguageToolURL: env.String("LANGUAGETOOL_URL", "http://127.0.0.1:8010"),
-			Model:           env.String("WRITE_MODEL", "qwen2.5:7b"),
+			Model:           model("WRITE_MODEL", "qwen2.5:7b"),
 			RewriteModel:    env.String("REWRITE_MODEL", "sonnet"),
 		},
 	}, store, client, p.Logf)
@@ -134,7 +144,7 @@ func Main(ctx context.Context) error {
 	}
 	// Read-only lookups through your MCP servers, before an agent. LOOKUP=off turns them off.
 	if key := env.String("LINEAR_KEY", ""); key != "" && env.String("LOOKUP", "auto") != "off" {
-		n.Lookup = &Lookup{Chat: client.ToolChat, Model: env.String("LOOKUP_MODEL", "lookup"), Zone: n.Zone, Servers: []LookupServer{
+		n.Lookup = &Lookup{Chat: client.ToolChat, Model: model("LOOKUP_MODEL", "lookup"), Zone: n.Zone, Servers: []LookupServer{
 			{Name: "linear", Client: &mcp.Client{URL: env.String("LINEAR_MCP_URL", "https://mcp.linear.app/mcp"), Token: key}},
 		}}
 	}

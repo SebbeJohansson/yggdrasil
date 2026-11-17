@@ -49,7 +49,12 @@ curl localhost:8775/health
 Settings and tokens are in `~/.config/yggdrasil/<part>.env`. Norn's models
 run on XeStrata (`CHAT_URL`). `OLLAMA_URL=off` in `norn.env` keeps Ollama out
 completely: no fallback, the inbox judge uses XeStrata when Laya doesn't
-answer (or always, with `INBOX_JUDGE=xestrata`). Embeddings for memory
+answer (or always, with `INBOX_JUDGE=xestrata`). Any OpenAI-compatible
+server works as `CHAT_URL` (llama.cpp, LM Studio…). On a machine without one,
+`CHAT_URL=off` runs every call on Ollama, tool calls too, and
+`LOCAL_MODEL=qwen3:4b` (say) names the one model they all use; per-call
+settings such as `SUMMARY_MODEL` still win. Take `xestrata` out of
+`MUNIN_TARGETS` and `VEDRFOLNIR_PROBES` there too. Embeddings for memory
 recall come from the compose `embeddings` service (llama.cpp with
 nomic-embed-text v1.5 on `127.0.0.1:8096`, `EMBED_URL` in `norn.env`); start it
 with `docker compose --profile embeddings up -d embeddings`. Memories embedded
