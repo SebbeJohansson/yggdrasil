@@ -62,18 +62,19 @@ type GoalView struct {
 }
 
 // GoalState is read from the tasks: draft without any, needs-you when one
-// asks, failed, stopped or waits, running, merged when every branch is.
+// asks, failed or stopped, running while one runs or waits to resume on its
+// own, merged when every branch is.
 func GoalState(tasks []GoalTask) string {
 	if len(tasks) == 0 {
 		return "draft"
 	}
 	for _, t := range tasks {
-		if t.Status == "needs-you" || t.Status == "failed" || t.Status == "stopped" || t.Status == "scheduled" {
+		if t.Status == "needs-you" || t.Status == "failed" || t.Status == "stopped" {
 			return "needs-you"
 		}
 	}
 	for _, t := range tasks {
-		if t.Status == "running" {
+		if t.Status == "running" || t.Status == "scheduled" {
 			return "running"
 		}
 	}
