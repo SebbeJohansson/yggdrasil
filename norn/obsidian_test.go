@@ -203,3 +203,51 @@ func TestASecondNoteForAShortSubjectGoesIntoTheNoteNornMade(t *testing.T) {
 		t.Fatalf("%+v %v %v", second, made, err)
 	}
 }
+
+func TestNotesTakenDuringAMeetingRewriteOnlyTheirOwnBlock(t *testing.T) {
+	zone, _ := time.LoadLocation("Europe/Stockholm")
+	start := time.Date(2026, 11, 17, 10, 0, 0, 0, zone).UnixMilli()
+	now := time.Date(2026, 11, 17, 10, 5, 0, 0, zone)
+	v := testVault(t, nil)
+	meeting := Meeting{Subject: "1:1 Kim", Start: start, Attendees: []string{"Kim"}}
+	read := func(path string) string {
+		raw, _ := os.ReadFile(filepath.Join(v.Dir, path))
+		return string(raw)
+	}
+	note, made, err := v.WriteLiveNote(meeting, "abc123", "- budget", zone, now)
+	if err != nil || !made || !strings.HasSuffix(note.Path, "Kim - 2026-11-17.md") {
+		t.Fatalf("%+v %v %v", note, made, err)
+	}
+	// You add a line in Obsidian, then keep typing in the dashboard.
+	edited := strings.Replace(read(note.Path), "Deltagare: Kim\n", "Deltagare: Kim\n\nMin egen rad\n", 1)
+	_ = os.WriteFile(filepath.Join(v.Dir, note.Path), []byte(edited), 0o644)
+	if _, made, err := v.WriteLiveNote(meeting, "abc123", "- budget\n- hiring", zone, now); err != nil || made {
+		t.Fatalf("%v %v", made, err)
+	}
+	got := read(note.Path)
+	if !strings.Contains(got, "Min egen rad") || strings.Count(got, "- budget") != 1 || !strings.Contains(got, "- budget\n- hiring\n<!-- /ygg:live abc123 -->") {
+		t.Fatalf("got:\n%s", got)
+	}
+	// Another sitting (another device) gets a block of its own.
+	_, _, _ = v.WriteLiveNote(meeting, "zzz999", "- från mobilen", zone, now)
+	got = read(note.Path)
+	if strings.Count(got, "## Under mötet") != 1 || !strings.Contains(got, "- hiring") || !strings.Contains(got, "- från mobilen") {
+		t.Fatalf("got:\n%s", got)
+	}
+}
+
+func TestTheLiveNoteRouteNeverAnswersNoteText(t *testing.T) {
+	n, p := newNorn(t)
+	n.Vault = testVault(t, map[string]string{"Budget - 2026-11-17.md": "secret text"})
+	start := time.Now().UnixMilli()
+	if code, _ := call(t, p, "PUT", "/v1/notes/meeting/live", map[string]any{"subject": "Budget", "start": start, "id": "BAD", "text": "x"}); code != http.StatusBadRequest {
+		t.Fatalf("a bad id: %d", code)
+	}
+	code, body := call(t, p, "PUT", "/v1/notes/meeting/live", map[string]any{"subject": "Budget", "start": start, "id": "sit0001", "text": "- typed"})
+	if code != http.StatusOK {
+		t.Fatalf("%d %v", code, body)
+	}
+	if raw, _ := json.Marshal(body); strings.Contains(string(raw), "secret") || strings.Contains(string(raw), "typed") {
+		t.Fatalf("note text left Norn: %s", raw)
+	}
+}

@@ -781,6 +781,36 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/notes/meeting/live:
+    put:
+      summary: Keep the notes you are taking during a meeting in its Obsidian note for the day, under "## Under mötet", making "<subject> - <YYYY-MM-DD>.md" when there is none. Each sitting (`id`) has a block of its own between two Markdown comments, rewritten with the whole text on every call; the rest of the note is never changed. Answers the note's title and link, never its text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, start, id, text]
+              properties:
+                subject: { type: string }
+                start: { type: integer, description: Epoch ms. }
+                attendees: { type: array, items: { type: string } }
+                id: { type: string, pattern: "^[a-z0-9]{6,32}$", description: This sitting; a new one adds a block of its own. }
+                text: { type: string, maxLength: 20000 }
+      responses:
+        "200":
+          description: Written.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [note, made]
+                properties:
+                  note: { $ref: "#/components/schemas/VaultNote" }
+                  made: { type: boolean, description: A new note. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v1/meetings/prep:
     get:
       summary: How a meeting's brief is written, kept per recurring series so every occurrence shares it. Empty prompt and model when nothing is kept.

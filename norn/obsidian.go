@@ -38,6 +38,10 @@ const (
 	briefNotes = 3
 	// afterHeading is where a dashboard note goes in a meeting's note.
 	afterHeading = "## Efter mötet"
+	// duringHeading is where notes taken during the meeting go.
+	duringHeading = "## Under mötet"
+	// maxLiveNote is how long notes taken during a meeting may get.
+	maxLiveNote = 20000
 )
 
 // Vault is an Obsidian vault on disk. A nil or zero Vault is off.
@@ -346,6 +350,62 @@ func (v *Vault) AddMeetingNote(meeting Meeting, text string, zone *time.Location
 	return note, false, os.WriteFile(full, []byte(after), 0o644)
 }
 
+// liveMarks are the Markdown comments around one sitting's notes, hidden in
+// Obsidian's reading view: Norn rewrites what is between them, nothing else.
+func liveMarks(id string) (string, string) {
+	return "<!-- ygg:live " + id + " -->", "<!-- /ygg:live " + id + " -->"
+}
+
+var liveID = regexp.MustCompile(`^[a-z0-9]{6,32}$`)
+
+// WriteLiveNote keeps the notes you are taking during a meeting in its note
+// for the day, under "Under mötet", making the note when there is none. Each
+// sitting (`id`) has a block of its own that is rewritten as you type; the
+// rest of the note, your own edits in Obsidian included, is never changed.
+// A block whose end mark was removed is left alone and a new one is added.
+func (v *Vault) WriteLiveNote(meeting Meeting, id, text string, zone *time.Location, now time.Time) (VaultNote, bool, error) {
+	day := time.UnixMilli(meeting.Start).In(zone).Format("2006-01-02")
+	open, end := liveMarks(id)
+	block := open + "\n" + strings.TrimRight(text, " \t\n") + "\n" + end
+	note := v.MeetingNote(meeting.Subject, day, now)
+	if note.Path == "" {
+		note = v.note(NoteName(meeting.Subject, day))
+		var b strings.Builder
+		if len(meeting.Attendees) > 0 {
+			fmt.Fprintf(&b, "Deltagare: %s\n\n", strings.Join(meeting.Attendees, ", "))
+		}
+		b.WriteString(duringHeading + "\n\n" + block + "\n")
+		full := filepath.Join(v.Dir, filepath.FromSlash(note.Path))
+		file, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			return VaultNote{}, false, err
+		}
+		_, err = file.WriteString(b.String())
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		v.scanned = time.Time{}
+		return note, true, err
+	}
+	full := filepath.Join(v.Dir, filepath.FromSlash(note.Path))
+	before, err := os.ReadFile(full)
+	if err != nil {
+		return VaultNote{}, false, err
+	}
+	content := string(before)
+	var after string
+	if from := strings.LastIndex(content, open); from >= 0 && strings.Contains(content[from:], end) {
+		to := from + strings.Index(content[from:], end) + len(end)
+		after = content[:from] + block + content[to:]
+	} else {
+		after = appendUnder(content, duringHeading, block)
+	}
+	if after == content {
+		return note, false, nil
+	}
+	return note, false, os.WriteFile(full, []byte(after), 0o644)
+}
+
 // bullets is the text as list items, one per line; lines that are already
 // list items or headings are kept as they are.
 func bullets(text string) string {
@@ -530,6 +590,7 @@ func meetingPeople(event CalendarEvent) []string {
 func (n *Norn) mountVault(p *part.Part) {
 	p.Handle("GET /v1/notes/meeting", n.meetingNotes)
 	p.Handle("POST /v1/notes/meeting", n.addMeetingNote)
+	p.Handle("PUT /v1/notes/meeting/live", n.writeLiveNote)
 }
 
 var errNoVault = errors.New("no Obsidian vault: set OBSIDIAN_VAULT to its folder")
@@ -600,4 +661,42 @@ func (n *Norn) addMeetingNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	part.JSON(w, http.StatusCreated, map[string]any{"note": note, "made": made})
+}
+
+// writeLiveNote keeps what you write during a meeting in its Obsidian note,
+// as you type. Answers the note's title and link, never its text.
+func (n *Norn) writeLiveNote(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Meeting
+		ID   string `json:"id"`
+		Text string `json:"text"`
+	}
+	if err := part.Decode(r, &body); err != nil || strings.TrimSpace(body.Subject) == "" || body.Start <= 0 {
+		part.Error(w, http.StatusBadRequest, "`subject` and `start` (epoch ms) are the meeting's")
+		return
+	}
+	if !liveID.MatchString(body.ID) {
+		part.Error(w, http.StatusBadRequest, "`id` names this sitting: 6 to 32 lowercase letters and digits")
+		return
+	}
+	if len([]rune(body.Text)) > maxLiveNote {
+		part.Error(w, http.StatusBadRequest, "`text` is at most 20000 characters")
+		return
+	}
+	if !n.Vault.On() {
+		part.Error(w, http.StatusServiceUnavailable, errNoVault.Error())
+		return
+	}
+	now := time.Now()
+	n.vaultMu.Lock()
+	defer n.vaultMu.Unlock()
+	if len(body.Attendees) == 0 {
+		body.Attendees = n.findMeeting(body.Subject, now).Attendees
+	}
+	note, made, err := n.Vault.WriteLiveNote(body.Meeting, body.ID, body.Text, n.Zone, now)
+	if err != nil {
+		n.fail(w, err)
+		return
+	}
+	part.JSON(w, http.StatusOK, map[string]any{"note": note, "made": made})
 }
