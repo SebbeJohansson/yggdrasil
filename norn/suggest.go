@@ -155,7 +155,12 @@ func (e *Events) Suggestions(calendar string, suggestions []CalendarSuggestion, 
 }
 
 // announceSuggestions tells Huginn about the work calendar's new suggestions.
+// Only while someone follows the stream: right after a restart Huginn may not
+// be back yet, and a suggestion told to nobody would count as told.
 func (n *Norn) announceSuggestions(ctx context.Context) {
+	if !n.Events.Listening() {
+		return
+	}
 	var told []string
 	if _, err := n.Store.Setting(ctx, toldSuggestionsKey, &told); err != nil {
 		n.logf("reading the calendar suggestions told: %v", err)

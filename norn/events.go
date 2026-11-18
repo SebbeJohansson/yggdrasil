@@ -143,6 +143,13 @@ func (e *Events) publishLocked(kind string, payload []byte) {
 	}
 }
 
+// Listening is whether anyone follows the stream right now.
+func (e *Events) Listening() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.listeners) > 0
+}
+
 // subscribe returns what came after lastID, and a channel for what comes next.
 func (e *Events) subscribe(lastID int64) ([]StreamEvent, chan StreamEvent) {
 	e.mu.Lock()
