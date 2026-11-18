@@ -426,7 +426,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 	}
 
 	// A message to one agent, picked by hand.
-	if request.To != ""&& request.To != "norn" && request.To != "my-agent" {
+	if request.To != "" && request.To != "norn" && request.To != "my-agent" {
 		if !sindri {
 			return a.answered("Agents are off here (no Sindri).", nil, "to: picked"), nil
 		}

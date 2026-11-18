@@ -153,8 +153,8 @@ func ViewDecision(row DecisionRow) DecisionView {
 	}
 
 	var shadow struct {
-		Action        string             `json:"action"`
-		AgentID       *string            `json:"agentId"`
+		Action        string  `json:"action"`
+		AgentID       *string `json:"agentId"`
 		Probabilities struct {
 			Action map[string]float64 `json:"action"`
 			Agent  map[string]float64 `json:"agent"`
@@ -168,7 +168,9 @@ func ViewDecision(row DecisionRow) DecisionView {
 		for name := range shadow.Probabilities.Agent {
 			names = append(names, name)
 		}
-		sort.SliceStable(names, func(i, j int) bool { return shadow.Probabilities.Agent[names[i]] > shadow.Probabilities.Agent[names[j]] })
+		sort.SliceStable(names, func(i, j int) bool {
+			return shadow.Probabilities.Agent[names[i]] > shadow.Probabilities.Agent[names[j]]
+		})
 		var target *string
 		// "none" is the shadow saying no agent; agentId is null then too.
 		if (action == "reply" || action == "status") && shadow.AgentID != nil && len(names) > 0 && names[0] != "none" {
