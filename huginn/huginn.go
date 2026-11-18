@@ -105,7 +105,7 @@ var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar
 
 var (
 	yes      = true
-	briefAsk = `Brief me for my meeting "{subject}" at {start}{organizerWith}: who will be there, what is open with them in my inbox and memory, and what I should bring. At most five short lines.{invited}{also}`
+	briefAsk = `Brief me for my meeting "{subject}" at {start}{organizerWith}: what is open between me and the people invited, from my notes, inbox and memory, and what I should bring.{invited}{also}`
 )
 
 // BuiltIn is the rules Huginn ships with. They can be switched off, never

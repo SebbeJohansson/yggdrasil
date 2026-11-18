@@ -162,7 +162,7 @@ func TestAMeetingBriefAsksWithWhatYouAddedForItsSeries(t *testing.T) {
 		"event": map[string]any{"id": "x", "subject": "Budget", "start": now.Add(25 * time.Minute).UnixMilli(), "end": now.Add(70 * time.Minute).UnixMilli()}}
 	fired, _ := h.FromNorn(norn("calendar.soon", meeting))
 	h.Handle(context.Background(), fired)
-	if len(fake.asked) != 1 || !strings.HasSuffix(fake.asked[0], "At most five short lines. Also: Focus on the budget.") {
+	if len(fake.asked) != 1 || !strings.HasSuffix(fake.asked[0], "and what I should bring. Also: Focus on the budget.") {
 		t.Fatalf("asked %q", fake.asked)
 	}
 }
