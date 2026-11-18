@@ -560,6 +560,7 @@ paths:
                 agent: { type: string, description: The conversation's question agent, to follow up. }
                 followUp: { type: string, description: What it is sent when followed up. }
                 goal: { type: string }
+                noTools: { type: boolean, description: "Start it with no tools and no MCP servers: it answers from the prompt alone (Norn's meeting briefs)." }
       responses:
         "200": { $ref: "#/components/responses/Agent" }
         "400": { $ref: "#/components/responses/Error" }

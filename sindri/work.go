@@ -304,6 +304,9 @@ type AskRequest struct {
 	// FollowUp is what the agent is sent when it is followed up instead of started.
 	FollowUp string `json:"followUp,omitempty"`
 	Goal     string `json:"goal,omitempty"`
+	// NoTools starts the agent with no tools and no MCP servers: it answers
+	// from the prompt alone (a meeting brief Norn gathered itself).
+	NoTools bool `json:"noTools,omitempty"`
 }
 
 func settled(status string) bool {
@@ -335,10 +338,14 @@ func (w *Work) Ask(request AskRequest) (*Agent, error) {
 	if rules != "" {
 		prompt += "\n\n" + rules
 	}
-	a, err := w.start(StartRequest{
+	start := StartRequest{
 		Cwd: w.AskCwd, Prompt: prompt, Label: "ask: " + request.Name, Model: w.Model, AddRoots: true,
 		AllowedTools: w.askAllowed(), DisallowedTools: AskDenied, Session: request.Session,
-	}, request.Communication, request.Mode)
+	}
+	if request.NoTools {
+		start.AddRoots, start.AllowedTools, start.NoTools = false, nil, true
+	}
+	a, err := w.start(start, request.Communication, request.Mode)
 	if err != nil {
 		return nil, err
 	}
