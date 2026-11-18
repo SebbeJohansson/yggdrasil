@@ -116,6 +116,9 @@ func (n *Norn) agentTurn(w http.ResponseWriter, r *http.Request) {
 		part.Error(w, http.StatusBadRequest, "send `content`, and `agent` and `label` for an agent's message")
 		return
 	}
+	// The agent wrote with placeholders for names (pseudo.go): you read the names.
+	body.Content = n.restoreNames(r.Context(), session, body.Content)
+	body.Label = n.restoreNames(r.Context(), session, body.Label)
 	var id int64
 	var err error
 	if body.Agent == "" {

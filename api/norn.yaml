@@ -981,7 +981,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
     put:
-      summary: Keep how a meeting's (series') brief is written. A prompt and model both empty removes it. Huginn's meeting briefs ask with the prompt, and with Claude when the model is claude.
+      summary: Keep how a meeting's (series') brief is written. A prompt and model both empty removes it. Huginn's meeting briefs ask with the prompt, and with Claude when the model is claude; Norn reads the invitation, email and Teams chats itself and gives them to a Claude agent with no tools, names swapped for placeholders.
       requestBody:
         required: true
         content:

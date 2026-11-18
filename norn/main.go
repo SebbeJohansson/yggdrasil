@@ -33,6 +33,7 @@ import (
 //	LOCAL_MODEL      one model for every local call below whose own setting is unset, e.g. qwen3:4b on an Ollama-only machine (unset: each its own default)
 //	SUMMARY_MODEL    phrases the inbox summary (llama3.2:1b); ASK_MODEL answers (the summary model)
 //	DISPATCH_MODEL   decides what each message is (qwen2.5:7b); off: the older rules
+//	NAMES_MODEL      finds people's names in what goes to Claude, to swap them for placeholders first (qwen2.5:7b)
 //	WRITE_MODEL      the writing checks (qwen2.5:7b); LOOKUP_MODEL the Linear lookups (lookup), on Ollama too when CHAT_URL is off
 //	DISPATCH_KEEP_ALIVE  how long Ollama keeps it loaded after a call (unset: Ollama's own 5m)
 //	WARM_EVERY       how long XeStrata may sit idle before Norn asks it for a token (2m); off: never
@@ -101,6 +102,7 @@ func Main(ctx context.Context) error {
 		SummaryModel:      model("SUMMARY_MODEL", "llama3.2:1b"),
 		AskModel:          env.String("ASK_MODEL", model("SUMMARY_MODEL", "llama3.2:1b")),
 		DispatchModel:     model("DISPATCH_MODEL", "qwen2.5:7b"),
+		NamesModel:        model("NAMES_MODEL", "qwen2.5:7b"),
 		DispatchKeepAlive: env.String("DISPATCH_KEEP_ALIVE", ""),
 		Judge: JudgeSettings{
 			Provider:    env.String("INBOX_JUDGE", "laya"),

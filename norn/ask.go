@@ -20,6 +20,7 @@ import (
 
 	"yggdrasil/internal/llm"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/pseudo"
 )
 
 // Limits on a message.
@@ -166,14 +167,28 @@ func (a *asker) handOver(via string, inbox []string) AskResponse {
 	communication, mode := a.rules()
 	agents, _ := a.n.Store.AgentsOf(a.ctx, a.session)
 	prompt := HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, inbox, a.yours, a.history, "")
-	if briefAsk.MatchString(a.question) {
+	var invited []pseudo.Person
+	brief := briefAsk.MatchString(a.question)
+	if brief {
 		// A meeting brief is about the people in it: your agent sessions and
-		// the conversation so far only pull it off the meeting.
-		prompt = HandoverPrompt(a.question+"\n\n"+ClaudeBriefRules, LoadProfile(a.n.Config.ProfilePath), a.recalled, inbox, nil, nil, "")
+		// the conversation so far only pull it off the meeting. Norn reads
+		// the invitation, email and chats; Claude gets them without tools.
+		digest, people, err := a.n.briefDigest(a.ctx, a.question, time.Now())
+		if err != nil {
+			return a.answered("Could not gather what the brief is written from: "+err.Error(), nil, via)
+		}
+		invited = people
+		prompt = HandoverPrompt(a.question+"\n\n"+BriefRules+"\n\n---\nThe digest:\n\n"+digest, LoadProfile(a.n.Config.ProfilePath), a.recalled, nil, nil, nil, "")
 	}
-	request := map[string]any{"session": a.session, "name": a.name(), "communication": communication, "mode": mode, "goal": a.question,
-		"prompt": prompt, "followUp": a.question}
-	if len(agents) > 0 {
+	texts, names, err := a.n.pseudonymize(a.ctx, a.session, invited, prompt, a.question, a.name())
+	if err != nil {
+		return a.answered("Nothing was sent to Claude: "+err.Error(), nil, via)
+	}
+	request := map[string]any{"session": a.session, "name": texts[2], "communication": communication, "mode": mode, "goal": texts[1],
+		"prompt": withLegend(texts[0], names), "followUp": withLegend(texts[1], names)}
+	if brief {
+		request["noTools"] = true
+	} else if len(agents) > 0 {
 		request["agent"] = agents[0]
 	}
 	agent, err := a.n.Sindri.Ask(a.ctx, request)
@@ -185,14 +200,22 @@ func (a *asker) handOver(via string, inbox []string) AskResponse {
 		return a.answered("This needs tools, and Sindri is not reachable. Start the question with /local to get my best guess instead.", nil, via)
 	}
 	_ = a.n.Store.BindAgent(a.ctx, a.session, agent.ID)
+	if brief {
+		return a.answered("I read the meeting, your email and chats with the people invited, and handed them to Claude without names. It will answer here.", &Delegated{AgentID: agent.ID, Status: agent.Status}, via)
+	}
 	return a.answered("This needs tools, so I handed it to an agent. It will answer here.", &Delegated{AgentID: agent.ID, Status: agent.Status}, via)
 }
 
 // code hands a coding task to Sindri: one agent per project.
 func (a *asker) code(projects []string, via string) AskResponse {
 	communication, mode := a.rules()
-	handed, err := a.n.Sindri.Code(a.ctx, map[string]any{"session": a.session, "name": a.name(), "projects": projects, "goal": a.question,
-		"communication": communication, "mode": mode, "prompt": HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, nil, nil, ownWords(a.history), "")})
+	prompt := HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, nil, nil, ownWords(a.history), "")
+	texts, names, err := a.n.pseudonymize(a.ctx, a.session, nil, prompt, a.question, a.name())
+	if err != nil {
+		return a.answered("Nothing was sent to Claude: "+err.Error(), nil, via)
+	}
+	handed, err := a.n.Sindri.Code(a.ctx, map[string]any{"session": a.session, "name": texts[2], "projects": projects, "goal": texts[1],
+		"communication": communication, "mode": mode, "prompt": withLegend(texts[0], names)})
 	if err != nil {
 		return a.answered("Could not hand the coding over: "+err.Error(), nil, via)
 	}
@@ -221,6 +244,11 @@ func (a *asker) reply(agent *Agent, text, via string) AskResponse {
 	if chat, err := a.n.Store.Chat(a.ctx, a.session, 0, 10_000); err == nil {
 		text = Missed(chat, agent.ID, task) + text
 	}
+	texts, names, err := a.n.pseudonymize(a.ctx, a.session, nil, text)
+	if err != nil {
+		return a.answered("Nothing was sent to Claude: "+err.Error(), nil, via)
+	}
+	text = withLegend(texts[0], names)
 	prompted, err := a.n.Sindri.Reply(a.ctx, map[string]any{"session": a.session, "agent": agent.ID, "text": text, "images": a.request.Images, "communication": communication, "mode": mode})
 	if err != nil {
 		var refused *SindriError
@@ -671,7 +699,11 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		}
 	}
 	messages := append([]llm.Message{{Role: "system", Content: AskSystemPrompt(LoadProfile(n.Config.ProfilePath), a.recalled, inbox, agentLines, append(OverviewLines(everyone, now), SessionLines(a.yours)...), calendar, notes)}}, a.history...)
-	messages = append(messages, llm.Message{Role: "user", Content: question})
+	asked := question
+	if briefAsk.MatchString(question) {
+		asked += "\n\n" + BriefFormat
+	}
+	messages = append(messages, llm.Message{Role: "user", Content: asked})
 	// You wait for this one, and the local model can take a minute just to
 	// read a long question (a meeting brief with notes) while it finishes another call.
 	options := llm.Options{Purpose: "answer", Model: n.Config.AskModel, Temperature: 0.5, TopP: 0.9, MaxTokens: 400, Timeout: AnswerTimeout}

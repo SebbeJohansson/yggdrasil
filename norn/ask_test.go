@@ -69,6 +69,7 @@ func withSindri(t *testing.T, n *Norn) *fakeSindri {
 	t.Cleanup(server.Close)
 	n.Sindri = &SindriClient{URL: server.URL, Token: "t", HTTP: server.Client()}
 	n.Config.DispatchModel = "off"
+	namesModel(t, n)
 	return fake
 }
 

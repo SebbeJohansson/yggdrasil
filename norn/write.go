@@ -960,12 +960,19 @@ func (n *Norn) writeRewrite(w http.ResponseWriter, r *http.Request) {
 		part.Error(w, http.StatusServiceUnavailable, "rewrites need Sindri (no SINDRI_TOKEN in norn.env)")
 		return
 	}
-	text, err := n.Sindri.Rewrite(r.Context(), body.Text, body.Style, n.Config.Write.RewriteModel, time.Second, 2*time.Minute)
+	// Claude rewrites the text with placeholders for names (pseudo.go).
+	texts, names, err := n.pseudonymize(r.Context(), "", nil, body.Text)
+	if err != nil {
+		n.logf("rewrite not sent: %v", err)
+		part.Error(w, http.StatusBadGateway, "nothing was sent to Claude: "+err.Error())
+		return
+	}
+	text, err := n.Sindri.Rewrite(r.Context(), texts[0], body.Style, n.Config.Write.RewriteModel, time.Second, 2*time.Minute)
 	if err != nil {
 		n.engineFailed(w, "claude", err)
 		return
 	}
-	part.JSON(w, http.StatusOK, map[string]string{"text": text})
+	part.JSON(w, http.StatusOK, map[string]string{"text": names.Restore(text)})
 }
 
 func (n *Norn) mountWrite(p *part.Part) {

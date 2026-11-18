@@ -47,6 +47,9 @@ type Config struct {
 	// ("off": the older rules). DispatchKeepAlive is how long Ollama keeps a
 	// model loaded after a call; empty leaves it to Ollama (5m).
 	AskModel, DispatchModel, DispatchKeepAlive string
+	// NamesModel finds people's names in what is sent to Claude, so they can
+	// be swapped for placeholders first (pseudo.go).
+	NamesModel string
 	// Judge says who judges the inbox beside the four rules.
 	Judge JudgeSettings
 	// DataDir holds the sign-ins, beside the database.
