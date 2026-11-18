@@ -78,23 +78,33 @@ func TestCalendarSuggestionsLeaveOutPastKeptAndDeclined(t *testing.T) {
 	}
 }
 
-func TestSuggestionEventsOnlyForNewOnes(t *testing.T) {
+func TestEachSuggestionIsToldOnce(t *testing.T) {
 	events, cancelled, now := suggestionWeek(t)
 	e := NewEvents(now)
 	all := CalendarSuggestions(events, cancelled, nil, now)
-	e.Suggestions("work", all[:1])
-	if len(e.kept) != 0 {
-		t.Fatalf("the first look only takes note, sent %d", len(e.kept))
-	}
-	e.Suggestions("work", all)
-	e.Suggestions("work", all)
-	if len(e.kept) != len(all)-1 {
-		t.Fatalf("want %d events, got %d", len(all)-1, len(e.kept))
+	// Told before a restart: only the rest are told now.
+	told := e.Suggestions("work", all[:1], nil)
+	told = e.Suggestions("work", all, told)
+	told = e.Suggestions("work", all, told)
+	if len(e.kept) != len(all) || len(told) != len(all) {
+		t.Fatalf("want %d events, got %d (told %v)", len(all), len(e.kept), told)
 	}
 	var change CalendarChange
-	_ = json.Unmarshal(e.kept[0].Data, &change)
-	if !strings.HasPrefix(e.kept[0].Kind, "calendar.") || change.Invite == nil || change.Event.Response != "organizer" {
-		t.Fatalf("got %s %+v", e.kept[0].Kind, change)
+	_ = json.Unmarshal(e.kept[1].Data, &change)
+	if !strings.HasPrefix(e.kept[1].Kind, "calendar.") || change.Invite == nil || change.Event.Response != "organizer" {
+		t.Fatalf("got %s %+v", e.kept[1].Kind, change)
+	}
+}
+
+func TestEventIdsKeepGrowingAcrossARestart(t *testing.T) {
+	now := time.Now()
+	before := NewEvents(now)
+	before.Publish("inbox.arrived", map[string]string{})
+	after := NewEvents(now.Add(time.Second))
+	after.Publish("inbox.arrived", map[string]string{})
+	missed, _ := after.subscribe(before.kept[0].ID)
+	if len(missed) != 1 {
+		t.Fatalf("a listener back from the last process missed %d", 1-len(missed))
 	}
 }
 

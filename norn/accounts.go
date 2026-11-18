@@ -112,7 +112,7 @@ func (n *Norn) readWorkCalendar(ctx context.Context) error {
 	})
 	if err == nil {
 		n.calendarEvents("work", n.Accounts.Work)
-		n.Events.Suggestions("work", n.workSuggestions(ctx))
+		n.announceSuggestions(ctx)
 	}
 	return err
 }

@@ -11,7 +11,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,8 +24,12 @@ import (
 	"yggdrasil/internal/part"
 )
 
-// keptSuggestionsKey is the suggestions you said to keep your copy for.
-const keptSuggestionsKey = "calendar-suggestions-kept"
+const (
+	// keptSuggestionsKey is the suggestions you said to keep your copy for.
+	keptSuggestionsKey = "calendar-suggestions-kept"
+	// toldSuggestionsKey is the suggestions Huginn was told about, as id:kind.
+	toldSuggestionsKey = "calendar-suggestions-told"
+)
 
 // CalendarSuggestion is one of your copies and the invite that covers it.
 type CalendarSuggestion struct {
@@ -132,25 +135,42 @@ func CalendarSuggestions(events, cancelled []CalendarEvent, kept []string, now t
 }
 
 // Suggestions sends calendar.duplicate or calendar.stale for each
-// suggestion not seen before. The first look only takes note, like the
-// other calendar events: what was already there is on the dashboard.
-func (e *Events) Suggestions(calendar string, suggestions []CalendarSuggestion) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	seen, primed := e.suggested[calendar]
-	current := map[string]bool{}
+// suggestion not told yet, and is told with them added (the last 200).
+// told outlives a restart (toldSuggestionsKey), so each is told once, and
+// one already there when this came in is told too.
+func (e *Events) Suggestions(calendar string, suggestions []CalendarSuggestion, told []string) []string {
 	for _, s := range suggestions {
-		current[s.ID+s.Kind] = true
-		if !primed || seen[s.ID+s.Kind] {
+		key := s.ID + ":" + s.Kind
+		if slices.Contains(told, key) {
 			continue
 		}
 		invite := s.Invite
-		payload, err := json.Marshal(CalendarChange{Calendar: calendar, Event: s.Copy, Invite: &invite})
-		if err == nil {
-			e.publishLocked("calendar."+s.Kind, payload)
+		e.Publish("calendar."+s.Kind, CalendarChange{Calendar: calendar, Event: s.Copy, Invite: &invite})
+		told = append(told, key)
+	}
+	if len(told) > 200 {
+		told = told[len(told)-200:]
+	}
+	return told
+}
+
+// announceSuggestions tells Huginn about the work calendar's new suggestions.
+func (n *Norn) announceSuggestions(ctx context.Context) {
+	var told []string
+	if _, err := n.Store.Setting(ctx, toldSuggestionsKey, &told); err != nil {
+		n.logf("reading the calendar suggestions told: %v", err)
+		return
+	}
+	last := ""
+	if len(told) > 0 {
+		last = told[len(told)-1]
+	}
+	told = n.Events.Suggestions("work", n.workSuggestions(ctx), told)
+	if len(told) > 0 && told[len(told)-1] != last {
+		if err := n.Store.SetSetting(ctx, toldSuggestionsKey, told); err != nil {
+			n.logf("keeping the calendar suggestions told: %v", err)
 		}
 	}
-	e.suggested[calendar] = current
 }
 
 // workSuggestions is the work calendar's suggestions now, without the ones you kept.
