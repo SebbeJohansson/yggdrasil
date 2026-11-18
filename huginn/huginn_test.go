@@ -237,3 +237,26 @@ func TestAnAgentsRuleStartsDisabledAndOnlyYouEnableIt(t *testing.T) {
 		t.Fatalf("removed a built-in rule: %d", status)
 	}
 }
+
+func TestYourCopyOfAnInvitedMeetingIsSuggestedForDeleting(t *testing.T) {
+	now := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+	h, fake := newTest(t, now)
+	h.DashboardURL = "http://127.0.0.1:3000"
+	start := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC).UnixMilli()
+	change := map[string]any{"calendar": "work",
+		"event":  map[string]any{"id": "c", "subject": "🍕 Pizza lunch", "start": start, "end": start + 3600000, "response": "organizer"},
+		"invite": map[string]any{"id": "i", "subject": "🍕 Pizza lunch ", "organizer": "Karin Lund", "start": start, "end": start + 3600000}}
+	fired, ok := h.FromNorn(norn("calendar.duplicate", change))
+	if !ok {
+		t.Fatal("calendar.duplicate not read")
+	}
+	h.Handle(context.Background(), fired)
+	if len(fake.pushed) != 1 {
+		t.Fatalf("told %d times", len(fake.pushed))
+	}
+	m := fake.pushed[0]
+	want := `Karin Lund sent an invite for "🍕 Pizza lunch". Your own "🍕 Pizza lunch" on Thu 26 Nov at 12:00 is a duplicate: delete it?`
+	if m.Text != want || m.Link != "http://127.0.0.1:3000/" || !m.Hold || m.Push == nil || *m.Push {
+		t.Fatalf("got %+v", m)
+	}
+}

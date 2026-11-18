@@ -74,6 +74,9 @@ type CalendarChange struct {
 	// never picked one), on calendar.soon, .added and .moved.
 	Prompt string `json:"prompt,omitempty"`
 	Model  string `json:"model,omitempty"`
+	// Invite is the invite that covers your copy (Event), on
+	// calendar.duplicate and calendar.stale.
+	Invite *CalendarEvent `json:"invite,omitempty"`
 }
 
 // StreamEvent is one event as it goes out.
@@ -99,6 +102,8 @@ type Events struct {
 	// is not told about, so a restart doesn't repeat it.
 	soonFrom time.Time
 	soonSent map[string]bool
+	// suggested is each calendar's suggestions last seen, by id and kind.
+	suggested map[string]map[string]bool
 	// PrepFor is how a meeting's brief is written (your addition to its
 	// prompt, and the model); nil for none.
 	PrepFor func(CalendarEvent) MeetingPrep
@@ -107,7 +112,7 @@ type Events struct {
 // NewEvents starts with nothing seen; meetings that end from now on count.
 func NewEvents(now time.Time) *Events {
 	return &Events{listeners: map[chan StreamEvent]struct{}{}, inboxSeen: map[string]bool{},
-		calendars: map[string]map[string]CalendarEvent{}, endedAfter: now, soonFrom: now, soonSent: map[string]bool{}}
+		calendars: map[string]map[string]CalendarEvent{}, endedAfter: now, soonFrom: now, soonSent: map[string]bool{}, suggested: map[string]map[string]bool{}}
 }
 
 // Publish sends an event to every listener and keeps it for catching up.

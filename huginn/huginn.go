@@ -101,7 +101,7 @@ type Reaction struct {
 }
 
 // Events are the events a trigger can name.
-var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo"}
+var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "calendar.duplicate", "calendar.stale", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo"}
 
 var (
 	yes      = true
@@ -123,6 +123,10 @@ func BuiltIn() []Rule {
 			Action: Action{Kind: "ask", Text: briefAsk}, Deliver: both, Hold: true},
 		{ID: "alert-impact", Name: "Critical alert", On: Trigger{Event: "alert.opened", Severity: []string{"critical"}},
 			Action: Action{Kind: "alert-impact"}, Deliver: both},
+		{ID: "calendar-duplicate", Name: "Your copy of a meeting has an invite now", On: Trigger{Event: "calendar.duplicate"},
+			Action: Action{Kind: "notify", Text: `{inviteOrganizer} sent an invite for "{inviteSubject}". Your own "{subject}" on {day} at {start} is a duplicate: delete it?`}, Deliver: []string{"widget"}, Hold: true},
+		{ID: "calendar-stale", Name: "The invite your copy matches was cancelled", On: Trigger{Event: "calendar.stale"},
+			Action: Action{Kind: "notify", Text: `{inviteOrganizer} cancelled "{inviteSubject}", but your own "{subject}" on {day} at {start} is still there: delete it?`}, Deliver: []string{"widget"}, Hold: true},
 		{ID: "linear-todo", Name: "Linear ticket with no goal", On: Trigger{Event: "linear.todo"},
 			Action: Action{Kind: "notify", Text: "{key} is in {state} and no goal has it: {title}. Add it as a goal?"}, Deliver: both, Hold: true},
 	}
@@ -469,6 +473,8 @@ type CalendarChange struct {
 	// it ("claude" asks a Claude agent), kept per series.
 	Prompt string `json:"prompt"`
 	Model  string `json:"model"`
+	// Invite is the invite that covers your copy, on calendar.duplicate and .stale.
+	Invite *CalendarEvent `json:"invite"`
 }
 
 // Alert is Gjallar's alert, as its stream sends it.
@@ -553,13 +559,22 @@ func (h *Huginn) FromNorn(event sse.Event) (Fired, bool) {
 		if change.PreviousStart != 0 {
 			fields["previousStart"] = h.clock(change.PreviousStart)
 		}
+		link := ""
+		if invite := change.Invite; invite != nil {
+			fields["inviteSubject"], fields["inviteOrganizer"] = strings.TrimSpace(invite.Subject), invite.Organizer
+			fields["day"] = time.UnixMilli(meeting.Start).In(h.Zone).Format("Mon 2 Jan")
+			// The overview, where its card deletes your copy or keeps it.
+			if h.DashboardURL != "" && h.DashboardURL != "off" {
+				link = strings.TrimRight(h.DashboardURL, "/") + "/"
+			}
+		}
 		// A meeting coming up, whether just added, moved or about to start,
 		// is one thing to tell: the second rule to brief on it stays quiet.
 		key := event.Kind + ":" + meeting.ID + fmt.Sprint(meeting.Start)
 		if event.Kind == "calendar.added" || event.Kind == "calendar.moved" || event.Kind == "calendar.soon" {
 			key = "meeting:" + meeting.ID + fmt.Sprint(meeting.Start)
 		}
-		return Fired{Kind: event.Kind, Key: key, At: at,
+		return Fired{Kind: event.Kind, Key: key, At: at, Link: link,
 			Title: meeting.Subject + " at " + h.clock(meeting.Start), Change: &change, Fields: fields}, true
 	}
 	return Fired{}, false

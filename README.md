@@ -209,14 +209,19 @@ Ratatoskr watches those.
 | `GET /v1/reactions` | `?state=held\|delivered\|failed\|skipped`: what it did in the last 7 days. The widget reads this |
 
 It follows Norn's `GET /v1/events/stream` (`inbox.arrived`, `calendar.added`,
-`calendar.moved`, `calendar.removed`, `calendar.ended`) and Gjallar's alert
+`calendar.moved`, `calendar.removed`, `calendar.ended`, `calendar.duplicate`,
+`calendar.stale`) and Gjallar's alert
 stream, which it turns into `alert.opened`, `alert.escalated` and
 `alert.resolved`. Built-in rules: a message from your manager or above, an
 urgent direct message, a brief for a meeting added or moved into the next
 hour (asked of Norn), what a critical alert stops, and a Linear ticket of
 yours in Todo that no goal has, when Norn judges it development work (looked
 at every 5 minutes through Sindri; the suggestion links to Goals, where you
-add it). Each reaction goes
+add it), and a meeting you put in your calendar yourself that an invite now
+covers, or whose invite was cancelled (widget only; Norn's
+`GET /v1/calendar/suggestions`, and the dashboard deletes your copy with
+`POST /v1/calendar/suggestions/{id}/apply`, which needs the Microsoft sign-in
+with the calendar, now `Calendars.ReadWrite`). Each reaction goes
 to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A
 stream down for 5 minutes is `stream:<part>` (warning).
 

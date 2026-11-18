@@ -115,14 +115,15 @@ type MicrosoftScopes struct {
 // ScopesFor is the scope string: offline_access makes the refresh token
 // appear, Chat.Read is Teams, User.Read.All is the org chart senders are
 // ranked by. Mail and calendar only when asked for: a scope you ask for is
-// one the tenant may make you chase an admin over.
+// one the tenant may make you chase an admin over. The calendar is
+// read-write, so a calendar suggestion can delete your own copy of a meeting.
 func ScopesFor(scopes MicrosoftScopes) string {
 	list := []string{"offline_access", "User.Read", "User.Read.All", "Chat.Read"}
 	if scopes.Mail {
 		list = append(list, "Mail.Read")
 	}
 	if scopes.Calendar {
-		list = append(list, "Calendars.Read")
+		list = append(list, "Calendars.ReadWrite")
 	}
 	return strings.Join(list, " ")
 }

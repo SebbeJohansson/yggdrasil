@@ -102,9 +102,13 @@ type DueTask struct {
 type CalendarSnapshot struct {
 	Events []CalendarEvent `json:"events"`
 	Tasks  []DueTask       `json:"tasks,omitempty"`
-	From   int64           `json:"from"`
-	To     int64           `json:"to"`
-	At     int64           `json:"at"`
+	// Cancelled is the cancelled meetings still in the calendar (Outlook
+	// keeps an invite you haven't removed), and the ones that left it while
+	// still ahead (Calendar.gone), for calendar suggestions only.
+	Cancelled []CalendarEvent `json:"-"`
+	From      int64           `json:"from"`
+	To        int64           `json:"to"`
+	At        int64           `json:"at"`
 }
 
 // CalendarRead is whether the last read worked: refused is usually the
@@ -119,16 +123,43 @@ type Calendar struct {
 	mu       sync.Mutex
 	snapshot *CalendarSnapshot
 	last     CalendarRead
+	// gone is meetings that left the calendar while still ahead (an invite
+	// cancelled and removed), by id, until they would have ended. In memory
+	// only: a restart forgets them.
+	gone map[string]CalendarEvent
 }
 
-// Set keeps a snapshot unless a newer one is already there.
+// Set keeps a snapshot unless a newer one is already there, noting the
+// meetings that left the calendar since the last one.
 func (c *Calendar) Set(snapshot CalendarSnapshot) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.snapshot == nil || snapshot.At >= c.snapshot.At {
-		c.snapshot = &snapshot
-	}
 	c.last = CalendarRead{State: "ok"}
+	if c.snapshot != nil && snapshot.At < c.snapshot.At {
+		return
+	}
+	if c.gone == nil {
+		c.gone = map[string]CalendarEvent{}
+	}
+	still := map[string]bool{}
+	for _, event := range snapshot.Events {
+		still[event.ID] = true
+	}
+	if c.snapshot != nil {
+		for _, old := range c.snapshot.Events {
+			if old.ID != "" && !still[old.ID] && old.Start > snapshot.At {
+				c.gone[old.ID] = old
+			}
+		}
+	}
+	for id, event := range c.gone {
+		if still[id] || event.End <= snapshot.At {
+			delete(c.gone, id)
+			continue
+		}
+		snapshot.Cancelled = append(snapshot.Cancelled, event)
+	}
+	c.snapshot = &snapshot
 }
 
 // Clear forgets the snapshot: the calendar was switched off where you are.
@@ -239,6 +270,12 @@ func graphUTC(value string) (int64, bool) {
 
 // GraphEvents reads one page of calendarView. Cancelled meetings are left out.
 func GraphEvents(body []byte) (events []CalendarEvent, next string) {
+	events, _, next = graphPage(body)
+	return events, next
+}
+
+// graphPage is one page of calendarView, the cancelled meetings apart.
+func graphPage(body []byte) (events, cancelled []CalendarEvent, next string) {
 	var page struct {
 		Value []struct {
 			ID              string                       `json:"id"`
@@ -277,7 +314,7 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 	for _, raw := range page.Value {
 		start, okStart := graphUTC(raw.Start.DateTime)
 		end, okEnd := graphUTC(raw.End.DateTime)
-		if raw.IsCancelled || !okStart || !okEnd {
+		if !okStart || !okEnd {
 			continue
 		}
 		subject := strings.TrimSpace(raw.Subject)
@@ -302,14 +339,19 @@ func GraphEvents(body []byte) (events []CalendarEvent, next string) {
 			}
 			attendees = addAttendee(attendees, name)
 		}
-		events = append(events, CalendarEvent{
+		event := CalendarEvent{
 			Subject: subject, Start: start, End: end, AllDay: raw.IsAllDay, Online: raw.IsOnlineMeeting,
 			Location: strings.TrimSpace(raw.Location.DisplayName), Organizer: raw.Organizer.EmailAddress.Name,
 			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID, Attendees: attendees, Series: raw.SeriesMasterID,
 			Rooms: rooms, Join: JoinLink(raw.Body.Content, joinURL(raw.OnlineMeeting)),
-		})
+		}
+		if raw.IsCancelled {
+			cancelled = append(cancelled, event)
+		} else {
+			events = append(events, event)
+		}
 	}
-	return events, page.Next
+	return events, cancelled, page.Next
 }
 
 func joinURL(meeting *struct {
@@ -338,9 +380,10 @@ func ReadOutlook(ctx context.Context, auth *MicrosoftAuth, get bearerGet, now ti
 		if status != http.StatusOK {
 			return CalendarSnapshot{}, apiError("Graph", status, body)
 		}
-		var events []CalendarEvent
-		events, next = GraphEvents(body)
+		var events, cancelled []CalendarEvent
+		events, cancelled, next = graphPage(body)
 		snapshot.Events = append(snapshot.Events, events...)
+		snapshot.Cancelled = append(snapshot.Cancelled, cancelled...)
 	}
 	return snapshot, nil
 }

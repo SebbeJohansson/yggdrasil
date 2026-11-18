@@ -257,7 +257,7 @@ components:
       properties:
         event:
           type: string
-          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, alert.opened, alert.escalated, alert.resolved, linear.todo]
+          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, calendar.duplicate, calendar.stale, alert.opened, alert.escalated, alert.resolved, linear.todo]
         relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived and draft.ready only. }
         band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived and draft.ready only. }
         direct: { type: boolean, description: inbox.arrived and draft.ready only. }
