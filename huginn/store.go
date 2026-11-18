@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS reactions (
 	body  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS reactions_at ON reactions (at);
+CREATE TABLE IF NOT EXISTS stream_marks (
+	part    TEXT PRIMARY KEY,
+	last_id TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS linear_judged (
 	key TEXT PRIMARY KEY,
 	dev INTEGER NOT NULL,
@@ -146,6 +150,22 @@ func (s *Store) Judged(ctx context.Context, key string) (dev, judged bool, err e
 func (s *Store) Judge(ctx context.Context, key string, dev bool) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO linear_judged (key, dev, at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET dev = excluded.dev`,
 		key, dev, time.Now().UnixMilli())
+	return err
+}
+
+// Mark is the last event handled from a part's stream; "" for none.
+func (s *Store) Mark(ctx context.Context, part string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT last_id FROM stream_marks WHERE part = ?`, part).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+// SetMark keeps the last event handled from a part's stream.
+func (s *Store) SetMark(ctx context.Context, part, id string) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO stream_marks (part, last_id) VALUES (?, ?) ON CONFLICT (part) DO UPDATE SET last_id = excluded.last_id`, part, id)
 	return err
 }
 

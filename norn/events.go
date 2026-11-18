@@ -102,17 +102,18 @@ type Events struct {
 	// is not told about, so a restart doesn't repeat it.
 	soonFrom time.Time
 	soonSent map[string]bool
-	// suggested is each calendar's suggestions last seen, by id and kind.
-	suggested map[string]map[string]bool
 	// PrepFor is how a meeting's brief is written (your addition to its
 	// prompt, and the model); nil for none.
 	PrepFor func(CalendarEvent) MeetingPrep
 }
 
 // NewEvents starts with nothing seen; meetings that end from now on count.
+// Ids start from now in ms, so they keep growing across a restart: a
+// listener reconnecting with the last process's Last-Event-ID still gets
+// what this one sent before it came back.
 func NewEvents(now time.Time) *Events {
-	return &Events{listeners: map[chan StreamEvent]struct{}{}, inboxSeen: map[string]bool{},
-		calendars: map[string]map[string]CalendarEvent{}, endedAfter: now, soonFrom: now, soonSent: map[string]bool{}, suggested: map[string]map[string]bool{}}
+	return &Events{next: now.UnixMilli(), listeners: map[chan StreamEvent]struct{}{}, inboxSeen: map[string]bool{},
+		calendars: map[string]map[string]CalendarEvent{}, endedAfter: now, soonFrom: now, soonSent: map[string]bool{}}
 }
 
 // Publish sends an event to every listener and keeps it for catching up.

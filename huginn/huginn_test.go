@@ -260,3 +260,16 @@ func TestYourCopyOfAnInvitedMeetingIsSuggestedForDeleting(t *testing.T) {
 		t.Fatalf("got %+v", m)
 	}
 }
+
+func TestMarksOutliveARestart(t *testing.T) {
+	h, _ := newTest(t, time.Now())
+	ctx := context.Background()
+	if id, err := h.Store.Mark(ctx, "norn"); err != nil || id != "" {
+		t.Fatalf("got %q %v", id, err)
+	}
+	_ = h.Store.SetMark(ctx, "norn", "41")
+	_ = h.Store.SetMark(ctx, "norn", "42")
+	if id, _ := h.Store.Mark(ctx, "norn"); id != "42" {
+		t.Fatalf("got %q", id)
+	}
+}

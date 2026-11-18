@@ -40,7 +40,7 @@ func TestCalendarEventsTellWhatChanged(t *testing.T) {
 	}
 
 	e.Ended(now.Add(time.Hour + time.Minute))
-	all := kinds(e, 3)
+	all := kinds(e, e.kept[2].ID)
 	if len(all) != 1 || all[0] != "calendar.ended" {
 		t.Fatalf("after the planning meeting ended: %v", all)
 	}

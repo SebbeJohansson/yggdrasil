@@ -789,12 +789,25 @@ func (h *Huginn) watchStreams(ctx context.Context) error {
 	if start {
 		for _, stream := range h.Streams {
 			from := h.FromNorn
+			// Norn keeps its last 500 events, so Huginn picks up after the last
+			// one it handled, even across its own restart. Gjallar starts fresh.
+			resumes := stream.Part == "norn"
 			if stream.Part == "gjallar" {
 				from = h.FromGjallar
+			}
+			if resumes {
+				if id, err := h.Store.Mark(ctx, stream.Part); err == nil && id != "" {
+					stream.Resume(id)
+				}
 			}
 			go stream.Follow(ctx, func(event sse.Event) {
 				if fired, ok := from(event); ok {
 					h.Handle(ctx, fired)
+				}
+				if resumes && event.ID != "" {
+					if err := h.Store.SetMark(ctx, stream.Part, event.ID); err != nil {
+						h.logf("keeping where the %s stream is: %v", stream.Part, err)
+					}
 				}
 			})
 		}

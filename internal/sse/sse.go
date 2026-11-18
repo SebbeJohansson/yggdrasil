@@ -51,6 +51,15 @@ func New(part, url, token string, started time.Time) *Stream {
 	return &Stream{Part: part, URL: url, Token: token, HTTP: &http.Client{}, since: started}
 }
 
+// Resume makes the first connection ask for what came after id: the last
+// event handled before this process started, so a restart misses nothing the
+// part still keeps. Call it before Follow.
+func (s *Stream) Resume(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastID = id
+}
+
 // Status is the stream's state now. Since is when it last connected or, while
 // down, when it went down.
 func (s *Stream) Status() Status {
