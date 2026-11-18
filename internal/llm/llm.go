@@ -77,6 +77,16 @@ type Call struct {
 	Messages []Message `json:"messages"`
 	Response string    `json:"response"`
 	Thinking string    `json:"thinking"`
+	// Placeholders is the names swapped out of what was sent (Claude
+	// handovers), with the real names: shown on this machine only.
+	Placeholders []Placeholder `json:"placeholders,omitempty"`
+}
+
+// Placeholder is one name swapped for a placeholder, and how it was found.
+type Placeholder struct {
+	Token string `json:"token"`
+	Name  string `json:"name"`
+	Found string `json:"found"`
 }
 
 // MaxCallText is the longest text kept per message, reply or thinking, and
@@ -115,6 +125,18 @@ type exchange struct {
 // conversation, for the debug view.
 func WithExchange(ctx context.Context, session string, at time.Time) context.Context {
 	return context.WithValue(ctx, exchangeKey{}, exchange{session: session, at: at.UnixMilli()})
+}
+
+// Note hands Record a call made some other way (a Claude agent through
+// Sindri), in the conversation and message ctx is marked with.
+func (c *Client) Note(ctx context.Context, call Call) {
+	if ex, ok := ctx.Value(exchangeKey{}).(exchange); ok && call.Session == "" {
+		call.Session, call.Exchange = ex.session, ex.at
+	}
+	call.Messages, call.Response = clipMessages(call.Messages), clip(call.Response)
+	if c.Record != nil {
+		c.Record(call)
+	}
 }
 
 // Client chats with the OpenAI-compatible server first and Ollama second,

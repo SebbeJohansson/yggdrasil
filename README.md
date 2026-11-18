@@ -83,7 +83,11 @@ of an address. When the local model does not answer, or a known name is still
 there after the swap, nothing is sent. A Claude meeting brief is gathered by
 Norn itself (the invitation, and your email and Teams chats with the people
 invited, from the last 30 days) and given to a Claude agent with no tools.
-A local brief is written by `BRIEF_MODEL` (qwen2.5:7b).
+A local brief is written by `BRIEF_MODEL` (qwen2.5:7b). With the chat's
+debug view on ("Show the model calls"), each handover to Claude is listed
+under your message: the text exactly as it went, each placeholder with the
+real name and how it was found, and Claude's answer before and after the
+names were put back.
 
 ## Develop
 

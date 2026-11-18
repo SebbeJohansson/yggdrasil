@@ -117,8 +117,10 @@ func (n *Norn) agentTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The agent wrote with placeholders for names (pseudo.go): you read the names.
+	raw := body.Content
 	body.Content = n.restoreNames(r.Context(), session, body.Content)
 	body.Label = n.restoreNames(r.Context(), session, body.Label)
+	n.noteRestored(r.Context(), session, raw, body.Content)
 	var id int64
 	var err error
 	if body.Agent == "" {

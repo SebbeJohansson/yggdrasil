@@ -180,12 +180,22 @@ func (a *asker) handOver(via string, inbox []string) AskResponse {
 		invited = people
 		prompt = HandoverPrompt(a.question+"\n\n"+BriefRules+"\n\n---\nThe digest:\n\n"+digest, LoadProfile(a.n.Config.ProfilePath), a.recalled, nil, nil, nil, "")
 	}
+	purpose, how := "question", "Sindri question agent, read-only tools"
+	if brief {
+		purpose, how = "meeting brief", "Sindri question agent, no tools"
+	}
 	texts, names, err := a.n.pseudonymize(a.ctx, a.session, invited, prompt, a.question, a.name())
 	if err != nil {
+		a.n.noteSent(a.ctx, purpose, how, "", nil, err)
 		return a.answered("Nothing was sent to Claude: "+err.Error(), nil, via)
 	}
 	request := map[string]any{"session": a.session, "name": texts[2], "communication": communication, "mode": mode, "goal": texts[1],
 		"prompt": withLegend(texts[0], names), "followUp": withLegend(texts[1], names)}
+	sent := request["prompt"].(string)
+	if !brief && len(agents) > 0 {
+		sent = "If the conversation's agent is followed up, only this:\n" + request["followUp"].(string) + "\n\nElse all of this:\n" + sent
+	}
+	a.n.noteSent(a.ctx, purpose, how, sent, names, nil)
 	if brief {
 		request["noTools"] = true
 	} else if len(agents) > 0 {
@@ -211,9 +221,12 @@ func (a *asker) code(projects []string, via string) AskResponse {
 	communication, mode := a.rules()
 	prompt := HandoverPrompt(a.question, LoadProfile(a.n.Config.ProfilePath), a.recalled, nil, nil, ownWords(a.history), "")
 	texts, names, err := a.n.pseudonymize(a.ctx, a.session, nil, prompt, a.question, a.name())
+	how := "Sindri coding agent in " + strings.Join(projects, ", ")
 	if err != nil {
+		a.n.noteSent(a.ctx, "coding", how, "", nil, err)
 		return a.answered("Nothing was sent to Claude: "+err.Error(), nil, via)
 	}
+	a.n.noteSent(a.ctx, "coding", how, withLegend(texts[0], names), names, nil)
 	handed, err := a.n.Sindri.Code(a.ctx, map[string]any{"session": a.session, "name": texts[2], "projects": projects, "goal": texts[1],
 		"communication": communication, "mode": mode, "prompt": withLegend(texts[0], names)})
 	if err != nil {
@@ -246,9 +259,11 @@ func (a *asker) reply(agent *Agent, text, via string) AskResponse {
 	}
 	texts, names, err := a.n.pseudonymize(a.ctx, a.session, nil, text)
 	if err != nil {
+		a.n.noteSent(a.ctx, "reply", "the agent on "+task, "", nil, err)
 		return a.answered("Nothing was sent to Claude: "+err.Error(), nil, via)
 	}
 	text = withLegend(texts[0], names)
+	a.n.noteSent(a.ctx, "reply", "the agent on "+task, text, names, nil)
 	prompted, err := a.n.Sindri.Reply(a.ctx, map[string]any{"session": a.session, "agent": agent.ID, "text": text, "images": a.request.Images, "communication": communication, "mode": mode})
 	if err != nil {
 		var refused *SindriError

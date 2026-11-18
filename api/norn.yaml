@@ -1651,7 +1651,7 @@ components:
         session: { type: [string, "null"] }
         exchange: { type: [integer, "null"] }
         purpose: { type: string }
-        backend: { type: string, enum: [xestrata, ollama] }
+        backend: { type: string, enum: [xestrata, ollama, claude], description: "claude is a handover to a Claude agent through Sindri, or its answer coming back: model then says how." }
         model: { type: string }
         promptTokens: { type: [integer, "null"] }
         cachedTokens: { type: [integer, "null"] }
@@ -1670,3 +1670,13 @@ components:
               content: { type: string }
         response: { type: [string, "null"] }
         thinking: { type: [string, "null"] }
+        placeholders:
+          type: array
+          description: The names swapped out of what went to Claude, with the real names and how each was found (you, calendar, inbox, meeting invitation, local model, email address).
+          items:
+            type: object
+            required: [token, name, found]
+            properties:
+              token: { type: string }
+              name: { type: string }
+              found: { type: string }

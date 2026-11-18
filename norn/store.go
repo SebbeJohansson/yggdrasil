@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -147,6 +148,11 @@ func OpenStore(path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema + draftSchema + meetingPrepSchema + pseudoSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("norn schema: %w", err)
+	}
+	// Added after the table: the names swapped out of a Claude handover.
+	if _, err := db.Exec(`ALTER TABLE llm_calls ADD COLUMN placeholders TEXT`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
 		return nil, fmt.Errorf("norn schema: %w", err)
 	}
@@ -573,10 +579,14 @@ func (s *Store) SessionOf(ctx context.Context, agent string) (string, error) {
 // AddCall keeps one model call for the debug view, and drops old ones: the
 // row after llmCallDays, its text after llmDetailDays.
 func (s *Store) AddCall(ctx context.Context, call llm.Call) error {
-	var messages any
+	var messages, placeholders any
 	if call.Messages != nil {
 		encoded, _ := json.Marshal(call.Messages)
 		messages = string(encoded)
+	}
+	if len(call.Placeholders) > 0 {
+		encoded, _ := json.Marshal(call.Placeholders)
+		placeholders = string(encoded)
 	}
 	nullable := func(text string) any {
 		if text == "" {
@@ -584,18 +594,18 @@ func (s *Store) AddCall(ctx context.Context, call llm.Call) error {
 		}
 		return text
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO llm_calls (at, session, exchange, purpose, backend, model, prompt_tokens, cached_tokens, output_tokens, prompt_ms, output_ms, total_ms, error, messages, response, thinking)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO llm_calls (at, session, exchange, purpose, backend, model, prompt_tokens, cached_tokens, output_tokens, prompt_ms, output_ms, total_ms, error, messages, response, thinking, placeholders)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		call.At, nullable(call.Session), nullableInt(call.Exchange), call.Purpose, call.Backend, call.Model, call.PromptTokens, call.CachedTokens, call.OutputTokens,
-		call.PromptMS, call.OutputMS, call.TotalMS, nullable(call.Error), messages, nullable(call.Response), nullable(call.Thinking))
+		call.PromptMS, call.OutputMS, call.TotalMS, nullable(call.Error), messages, nullable(call.Response), nullable(call.Thinking), placeholders)
 	if err != nil {
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM llm_calls WHERE at < ?`, call.At-llmCallDays*86_400_000); err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE llm_calls SET messages = NULL, response = NULL, thinking = NULL
-		WHERE at < ? AND (messages IS NOT NULL OR response IS NOT NULL OR thinking IS NOT NULL)`, call.At-llmDetailDays*86_400_000)
+	_, err = s.db.ExecContext(ctx, `UPDATE llm_calls SET messages = NULL, response = NULL, thinking = NULL, placeholders = NULL
+		WHERE at < ? AND (messages IS NOT NULL OR response IS NOT NULL OR thinking IS NOT NULL OR placeholders IS NOT NULL)`, call.At-llmDetailDays*86_400_000)
 	return err
 }
 
@@ -624,11 +634,13 @@ type StoredCall struct {
 	Messages     []llm.Message `json:"messages"`
 	Response     *string       `json:"response"`
 	Thinking     *string       `json:"thinking"`
+	// Placeholders is the names swapped out of a Claude handover.
+	Placeholders []llm.Placeholder `json:"placeholders,omitempty"`
 }
 
 // Calls is a conversation's model calls, oldest first.
 func (s *Store) Calls(ctx context.Context, session string) ([]StoredCall, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT at, session, exchange, purpose, backend, model, prompt_tokens, cached_tokens, output_tokens, prompt_ms, output_ms, total_ms, error, messages, response, thinking
+	rows, err := s.db.QueryContext(ctx, `SELECT at, session, exchange, purpose, backend, model, prompt_tokens, cached_tokens, output_tokens, prompt_ms, output_ms, total_ms, error, messages, response, thinking, placeholders
 		FROM llm_calls WHERE session = ? ORDER BY at, id`, session)
 	if err != nil {
 		return nil, err
@@ -637,13 +649,16 @@ func (s *Store) Calls(ctx context.Context, session string) ([]StoredCall, error)
 	calls := []StoredCall{}
 	for rows.Next() {
 		var c StoredCall
-		var messages sql.NullString
+		var messages, placeholders sql.NullString
 		if err := rows.Scan(&c.At, &c.Session, &c.Exchange, &c.Purpose, &c.Backend, &c.Model, &c.PromptTokens, &c.CachedTokens, &c.OutputTokens,
-			&c.PromptMS, &c.OutputMS, &c.TotalMS, &c.Error, &messages, &c.Response, &c.Thinking); err != nil {
+			&c.PromptMS, &c.OutputMS, &c.TotalMS, &c.Error, &messages, &c.Response, &c.Thinking, &placeholders); err != nil {
 			return nil, err
 		}
 		if messages.Valid {
 			_ = json.Unmarshal([]byte(messages.String), &c.Messages)
+		}
+		if placeholders.Valid {
+			_ = json.Unmarshal([]byte(placeholders.String), &c.Placeholders)
 		}
 		calls = append(calls, c)
 	}

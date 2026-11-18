@@ -26,6 +26,8 @@ type Person struct {
 	// Role is what they are to you, told to the model beside their
 	// placeholder: "invited to the meeting", "your manager".
 	Role string
+	// Source is where they are known from, for the debug view: "calendar", "inbox".
+	Source string
 }
 
 // Entry is one person's placeholder.
@@ -36,6 +38,9 @@ type Entry struct {
 	// Variants are the names and addresses that become the placeholder.
 	Variants []string `json:"variants"`
 	Role     string   `json:"role,omitempty"`
+	// Found is how the name was found: where the person is known from, the
+	// local model, or the shape of an email address.
+	Found string `json:"found,omitempty"`
 }
 
 // Map is the placeholders given out so far.
@@ -127,12 +132,15 @@ func (m *Map) add(p Person) int {
 		if name == "" && len(p.Emails) > 0 {
 			name = p.Emails[0]
 		}
-		m.Entries = append(m.Entries, Entry{Token: tokenPrefix + strconv.Itoa(m.Next), Name: name, Role: p.Role})
+		m.Entries = append(m.Entries, Entry{Token: tokenPrefix + strconv.Itoa(m.Next), Name: name, Role: p.Role, Found: p.Source})
 		at = len(m.Entries) - 1
 	}
 	e := &m.Entries[at]
 	if e.Role == "" {
 		e.Role = p.Role
+	}
+	if e.Found == "" {
+		e.Found = p.Source
 	}
 	for _, v := range variants {
 		if !slices.ContainsFunc(e.Variants, func(have string) bool { return strings.EqualFold(have, v) }) {
@@ -198,7 +206,7 @@ func (m *Map) Pseudonymize(text string, known []Person, found []string) string {
 		if m.entryFor(email) >= 0 {
 			continue
 		}
-		person := Person{Emails: []string{email}}
+		person := Person{Emails: []string{email}, Source: "email address"}
 		for _, k := range known {
 			if slices.ContainsFunc(k.Emails, func(e string) bool { return strings.EqualFold(e, email) }) {
 				person = k
@@ -218,7 +226,7 @@ func (m *Map) Pseudonymize(text string, known []Person, found []string) string {
 	}
 	for _, name := range found {
 		if name = strings.TrimSpace(name); name != "" && !tokenShape.MatchString(name) && len(find(text, name, true)) > 0 {
-			m.add(Person{Name: name})
+			m.add(Person{Name: name, Source: "local model"})
 		}
 	}
 	return m.swap(text)
@@ -313,12 +321,39 @@ func (m *Map) Leaks(text string, known []Person) []string {
 	return leaks
 }
 
+// Used is the entries whose placeholder is in text.
+func (m *Map) Used(text string) []Entry {
+	var used []Entry
+	for _, e := range m.Entries {
+		if tokenIn(text, e.Token) {
+			used = append(used, e)
+		}
+	}
+	return used
+}
+
+// tokenIn is whether token is in text, not as the start of a longer one
+// (Person 1 in Person 12).
+func tokenIn(text, token string) bool {
+	for offset := 0; ; {
+		at := strings.Index(strings.ToLower(text[offset:]), strings.ToLower(token))
+		if at < 0 {
+			return false
+		}
+		end := offset + at + len(token)
+		if end == len(text) || text[end] < '0' || text[end] > '9' {
+			return true
+		}
+		offset = end
+	}
+}
+
 // Legend tells the model what the placeholders in text are, and how to treat
 // them; empty when there are none.
 func (m *Map) Legend(text string) string {
 	var lines []string
 	for _, e := range m.Entries {
-		if !strings.Contains(text, e.Token) {
+		if !tokenIn(text, e.Token) {
 			continue
 		}
 		line := "- " + e.Token

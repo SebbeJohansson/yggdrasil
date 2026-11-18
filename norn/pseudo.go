@@ -61,12 +61,12 @@ func (s *Store) PutPseudonyms(ctx context.Context, session string, m *pseudo.Map
 var ErrNamesLeft = errors.New("names were still in the text after swapping them out, so nothing was sent to Claude")
 
 // person is someone written as a name, or as an address when there is no name.
-func person(written, role string) pseudo.Person {
+func person(written, role, source string) pseudo.Person {
 	written = strings.TrimSpace(written)
 	if strings.Contains(written, "@") && !strings.Contains(written, " ") {
-		return pseudo.Person{Emails: []string{written}, Role: role}
+		return pseudo.Person{Emails: []string{written}, Role: role, Source: source}
 	}
-	return pseudo.Person{Name: written, Role: role}
+	return pseudo.Person{Name: written, Role: role, Source: source}
 }
 
 // knownPeople is everyone Norn knows by name right now: you, who is in the
@@ -74,7 +74,7 @@ func person(written, role string) pseudo.Person {
 func (n *Norn) knownPeople(ctx context.Context) []pseudo.Person {
 	var people []pseudo.Person
 	if me := n.selfNames(ctx); len(me) == 2 {
-		people = append(people, pseudo.Person{Name: me[0], Emails: []string{me[1]}, Role: "the person you work for, who is asking"})
+		people = append(people, pseudo.Person{Name: me[0], Emails: []string{me[1]}, Role: "the person you work for, who is asking", Source: "you"})
 	}
 	now := time.Now()
 	for _, c := range []*Calendar{n.Accounts.Work, n.Accounts.Personal} {
@@ -87,10 +87,10 @@ func (n *Norn) knownPeople(ctx context.Context) []pseudo.Person {
 		}
 		for _, event := range snapshot.Events {
 			if event.Organizer != "" {
-				people = append(people, person(event.Organizer, ""))
+				people = append(people, person(event.Organizer, "", "calendar"))
 			}
 			for _, attendee := range event.Attendees {
-				people = append(people, person(attendee, ""))
+				people = append(people, person(attendee, "", "calendar"))
 			}
 		}
 	}
@@ -98,13 +98,13 @@ func (n *Norn) knownPeople(ctx context.Context) []pseudo.Person {
 		items, _, _ := n.Inbox.Current(now)
 		for _, ranked := range items {
 			item := ranked.Item
-			from := person(item.From, "")
+			from := person(item.From, "", "inbox")
 			if strings.Contains(item.Sender, "@") {
 				from.Emails = append(from.Emails, item.Sender)
 			}
 			people = append(people, from)
 			for _, to := range item.Recipients {
-				people = append(people, person(to, ""))
+				people = append(people, person(to, "", "inbox"))
 			}
 		}
 	}
@@ -245,4 +245,55 @@ func (n *Norn) restoreNames(ctx context.Context, session, text string) string {
 		return text
 	}
 	return m.Restore(text)
+}
+
+// --- the debug view ---------------------------------------------------------------
+
+// placeholders is the entries in text, as the debug view lists them.
+func placeholders(m *pseudo.Map, text string) []llm.Placeholder {
+	var out []llm.Placeholder
+	for _, e := range m.Used(text) {
+		out = append(out, llm.Placeholder{Token: e.Token, Name: e.Name, Found: e.Found})
+	}
+	return out
+}
+
+// noteSent puts what was handed to Claude in the chat's debug view: the
+// text exactly as sent, and the names swapped out of it. A handover that was
+// stopped is noted with why.
+func (n *Norn) noteSent(ctx context.Context, purpose, how, sent string, m *pseudo.Map, stopped error) {
+	call := llm.Call{At: time.Now().UnixMilli(), Purpose: "to Claude: " + purpose, Backend: "claude", Model: how}
+	if stopped != nil {
+		call.Error = "not sent: " + stopped.Error()
+	} else {
+		call.Messages = []llm.Message{{Role: "sent to Claude", Content: sent}}
+		call.Placeholders = placeholders(m, sent)
+	}
+	n.LLM.Note(ctx, call)
+}
+
+// noteRestored puts an agent's answer in the debug view of the message it
+// answers: as Claude wrote it, and with the names put back.
+func (n *Norn) noteRestored(ctx context.Context, session, raw, restored string) {
+	if raw == restored {
+		return
+	}
+	m, err := n.Store.Pseudonyms(ctx, session)
+	if err != nil {
+		return
+	}
+	call := llm.Call{At: time.Now().UnixMilli(), Session: session, Purpose: "from Claude: names put back", Backend: "claude", Model: "on this machine",
+		Messages: []llm.Message{{Role: "Claude wrote", Content: raw}}, Response: restored, Placeholders: placeholders(m, raw)}
+	// The debug view files a call under the first message of yours at or
+	// after its exchange: the newest one is what the agent answers.
+	if chat, err := n.Store.Chat(ctx, session, 0, 10_000); err == nil {
+		for i := len(chat) - 1; i >= 0; i-- {
+			if chat[i].Role == "user" && chat[i].Author == nil {
+				at := chat[i].At
+				call.Exchange = at
+				break
+			}
+		}
+	}
+	n.LLM.Note(ctx, call)
 }

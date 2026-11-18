@@ -37,7 +37,9 @@ func namesModel(t *testing.T, n *Norn, names ...string) {
 		part.JSON(w, 200, map[string]any{"choices": []map[string]any{{"message": map[string]any{"content": string(answer)}}}})
 	}))
 	t.Cleanup(server.Close)
-	n.LLM = &llm.Client{PrimaryURL: server.URL + "/v1", OllamaURL: "http://127.0.0.1:1"}
+	n.LLM = &llm.Client{PrimaryURL: server.URL + "/v1", OllamaURL: "http://127.0.0.1:1", Record: func(call llm.Call) {
+		_ = n.Store.AddCall(context.Background(), call)
+	}}
 }
 
 func TestHandoverSendsNoNames(t *testing.T) {
@@ -75,6 +77,35 @@ func TestHandoverSendsNoNames(t *testing.T) {
 	if strings.Contains(last.Content, "Person ") || !strings.Contains(last.Content, "Kalle Ek") || !strings.Contains(last.Content, "Anna Svensson") || !strings.Contains(last.Content, "anna.s@example.com") {
 		t.Fatalf("names not restored: %q", last.Content)
 	}
+
+	// The debug view shows what went and what came back, with the names.
+	calls, _ := n.Store.Calls(context.Background(), "s9")
+	var sentCall, back *StoredCall
+	for i := range calls {
+		switch calls[i].Purpose {
+		case "to Claude: question":
+			sentCall = &calls[i]
+		case "from Claude: names put back":
+			back = &calls[i]
+		}
+	}
+	if sentCall == nil || sentCall.Backend != "claude" || len(sentCall.Messages) != 1 || strings.Contains(sentCall.Messages[0].Content, "Kalle") {
+		t.Fatalf("handover not noted as sent: %+v", sentCall)
+	}
+	found := map[string]string{}
+	for _, p := range sentCall.Placeholders {
+		found[p.Name] = p.Found
+	}
+	if found["Kalle Ek"] != "local model" || found["Anna Svensson"] != "calendar" || found["anna.s@example.com"] != "email address" {
+		t.Fatalf("placeholders %+v", sentCall.Placeholders)
+	}
+	if back == nil || back.Response == nil || !strings.Contains(*back.Response, "Kalle Ek") || back.Exchange == nil {
+		t.Fatalf("restore not noted: %+v", back)
+	}
+	turns, _ := n.Store.Chat(context.Background(), "s9", 0, 100)
+	if groups := CallsByTurn(turns, calls); len(groups) != 1 || len(groups[0].Calls) < 3 {
+		t.Fatalf("the calls are not all under the question: %+v", groups)
+	}
 }
 
 func TestHandoverStopsWithoutTheNamesModel(t *testing.T) {
@@ -84,6 +115,12 @@ func TestHandoverStopsWithoutTheNamesModel(t *testing.T) {
 	response, _ := n.Ask(context.Background(), AskRequest{Question: "/claude what did Kalle say?", Session: "s10"})
 	if fake.called("POST /v1/work/ask") != "" || !strings.Contains(response.Answer, "Nothing was sent to Claude") {
 		t.Fatalf("handed over without looking for names: %+v", response)
+	}
+	n.LLM.Record = func(call llm.Call) { _ = n.Store.AddCall(context.Background(), call) }
+	_, _ = n.Ask(context.Background(), AskRequest{Question: "/claude and Kalle?", Session: "s10"})
+	calls, _ := n.Store.Calls(context.Background(), "s10")
+	if len(calls) == 0 || calls[len(calls)-1].Error == nil || !strings.HasPrefix(*calls[len(calls)-1].Error, "not sent:") {
+		t.Fatalf("the stopped handover is not in the debug view: %+v", calls)
 	}
 }
 

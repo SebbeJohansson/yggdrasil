@@ -395,7 +395,7 @@ func (n *Norn) briefDigest(ctx context.Context, question string, now time.Time) 
 		} else {
 			invited = append(invited, name)
 		}
-		people = append(people, pseudo.Person{Name: i.Name, Emails: []string{i.Address}, Role: role})
+		people = append(people, pseudo.Person{Name: i.Name, Emails: []string{i.Address}, Role: role, Source: "meeting invitation"})
 	}
 	subject := invitation.Subject
 	if subject == "" {
