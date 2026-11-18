@@ -699,14 +699,14 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		}
 	}
 	messages := append([]llm.Message{{Role: "system", Content: AskSystemPrompt(LoadProfile(n.Config.ProfilePath), a.recalled, inbox, agentLines, append(OverviewLines(everyone, now), SessionLines(a.yours)...), calendar, notes)}}, a.history...)
-	asked := question
+	asked, answerModel := question, n.Config.AskModel
 	if briefAsk.MatchString(question) {
-		asked += "\n\n" + BriefFormat
+		asked, answerModel = question+"\n\n"+BriefFormat, n.Config.BriefModel
 	}
 	messages = append(messages, llm.Message{Role: "user", Content: asked})
 	// You wait for this one, and the local model can take a minute just to
 	// read a long question (a meeting brief with notes) while it finishes another call.
-	options := llm.Options{Purpose: "answer", Model: n.Config.AskModel, Temperature: 0.5, TopP: 0.9, MaxTokens: 400, Timeout: AnswerTimeout}
+	options := llm.Options{Purpose: "answer", Model: answerModel, Temperature: 0.5, TopP: 0.9, MaxTokens: 400, Timeout: AnswerTimeout}
 	if calendar != nil {
 		options.Temperature = 0
 		options.Format = map[string]any{"type": "object", "properties": map[string]any{"answer": map[string]any{"type": "string"}, "enough": map[string]any{"type": "boolean"}}, "required": []string{"answer", "enough"}}

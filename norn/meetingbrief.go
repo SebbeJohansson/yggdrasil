@@ -29,17 +29,42 @@ const (
 	briefChars = 14000
 )
 
-// BriefFormat is how a meeting brief is written, by either model.
-const BriefFormat = "Write Markdown: at most five short bullets, each one concrete thing (an open question, a decision, " +
-	"something I promised or was asked for, something to bring), naming who it is with. " +
-	"Leave out who is invited: I can already see that. Leave out messages, notes and memories that are not " +
-	"with these people or about this meeting's subject. No heading, no labels such as \"Open topics:\", no preamble. " +
-	"If nothing bears on this meeting, say so in one line instead of filling it out. Write in the language the sources are in."
+// BriefFormat is how a meeting brief is written, by either model: a fixed
+// shape with an example, since a small local model follows a picture of the
+// answer far better than a list of rules.
+const BriefFormat = `Write the brief in Markdown, in exactly this shape and nothing else:
+
+<One sentence: what this meeting is for and what should come out of it.>
+
+**Open**
+- <a question, decision or promise still open; at most 3 bullets>
+
+**Bring**
+- <something to prepare or have at hand; at most 2 bullets>
+
+Rules:
+- Each bullet is one short sentence, at most 15 words. Start it with the thing itself or a verb, never with a name, a label or bold text.
+- Never name me: I am the reader. Name someone else only inside a sentence, by first name, and only when more than one other person is invited.
+- Leave out who is invited, the time and the room: I already see them.
+- Use only what is about these people or this meeting's subject. Leave out everything else, however urgent.
+- Leave out a section that would be empty. If nothing bears on this meeting at all, write only one line saying so.
+- Write in the language of the sources, and translate the two headings into it (Swedish: **Öppet**, **Ta med**).
+
+Example, for a meeting about AI tools and personal data:
+
+Agree on how teams may use AI tools with personal data.
+
+**Open**
+- Whether helpdesk free-text reviews may go to EU-hosted models (AI-154).
+- Who signs off the choice of model for C1.
+
+**Bring**
+- The list of AI tools in use and where each stores data.`
 
 // BriefRules is how Claude writes a meeting brief from the digest it is given.
 const BriefRules = "How to write this brief: use only the digest below, which Norn read for you from my calendar, " +
 	"my email and my Teams chats with the people invited. You have no tools; do not try to look anything up. " +
-	"Look for what is going on between me and the people invited. " + BriefFormat
+	"Look for what is going on between me and the people invited.\n\n" + BriefFormat
 
 // graphGet reads one Graph path into a value.
 type graphGet func(ctx context.Context, path string, into any) error

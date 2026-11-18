@@ -50,6 +50,8 @@ type Config struct {
 	// NamesModel finds people's names in what is sent to Claude, so they can
 	// be swapped for placeholders first (pseudo.go).
 	NamesModel string
+	// BriefModel writes a meeting brief on the local model.
+	BriefModel string
 	// Judge says who judges the inbox beside the four rules.
 	Judge JudgeSettings
 	// DataDir holds the sign-ins, beside the database.
