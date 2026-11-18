@@ -25,6 +25,9 @@ import (
 const (
 	// CalendarDays is how far ahead the snapshot reaches.
 	CalendarDays = 7
+	// SuggestDays is how far ahead Outlook is read for calendar suggestions:
+	// a meeting copied from an email is often weeks out.
+	SuggestDays = 30
 	// CalendarEvery is how often the calendars are read.
 	CalendarEvery = 2 * time.Minute
 	// CalendarStale is when a snapshot is no longer "your calendar".
@@ -106,9 +109,12 @@ type CalendarSnapshot struct {
 	// keeps an invite you haven't removed), and the ones that left it while
 	// still ahead (Calendar.gone), for calendar suggestions only.
 	Cancelled []CalendarEvent `json:"-"`
-	From      int64           `json:"from"`
-	To        int64           `json:"to"`
-	At        int64           `json:"at"`
+	// Later is the meetings after To, up to SuggestDays ahead, for calendar
+	// suggestions only.
+	Later []CalendarEvent `json:"-"`
+	From  int64           `json:"from"`
+	To    int64           `json:"to"`
+	At    int64           `json:"at"`
 }
 
 // CalendarRead is whether the last read worked: refused is usually the
@@ -142,11 +148,11 @@ func (c *Calendar) Set(snapshot CalendarSnapshot) {
 		c.gone = map[string]CalendarEvent{}
 	}
 	still := map[string]bool{}
-	for _, event := range snapshot.Events {
+	for _, event := range append(slices.Clone(snapshot.Events), snapshot.Later...) {
 		still[event.ID] = true
 	}
 	if c.snapshot != nil {
-		for _, old := range c.snapshot.Events {
+		for _, old := range append(slices.Clone(c.snapshot.Events), c.snapshot.Later...) {
 			if old.ID != "" && !still[old.ID] && old.Start > snapshot.At {
 				c.gone[old.ID] = old
 			}
@@ -371,7 +377,7 @@ func ReadOutlook(ctx context.Context, auth *MicrosoftAuth, get bearerGet, now ti
 	}
 	from, to := CalendarWindow(now)
 	snapshot := CalendarSnapshot{Events: []CalendarEvent{}, From: from.UnixMilli(), To: to.UnixMilli(), At: now.UnixMilli()}
-	next := GraphCalendarURL(from, to)
+	next := GraphCalendarURL(from, now.Add(SuggestDays*24*time.Hour))
 	for page := 0; next != "" && page < maxPages; page++ {
 		status, body, err := get(ctx, next, token.AccessToken, map[string]string{"Prefer": `outlook.timezone="UTC", outlook.body-content-type="text"`})
 		if err != nil {
@@ -382,7 +388,13 @@ func ReadOutlook(ctx context.Context, auth *MicrosoftAuth, get bearerGet, now ti
 		}
 		var events, cancelled []CalendarEvent
 		events, cancelled, next = graphPage(body)
-		snapshot.Events = append(snapshot.Events, events...)
+		for _, event := range events {
+			if event.Start < snapshot.To {
+				snapshot.Events = append(snapshot.Events, event)
+			} else {
+				snapshot.Later = append(snapshot.Later, event)
+			}
+		}
 		snapshot.Cancelled = append(snapshot.Cancelled, cancelled...)
 	}
 	return snapshot, nil

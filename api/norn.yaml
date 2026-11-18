@@ -500,7 +500,8 @@ paths:
         it overlaps in time and the subjects share a word or an emoji.
         duplicate when the invite is live, stale when the invite it matches was
         cancelled, or left the calendar while still ahead (remembered until
-        Norn restarts). Only ones still ahead, without the ones you kept.
+        Norn restarts). Only ones still ahead, up to 30 days (the calendar
+        itself shows 7), without the ones you kept.
       responses:
         "200":
           description: The suggestions.

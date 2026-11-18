@@ -183,3 +183,19 @@ func TestAnInviteThatLeftTheCalendarMakesYourCopyStale(t *testing.T) {
 		t.Fatalf("the Townhall copy is not stale: %+v", snapshot.Cancelled)
 	}
 }
+
+func TestSuggestionsLookPastTheWeek(t *testing.T) {
+	n, p := newNorn(t)
+	events, _, _ := suggestionWeek(t)
+	now := time.Now()
+	shift := now.Add(20*24*time.Hour).UnixMilli() - events[0].Start
+	for i := range events {
+		events[i].Start += shift
+		events[i].End += shift
+	}
+	n.Accounts.Work.Set(CalendarSnapshot{Events: []CalendarEvent{}, Later: events, At: now.UnixMilli()})
+	_, body := call(t, p, "GET", "/v1/calendar/suggestions", nil)
+	if got := len(body.(map[string]any)["suggestions"].([]any)); got != 3 {
+		t.Fatalf("want the 3 duplicates three weeks out, got %d", got)
+	}
+}

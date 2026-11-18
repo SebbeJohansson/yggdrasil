@@ -186,7 +186,7 @@ func (n *Norn) workSuggestions(ctx context.Context) []CalendarSuggestion {
 	}
 	var kept []string
 	_, _ = n.Store.Setting(ctx, keptSuggestionsKey, &kept)
-	return CalendarSuggestions(snapshot.Events, snapshot.Cancelled, kept, time.Now())
+	return CalendarSuggestions(append(slices.Clone(snapshot.Events), snapshot.Later...), snapshot.Cancelled, kept, time.Now())
 }
 
 func (n *Norn) mountSuggestions(p *part.Part) {
