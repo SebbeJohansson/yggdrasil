@@ -145,6 +145,8 @@ var noteStop = map[string]bool{
 	"möte": true, "mötet": true, "meeting": true, "snack": true, "synk": true, "sync": true, "med": true, "with": true,
 	"angående": true, "ang": true, "och": true, "and": true, "the": true, "för": true, "for": true, "inför": true, "efter": true,
 	"om": true, "about": true, "notes": true, "weekly": true, "daily": true, "avstämning": true, "samtal": true, "kring": true,
+	"snacka": true, "snacket": true, "prata": true, "pratar": true, "diskutera": true, "diskussion": true, "folk": true, "låta": true,
+	"uppföljning": true, "genomgång": true, "catch": true, "check": true, "checkin": true, "kort": true, "fika": true,
 }
 
 func fold(text string) string {

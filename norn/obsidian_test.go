@@ -251,3 +251,15 @@ func TestTheLiveNoteRouteNeverAnswersNoteText(t *testing.T) {
 		t.Fatalf("note text left Norn: %s", raw)
 	}
 }
+
+func TestTitleWordsSkipsChatVerbs(t *testing.T) {
+	got := titleWords("Snacka AI policy, hur vi kan låta folk prata med persondata, och Figma AI")
+	for _, word := range got {
+		if word == "snacka" || word == "prata" || word == "folk" || word == "lata" {
+			t.Fatalf("titleWords kept filler %q: %v", word, got)
+		}
+	}
+	if got := titleWords("Snacka Jev - 2026-11-17"); len(got) != 0 {
+		t.Fatalf("want no words, got %v", got)
+	}
+}
