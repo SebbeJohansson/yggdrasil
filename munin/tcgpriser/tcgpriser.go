@@ -17,8 +17,10 @@
 //
 // Every alert from /admin/alerts is raised as feed:tcgpriser:<its key> with
 // its own severity, resolved when the site says so, and closed after 24 hours
-// otherwise: the site counts an alert open for 24 hours too. /admin/usage (the
-// last 7 days) is read every 15 minutes.
+// otherwise: the site counts an alert open for 24 hours too. Alerts from the
+// shop scraping (source shop-import) are left out: they are the site's
+// business, not Yggdrasil's. /admin/usage (the last 7 days) is read every 15
+// minutes.
 package tcgpriser
 
 import (
@@ -52,6 +54,10 @@ const (
 	maxPages  = 10
 	recentMax = 20
 )
+
+// ignored are the site's alert sources Munin leaves out: the shop scraping's
+// import summaries and price sanity warnings.
+var ignored = map[string]bool{"shop-import": true}
 
 // Check keys.
 const (
@@ -307,7 +313,9 @@ func (s *Source) feed(ctx context.Context, cursor string) ([]source.Event, strin
 			return events, cursor, err
 		}
 		for _, item := range page.Items {
-			events = append(events, Event(item))
+			if !ignored[item.Source] {
+				events = append(events, Event(item))
+			}
 		}
 		s.remember(page.Items)
 		if page.NextCursor != nil {
@@ -348,7 +356,13 @@ func (s *Source) page(ctx context.Context, cursor string) (alertPage, error) {
 }
 
 // remember keeps the newest alerts for the dashboard, newest first.
-func (s *Source) remember(items []Alert) {
+func (s *Source) remember(all []Alert) {
+	items := make([]Alert, 0, len(all))
+	for _, item := range all {
+		if !ignored[item.Source] {
+			items = append(items, item)
+		}
+	}
 	if len(items) == 0 {
 		return
 	}

@@ -174,7 +174,7 @@ restart raises nothing twice.
 
 | Source | What it watches | Settings |
 | --- | --- | --- |
-| `tcgpriser` | tcgpriser.se: `/health` (`tcgpriser:down`, critical), `/admin/status` (`tcgpriser:status`), every alert the site posts to Discord (`feed:tcgpriser:<key>`, its own severity, closed when the site resolves it or after 24 h), and `/admin/usage` for the last 7 days | `MUNIN_TCGPRISER_TOKEN`, a service token from the API's `API_AUTH_TOKENS` (without it, `/health` only); `MUNIN_TCGPRISER_URL` (`https://api.tcgpriser.se`) |
+| `tcgpriser` | tcgpriser.se: `/health` (`tcgpriser:down`, critical), `/admin/status` (`tcgpriser:status`), every alert the site posts to Discord except the shop scraping's (`shop-import`) (`feed:tcgpriser:<key>`, its own severity, closed when the site resolves it or after 24 h), and `/admin/usage` for the last 7 days | `MUNIN_TCGPRISER_TOKEN`, a service token from the API's `API_AUTH_TOKENS` (without it, `/health` only); `MUNIN_TCGPRISER_URL` (`https://api.tcgpriser.se`) |
 
 A new source is a package under `munin/` that implements `munin/source`, and
 one line in `Sources` in `munin/sources.go`.

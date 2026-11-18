@@ -20,7 +20,7 @@ const token = "test-token"
 type fakeAPI struct {
 	mu      sync.Mutex
 	health  int
-	alerts  []string // ids, oldest first
+	alerts  []string // ids, oldest first; an id starting with s is a shop-import alert
 	afters  []string
 	usage   int
 	unknown bool // answers 404 on the admin routes, as an API without them
@@ -62,8 +62,12 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, id := range f.alerts {
 			if id > after {
 				resolved := id == "b2"
-				items = append(items, fmt.Sprintf(`{"id":%q,"source":"delivery","trigger":"health","severity":"critical","key":"delivery|health",
-					"resolved":%t,"title":"Delivery %s","message":"msg %s","data":null,"discordDelivered":true,"createdAt":"2026-11-17T19:59:00Z"}`, id, resolved, id, id))
+				source := "delivery"
+				if strings.HasPrefix(id, "s") {
+					source = "shop-import"
+				}
+				items = append(items, fmt.Sprintf(`{"id":%q,"source":%q,"trigger":"health","severity":"critical","key":"delivery|health",
+					"resolved":%t,"title":"Delivery %s","message":"msg %s","data":null,"discordDelivered":true,"createdAt":"2026-11-17T19:59:00Z"}`, id, source, resolved, id, id))
 				last = id
 			}
 		}
@@ -205,6 +209,17 @@ func TestAfterARestartTheDashboardStillGetsTheLastDay(t *testing.T) {
 		t.Fatalf("old alerts raised again: %+v", report.Events)
 	}
 	if recent := report.Data.(*Data).Recent; len(recent) != 2 {
+		t.Fatalf("recent %+v", recent)
+	}
+}
+
+func TestShopImportAlertsAreLeftOut(t *testing.T) {
+	api := &fakeAPI{alerts: []string{"a1", "s2"}}
+	report := newSource(t, api, token).Poll(context.Background(), "")
+	if len(report.Events) != 1 || report.Events[0].Title != "tcgpriser: Delivery a1" || report.Cursor != "s2" {
+		t.Fatalf("events %+v cursor %q", report.Events, report.Cursor)
+	}
+	if recent := report.Data.(*Data).Recent; len(recent) != 1 || recent[0].ID != "a1" {
 		t.Fatalf("recent %+v", recent)
 	}
 }
