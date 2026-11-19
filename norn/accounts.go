@@ -22,6 +22,7 @@ type Accounts struct {
 	Personal  *Calendar
 	get       bearerGet
 	del       bearerDelete
+	post      bearerPost
 }
 
 // NewAccounts reads the sign-ins kept in dir.
@@ -33,6 +34,7 @@ func NewAccounts(dir, googleClientID, googleClientSecret string) *Accounts {
 		Personal:  &Calendar{},
 		get:       defaultBearerGet,
 		del:       defaultBearerDelete,
+		post:      defaultBearerPost,
 	}
 }
 
@@ -71,6 +73,7 @@ func (n *Norn) mountAccounts(p *part.Part) {
 	p.Handle("GET /v1/calendar", n.calendarRoute(a.Work))
 	p.Handle("GET /v1/calendar/personal", n.calendarRoute(a.Personal))
 	n.mountSuggestions(p)
+	p.Handle("POST /v1/calendar/breaks", n.keepBreak)
 	p.Loop("calendar", CalendarEvery, n.readWorkCalendar)
 	p.Loop("personal-calendar", CalendarEvery, n.readPersonalCalendar)
 }

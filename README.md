@@ -281,6 +281,20 @@ with the calendar, now `Calendars.ReadWrite`). Each reaction goes
 to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A
 stream down for 5 minutes is `stream:<part>` (warning).
 
+### Norn: keeping a break free
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `POST /v1/calendar/breaks` | owner | `{ start, end }` (epoch ms, 15 min to 2 h, at most 7 days ahead) → `201 { event }`, or `200 { event }` when that slot already is a break |
+
+It puts a "Break" event in your work calendar (Outlook), shown as busy so
+nobody books over it, with nobody invited and the Outlook category
+`Yggdrasil break`, which is how Yggdrasil knows it as its own: on
+`GET /v1/calendar` it has `break: true`. Norn reads the calendar first and
+answers `409` when something you did not decline overlaps the slot. It needs
+the Microsoft sign-in with `Calendars.ReadWrite`. A break is not a meeting:
+Norn sends no `calendar.*` events for it.
+
 ### Dellingr
 
 | Route | What it does |

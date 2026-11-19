@@ -202,7 +202,8 @@ func declined(event CalendarEvent) bool {
 func (e *Events) Calendar(calendar string, events []CalendarEvent, now time.Time) {
 	current := map[string]CalendarEvent{}
 	for _, event := range events {
-		if event.ID != "" && !event.AllDay {
+		// A break you kept free is not a meeting: nothing to brief on.
+		if event.ID != "" && !event.AllDay && !event.Break {
 			current[event.ID] = event
 		}
 	}
