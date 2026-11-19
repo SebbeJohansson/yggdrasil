@@ -37,9 +37,11 @@ func Expect(name string, trick Trick) []Check {
 		return Check{Watcher: Gjallar, Expected: expected, Source: source, Key: key}
 	}
 	switch trick.Kind {
-	case part.TrickHealth:
+	case part.TrickHealth, KindDrop, KindHang, KindFreeze:
+		// Each makes the part look down from where Ratatoskr stands.
 		if name == Ratatoskr {
-			// Nobody reads Ratatoskr's /health; its heartbeat keeps going.
+			// Nobody reads Ratatoskr's /health; its heartbeat to Gjallar is
+			// what stops, when anything does.
 			return []Check{gjallar("gjallar:silent:ratatoskr", Gjallar, "silent:ratatoskr")}
 		}
 		checks := []Check{ratatoskr("down:" + name)}
@@ -57,6 +59,9 @@ func Expect(name string, trick Trick) []Check {
 	case part.TrickSlow:
 		// Nothing watches how fast a part answers yet: Ratatoskr reads /health only.
 		return []Check{ratatoskr("slow:" + name)}
+	case KindError:
+		// Nothing reads a part's answers but /health yet: what would, if anything did.
+		return []Check{ratatoskr("errors:" + name)}
 	}
 	return nil
 }
@@ -72,15 +77,93 @@ func ExpectStrings(name string, trick Trick) []string {
 
 // Label is a trick in plain words.
 func Label(name string, trick Trick) string {
-	switch trick.Kind {
-	case part.TrickHealth:
+	delay := words(time.Duration(trick.DelayMs) * time.Millisecond)
+	switch trick.via() + ":" + trick.Kind {
+	case ViaSwitch + ":" + part.TrickHealth:
 		return fmt.Sprintf("%s stops answering /health", Title(name))
-	case part.TrickLoop:
+	case ViaSwitch + ":" + part.TrickLoop:
 		return fmt.Sprintf("%s's %s loop fails every run", Title(name), trick.Loop)
-	case part.TrickSlow:
-		return fmt.Sprintf("%s answers every call %s late", Title(name), words(time.Duration(trick.DelayMs)*time.Millisecond))
+	case ViaSwitch + ":" + part.TrickSlow:
+		return fmt.Sprintf("%s answers every call %s late", Title(name), delay)
+	case ViaProxy + ":" + part.TrickHealth:
+		return fmt.Sprintf("%s's /health answers 503 on the way, from Loki's proxy", Title(name))
+	case ViaProxy + ":" + part.TrickSlow:
+		return fmt.Sprintf("every call to %s arrives %s late, held by Loki's proxy", Title(name), delay)
+	case ViaProxy + ":" + KindError:
+		status := trick.Status
+		if status == 0 {
+			status = http.StatusInternalServerError
+		}
+		if trick.Path != "" {
+			return fmt.Sprintf("%s's routes under %s answer %d, from Loki's proxy, while /health stays fine", Title(name), trick.Path, status)
+		}
+		return fmt.Sprintf("%s's routes answer %d, from Loki's proxy, while /health stays fine", Title(name), status)
+	case ViaProxy + ":" + KindDrop:
+		return fmt.Sprintf("every call to %s is cut off unanswered by Loki's proxy", Title(name))
+	case ViaProxy + ":" + KindHang:
+		return fmt.Sprintf("every call to %s hangs unanswered in Loki's proxy", Title(name))
+	case ViaFreeze + ":" + KindFreeze:
+		return fmt.Sprintf("%s's process is frozen", Title(name))
 	}
 	return trick.Kind
+}
+
+// Kinds is the kinds of trick each via plays.
+var Kinds = map[string][]string{
+	ViaSwitch: {part.TrickHealth, part.TrickLoop, part.TrickSlow},
+	ViaProxy:  {part.TrickHealth, part.TrickSlow, KindError, KindDrop, KindHang},
+	ViaFreeze: {KindFreeze},
+}
+
+// Normalize checks a trick and fills in its defaults. With no via, a freeze
+// strikes by freeze, an error, drop or hang by proxy, and the rest by switch.
+func Normalize(trick Trick) (Trick, error) {
+	if trick.Via == "" {
+		switch trick.Kind {
+		case KindFreeze:
+			trick.Via = ViaFreeze
+		case KindError, KindDrop, KindHang:
+			trick.Via = ViaProxy
+		default:
+			trick.Via = ViaSwitch
+		}
+	}
+	kinds, ok := Kinds[trick.Via]
+	if !ok {
+		return Trick{}, refuse(http.StatusBadRequest, "trick.via is switch, proxy or freeze")
+	}
+	if !slices.Contains(kinds, trick.Kind) {
+		return Trick{}, refuse(http.StatusBadRequest, "by %s, trick.kind is %s", trick.Via, strings.Join(kinds, ", "))
+	}
+	loop, delayMs, status, path := trick.Loop, trick.DelayMs, trick.Status, trick.Path
+	trick.Loop, trick.DelayMs, trick.Status, trick.Path = "", 0, 0, ""
+	switch trick.Kind {
+	case part.TrickLoop:
+		if loop == "" {
+			return Trick{}, refuse(http.StatusBadRequest, "a loop trick names the loop")
+		}
+		trick.Loop = loop
+	case part.TrickSlow:
+		if delayMs == 0 {
+			delayMs = DefaultDelayMs
+		}
+		if delayMs < 1 || time.Duration(delayMs)*time.Millisecond > part.MaxTrickDelay {
+			return Trick{}, refuse(http.StatusBadRequest, "delayMs is 1 to 10000")
+		}
+		trick.DelayMs = delayMs
+	case KindError:
+		if status == 0 {
+			status = http.StatusInternalServerError
+		}
+		if status != http.StatusInternalServerError && status != http.StatusBadGateway {
+			return Trick{}, refuse(http.StatusBadRequest, "an error trick's status is 500 or 502")
+		}
+		if path != "" && !strings.HasPrefix(path, "/") {
+			return Trick{}, refuse(http.StatusBadRequest, "an error trick's path starts with /")
+		}
+		trick.Status, trick.Path = status, path
+	}
+	return trick, nil
 }
 
 // Start tricks a part for minutes (DefaultMinutes when 0), by manual or passive.
@@ -97,28 +180,19 @@ func (l *Loki) Start(ctx context.Context, name string, trick Trick, minutes int,
 	if !slices.Contains(l.Parts, name) {
 		return Strike{}, refuse(http.StatusBadRequest, "%q is not a part Loki knows: %s", name, strings.Join(l.Parts, ", "))
 	}
-	switch trick.Kind {
-	case part.TrickHealth:
-		trick.Loop, trick.DelayMs = "", 0
-	case part.TrickLoop:
-		trick.DelayMs = 0
-		if trick.Loop == "" {
-			return Strike{}, refuse(http.StatusBadRequest, "a loop trick names the loop")
-		}
-	case part.TrickSlow:
-		trick.Loop = ""
-		if trick.DelayMs == 0 {
-			trick.DelayMs = DefaultDelayMs
-		}
-		if trick.DelayMs < 1 || time.Duration(trick.DelayMs)*time.Millisecond > part.MaxTrickDelay {
-			return Strike{}, refuse(http.StatusBadRequest, "delayMs is 1 to 10000")
-		}
-	default:
-		return Strike{}, refuse(http.StatusBadRequest, "trick.kind is health, loop or slow")
+	trick, err := Normalize(trick)
+	if err != nil {
+		return Strike{}, err
 	}
-	client := l.Clients[name]
-	if !client.On() {
-		return Strike{}, refuse(http.StatusConflict, "Loki has no token at %s: %s_TOKEN in loki.env", Title(name), strings.ToUpper(name))
+	switch trick.Via {
+	case ViaSwitch:
+		if !l.Clients[name].On() {
+			return Strike{}, refuse(http.StatusConflict, "Loki has no token at %s: %s_TOKEN in loki.env", Title(name), strings.ToUpper(name))
+		}
+	case ViaProxy:
+		if l.Proxies[name] == nil {
+			return Strike{}, refuse(http.StatusConflict, "%s isn't behind Loki's proxy: add it to LOKI_PROXY and point YGG_%s_URL at the proxy", Title(name), strings.ToUpper(name))
+		}
 	}
 
 	now := l.now()
@@ -152,21 +226,11 @@ func (l *Loki) Start(ctx context.Context, name string, trick Trick, minutes int,
 	l.strikes = append([]*Strike{strike}, l.strikes...)
 	l.mu.Unlock()
 
-	err := client.Do(ctx, http.MethodPost, "/v1/loki/trick", map[string]any{
-		"kind": trick.Kind, "loop": trick.Loop, "delayMs": trick.DelayMs, "until": strike.EndsAt.UnixMilli(),
-	}, nil)
-	if err != nil {
+	if err := l.trick(ctx, strike); err != nil {
 		l.mu.Lock()
 		l.strikes = slices.DeleteFunc(l.strikes, func(s *Strike) bool { return s == strike })
 		l.mu.Unlock()
-		text := err.Error()
-		switch {
-		case strings.Contains(text, "answered 404"):
-			return Strike{}, refuse(http.StatusConflict, "%s's trick switch is off: set LOKI=on in parts.env (dev mode only) and restart it", Title(name))
-		case strings.Contains(text, "answered 400"), strings.Contains(text, "answered 409"):
-			return Strike{}, refuse(http.StatusBadRequest, "%s refused the trick: %s", Title(name), text)
-		}
-		return Strike{}, fmt.Errorf("could not trick %s: %w", Title(name), err)
+		return Strike{}, err
 	}
 	l.Logf("strike %s: %s by %s until %s", strike.ID, Label(name, trick), by, strike.EndsAt.Format(time.TimeOnly))
 	l.mu.Lock()
@@ -180,6 +244,54 @@ func (l *Loki) Start(ctx context.Context, name string, trick Trick, minutes int,
 		l.run(strike)
 	}()
 	return copied, nil
+}
+
+// trick puts the strike's trick on its part, by its via.
+func (l *Loki) trick(ctx context.Context, strike *Strike) error {
+	name, trick := strike.Part, strike.Trick
+	switch trick.Via {
+	case ViaProxy:
+		l.Proxies[name].Set(ProxyTrick{Kind: trick.Kind, DelayMs: trick.DelayMs, Status: trick.Status, Path: trick.Path, Until: strike.EndsAt})
+		return nil
+	case ViaFreeze:
+		pids, err := l.freeze(strike.ID, name, strike.EndsAt.Sub(l.now()))
+		if err != nil {
+			return err
+		}
+		l.mu.Lock()
+		strike.Pids = pids
+		l.mu.Unlock()
+		return nil
+	}
+	err := l.Clients[name].Do(ctx, http.MethodPost, "/v1/loki/trick", map[string]any{
+		"kind": trick.Kind, "loop": trick.Loop, "delayMs": trick.DelayMs, "until": strike.EndsAt.UnixMilli(),
+	}, nil)
+	if err == nil {
+		return nil
+	}
+	text := err.Error()
+	switch {
+	case strings.Contains(text, "answered 404"):
+		return refuse(http.StatusConflict, "%s's trick switch is off: set LOKI=on in parts.env (dev mode only) and restart it", Title(name))
+	case strings.Contains(text, "answered 400"), strings.Contains(text, "answered 409"):
+		return refuse(http.StatusBadRequest, "%s refused the trick: %s", Title(name), text)
+	}
+	return fmt.Errorf("could not trick %s: %w", Title(name), err)
+}
+
+// untrick takes the strike's trick off its part, by its via.
+func (l *Loki) untrick(ctx context.Context, strike *Strike) error {
+	switch strike.Trick.via() {
+	case ViaProxy:
+		if proxy := l.Proxies[strike.Part]; proxy != nil {
+			proxy.Clear()
+		}
+		return nil
+	case ViaFreeze:
+		l.thaw(strike.ID)
+		return nil
+	}
+	return l.Clients[strike.Part].Do(ctx, http.MethodDelete, "/v1/loki/trick", nil, nil)
 }
 
 func (l *Loki) trimLocked() {
@@ -216,7 +328,7 @@ func (l *Loki) Stop(ctx context.Context, id string) (Strike, error) {
 	}
 	name := strike.Part
 	l.mu.Unlock()
-	if err := l.Clients[name].Do(ctx, http.MethodDelete, "/v1/loki/trick", nil, nil); err != nil {
+	if err := l.untrick(ctx, strike); err != nil {
 		l.Logf("strike %s: taking the trick off %s: %v (it ends on its own)", id, name, err)
 	}
 	l.save()
@@ -401,8 +513,8 @@ striking:
 		strike.State = Watching
 	}
 	l.mu.Unlock()
-	// Belt and braces: the part ends it at until anyway.
-	_ = l.Clients[strike.Part].Do(ctx, http.MethodDelete, "/v1/loki/trick", nil, nil)
+	// Belt and braces: every trick ends at its until anyway.
+	_ = l.untrick(ctx, strike)
 
 	deadline := l.now().Add(l.HealWait)
 	for {
@@ -537,24 +649,53 @@ func (l *Loki) probeAll(ctx context.Context, trick bool) map[string]Probe {
 
 // TargetTrick is one trick a part can be struck with.
 type TargetTrick struct {
+	Via     string   `json:"via"`
 	Kind    string   `json:"kind"`
 	Loop    string   `json:"loop,omitempty"`
 	DelayMs int      `json:"delayMs,omitempty"`
+	Status  int      `json:"status,omitempty"`
 	Label   string   `json:"label"`
 	Expect  []string `json:"expect"`
 }
 
-// Target is one part, whether it can be tricked, and how.
-type Target struct {
-	Name   string        `json:"name"`
-	Up     bool          `json:"up"`
-	LokiOn bool          `json:"lokiOn"`
-	Tricks []TargetTrick `json:"tricks"`
+// Trick is the trick itself, as a strike takes it.
+func (t TargetTrick) Trick() Trick {
+	return Trick{Via: t.Via, Kind: t.Kind, Loop: t.Loop, DelayMs: t.DelayMs, Status: t.Status}
 }
 
-// Tricks is every trick a part offers, given its health.
+// Via is whether a part can be struck one way, and why not.
+type Via struct {
+	Via       string `json:"via"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+// Target is one part, whether it can be tricked, and how.
+type Target struct {
+	Name   string `json:"name"`
+	Up     bool   `json:"up"`
+	LokiOn bool   `json:"lokiOn"`
+	// Proxied is whether Loki's proxy stands in front of it (LOKI_PROXY).
+	Proxied bool `json:"proxied"`
+	// Freezable is whether Loki can see and signal its process.
+	Freezable bool          `json:"freezable"`
+	Vias      []Via         `json:"vias"`
+	Tricks    []TargetTrick `json:"tricks"`
+}
+
+// available is whether the target can be struck by via.
+func (t Target) available(via string) bool {
+	for _, v := range t.Vias {
+		if v.Via == via {
+			return v.Available
+		}
+	}
+	return false
+}
+
+// Tricks is every trick a part offers by its switch, given its health.
 func Tricks(name string, health *part.Health) []Trick {
-	tricks := []Trick{{Kind: part.TrickHealth}}
+	tricks := []Trick{{Via: ViaSwitch, Kind: part.TrickHealth}}
 	if health != nil {
 		var loops []string
 		for loop := range health.Loops {
@@ -562,25 +703,72 @@ func Tricks(name string, health *part.Health) []Trick {
 		}
 		slices.Sort(loops)
 		for _, loop := range loops {
-			tricks = append(tricks, Trick{Kind: part.TrickLoop, Loop: loop})
+			tricks = append(tricks, Trick{Via: ViaSwitch, Kind: part.TrickLoop, Loop: loop})
 		}
 	}
-	return append(tricks, Trick{Kind: part.TrickSlow, DelayMs: DefaultDelayMs})
+	return append(tricks, Trick{Via: ViaSwitch, Kind: part.TrickSlow, DelayMs: DefaultDelayMs})
 }
 
-// Targets is every part Loki knows, with its tricks. Ratatoskr's are listed
-// only with allowWatchers on.
+// ProxyTricks is every trick Loki's proxy plays on a part.
+func ProxyTricks() []Trick {
+	return []Trick{
+		{Via: ViaProxy, Kind: part.TrickHealth},
+		{Via: ViaProxy, Kind: part.TrickSlow, DelayMs: DefaultDelayMs},
+		{Via: ViaProxy, Kind: KindError, Status: http.StatusInternalServerError},
+		{Via: ViaProxy, Kind: KindDrop},
+		{Via: ViaProxy, Kind: KindHang},
+	}
+}
+
+// Targets is every part Loki knows, with its tricks: by its switch always,
+// by proxy when it is proxied, by freeze when Loki can freeze it. Ratatoskr's
+// are listed only with allowWatchers on. Vias says, for each way, whether it
+// is open and why not.
 func (l *Loki) Targets(ctx context.Context) []Target {
 	probes := l.probeAll(ctx, true)
 	allow := l.Settings().AllowWatchers
 	targets := []Target{}
 	for _, name := range l.Parts {
 		probe := probes[name]
-		target := Target{Name: name, Up: probe.Up, LokiOn: probe.LokiOn, Tricks: []TargetTrick{}}
-		if name != Ratatoskr || allow {
-			for _, trick := range Tricks(name, probe.Health) {
-				target.Tricks = append(target.Tricks, TargetTrick{Kind: trick.Kind, Loop: trick.Loop, DelayMs: trick.DelayMs, Label: Label(name, trick), Expect: ExpectStrings(name, trick)})
+		pids, frozenWhy := l.processes(name)
+		proxy := l.Proxies[name]
+		target := Target{Name: name, Up: probe.Up, LokiOn: probe.LokiOn, Proxied: proxy != nil, Freezable: len(pids) > 0, Tricks: []TargetTrick{}}
+
+		switchWhy := ""
+		switch {
+		case !l.Clients[name].On():
+			switchWhy = fmt.Sprintf("Loki has no token at %s: %s_TOKEN in loki.env", Title(name), strings.ToUpper(name))
+		case !probe.LokiOn && !probe.Up:
+			switchWhy = fmt.Sprintf("%s doesn't answer", Title(name))
+		case !probe.LokiOn:
+			switchWhy = fmt.Sprintf("%s's trick switch is off: LOKI=on in parts.env (dev mode only)", Title(name))
+		}
+		proxyWhy := ""
+		if proxy == nil {
+			proxyWhy = fmt.Sprintf("%s isn't behind Loki's proxy: add it to LOKI_PROXY and point YGG_%s_URL at the proxy (dev only)", Title(name), strings.ToUpper(name))
+		}
+		target.Vias = []Via{
+			{Via: ViaSwitch, Available: switchWhy == "", Reason: switchWhy},
+			{Via: ViaProxy, Available: proxyWhy == "", Reason: proxyWhy},
+			{Via: ViaFreeze, Available: frozenWhy == "", Reason: frozenWhy},
+		}
+		if name == Ratatoskr && !allow {
+			for i := range target.Vias {
+				target.Vias[i] = Via{Via: target.Vias[i].Via, Reason: "Ratatoskr is the main watcher: turn on allowWatchers in Loki's settings to trick it"}
 			}
+			targets = append(targets, target)
+			continue
+		}
+		tricks := Tricks(name, probe.Health)
+		if proxy != nil {
+			tricks = append(tricks, ProxyTricks()...)
+		}
+		if len(pids) > 0 {
+			tricks = append(tricks, Trick{Via: ViaFreeze, Kind: KindFreeze})
+		}
+		for _, trick := range tricks {
+			target.Tricks = append(target.Tricks, TargetTrick{Via: trick.Via, Kind: trick.Kind, Loop: trick.Loop, DelayMs: trick.DelayMs, Status: trick.Status,
+				Label: Label(name, trick), Expect: ExpectStrings(name, trick)})
 		}
 		targets = append(targets, target)
 	}

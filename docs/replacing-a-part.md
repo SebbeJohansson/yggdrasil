@@ -64,6 +64,10 @@ check as the Go one.
 | Hermóðr | `YGG_HERMODR_URL` | `http://127.0.0.1:8779` |
 | Loki | `YGG_LOKI_URL` | `http://127.0.0.1:8780` |
 
+In dev mode Loki's proxy can stand at one of these addresses (`LOKI_PROXY`,
+the part's port + 100), passing calls on to the real part; see Loki in the
+README.
+
 ## Changing a contract
 
 A contract changes in the same commit as the code. Each built-in part's test

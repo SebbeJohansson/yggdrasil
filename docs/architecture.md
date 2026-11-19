@@ -143,10 +143,16 @@ has a trick switch, `/v1/loki/trick`, only with `LOKI=on` in its
 environment: for at most 10 minutes the part answers `/health` with 503,
 fails one loop, or answers slowly. A trick lives in the part's memory with
 its own end time, so it stops even if Loki dies, and it touches no data,
-file, process or container. Loki strikes one part, reads Ratatoskr's status
-and Gjallar's alerts to see who noticed, and raises `missed:<part>:<kind>`
-when a watcher didn't, for self-repair. It never tricks itself, Ratatoskr
-only when you allow it, and Gjallar only alone.
+file, process or container. Loki can also strike from outside, with no help
+from the part: as a proxy (dev only) standing at the address the others call,
+`YGG_<PART>_URL`, it passes every call through untouched until a trick makes
+it fail `/health`, answer errors, slow down, drop or hang; and it can freeze
+a part's process with SIGSTOP, thawed at the end by a detached process that
+outlives Loki. While Loki is down, a proxied part is cut off. Loki strikes
+one part, reads Ratatoskr's status and Gjallar's alerts to see who noticed,
+and raises `missed:<part>:<kind>` when a watcher didn't, for self-repair. It
+never tricks itself, Ratatoskr only when you allow it, and Gjallar only
+alone.
 
 ## Doing things without being asked
 

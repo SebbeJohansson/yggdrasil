@@ -170,7 +170,7 @@ func (l *Loki) PassiveTick(ctx context.Context) error {
 	name, trick, ok := l.pickPassive(ctx)
 	if !ok {
 		l.postpone(now)
-		return fmt.Errorf("passive: no part to trick (is LOKI=on set?)")
+		return fmt.Errorf("passive: no part to trick (is LOKI=on set, or LOKI_PROXY?)")
 	}
 	l.mu.Lock()
 	if len(l.slots) > 0 {
@@ -205,23 +205,50 @@ func (l *Loki) postpone(now time.Time) {
 	sort.Slice(l.slots, func(i, j int) bool { return l.slots[i].Before(l.slots[j]) })
 }
 
+// passiveTricks is the tricks a passive strike may play on a part: by its
+// switch when that answers, by proxy when it is proxied, by freeze only with
+// allowFreeze on, and only on a part that is up. Never Loki or Gjallar;
+// Ratatoskr only with allowWatchers on.
+func passiveTricks(t Target, settings Settings) []TargetTrick {
+	if !t.Up || t.Name == Name || t.Name == Gjallar || (t.Name == Ratatoskr && !settings.AllowWatchers) {
+		return nil
+	}
+	var tricks []TargetTrick
+	for _, trick := range t.Tricks {
+		via := trick.Via
+		if via == "" {
+			via = ViaSwitch
+		}
+		if !t.available(via) || (via == ViaFreeze && !settings.AllowFreeze) {
+			continue
+		}
+		tricks = append(tricks, trick)
+	}
+	return tricks
+}
+
 // pickPassive picks what to strike: a blind spot with a trick, else a random
-// part and trick, only among parts that are up and answer their trick switch.
+// part and trick, among the tricks passiveTricks allows.
 func (l *Loki) pickPassive(ctx context.Context) (string, Trick, bool) {
 	targets := l.Targets(ctx)
 	l.mu.Lock()
 	spots := l.plan.BlindSpots
-	allow := l.settings.AllowWatchers
+	settings := l.settings
 	l.mu.Unlock()
-	open := map[string]Target{}
+	open := map[string][]TargetTrick{}
 	for _, t := range targets {
-		if t.Up && t.LokiOn && t.Name != Name && t.Name != Gjallar && (t.Name != Ratatoskr || allow) && len(t.Tricks) > 0 {
-			open[t.Name] = t
+		if tricks := passiveTricks(t, settings); len(tricks) > 0 {
+			open[t.Name] = tricks
 		}
 	}
 	var candidates []BlindSpot
 	for _, spot := range spots {
-		if _, ok := open[spot.Part]; ok && spot.Trick != nil {
+		if spot.Trick == nil {
+			continue
+		}
+		if slices.ContainsFunc(open[spot.Part], func(t TargetTrick) bool {
+			return t.Via == spot.Trick.via() && t.Kind == spot.Trick.Kind && t.Loop == spot.Trick.Loop
+		}) {
 			candidates = append(candidates, spot)
 		}
 	}
@@ -239,7 +266,7 @@ func (l *Loki) pickPassive(ctx context.Context) (string, Trick, bool) {
 		return "", Trick{}, false
 	}
 	slices.Sort(names)
-	target := open[names[l.rand.IntN(len(names))]]
-	t := target.Tricks[l.rand.IntN(len(target.Tricks))]
-	return target.Name, Trick{Kind: t.Kind, Loop: t.Loop, DelayMs: t.DelayMs}, true
+	name := names[l.rand.IntN(len(names))]
+	tricks := open[name]
+	return name, tricks[l.rand.IntN(len(tricks))].Trick(), true
 }

@@ -3,18 +3,28 @@
 // tales), and, when you ask or now and then on its own, tricks one part for a
 // few minutes to see whether Ratatoskr and Gjallar catch it (a strike).
 //
-// Loki never breaks anything. A trick is an in-process behavior of the part
-// itself, offered by its trick switch (internal/part, only with LOKI=on), and
-// every trick ends on its own at its until, even if Loki dies.
+// A trick strikes one of three ways (its via), and every trick ends on its
+// own at its until, even if Loki dies:
 //
-//	GET  /v1/plan                 the blind spots and the tales
-//	GET  /v1/targets              every part, its loops, and what each trick should be caught by
-//	POST /v1/strikes              owner: trick one part for a few minutes
-//	GET  /v1/strikes              the strikes, newest first
-//	GET  /v1/strikes/{id}         one strike
-//	POST /v1/strikes/{id}/stop    owner: end it now
-//	GET  /v1/settings             { passive, perDay, allowWatchers }
-//	PATCH /v1/settings            owner
+//   - switch: an in-process behavior of the part itself, offered by its trick
+//     switch (internal/part, only with LOKI=on).
+//
+//   - proxy:  from outside, with no help from the part: Loki stands at the
+//     address the other parts call (YGG_<PART>_URL) and passes every call
+//     through, until a trick bends it (proxy.go, LOKI_PROXY, dev only).
+//
+//   - freeze: Loki stops the part's process (SIGSTOP) and lets it go
+//     (SIGCONT) at until, from a detached process that outlives Loki
+//     (freeze.go). Only parts whose process Loki can see and signal.
+//
+//     GET  /v1/plan                 the blind spots and the tales
+//     GET  /v1/targets              every part, its loops, and what each trick should be caught by
+//     POST /v1/strikes              owner: trick one part for a few minutes
+//     GET  /v1/strikes              the strikes, newest first
+//     GET  /v1/strikes/{id}         one strike
+//     POST /v1/strikes/{id}/stop    owner: end it now
+//     GET  /v1/settings             { passive, perDay, allowWatchers, allowFreeze }
+//     PATCH /v1/settings            owner
 package loki
 
 import (
@@ -32,6 +42,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"yggdrasil/internal/alert"
@@ -65,11 +76,47 @@ const (
 	Stopped  = "stopped"
 )
 
+// How a trick strikes.
+const (
+	// ViaSwitch is the part's own trick switch: from inside.
+	ViaSwitch = "switch"
+	// ViaProxy is Loki's proxy in front of the part: from outside.
+	ViaProxy = "proxy"
+	// ViaFreeze is the part's process stopped with SIGSTOP.
+	ViaFreeze = "freeze"
+)
+
+// The kinds of trick beyond the switch's health, loop and slow.
+const (
+	// KindError: the proxy answers the part's routes with 500 or 502.
+	KindError = "error"
+	// KindDrop: the proxy closes every connection without answering.
+	KindDrop = "drop"
+	// KindHang: the proxy holds every call unanswered until the trick ends.
+	KindHang = "hang"
+	// KindFreeze: the part's process is stopped.
+	KindFreeze = "freeze"
+)
+
 // Trick is the trick a strike plays, without its until.
 type Trick struct {
+	// Via is how it strikes: switch (the default), proxy or freeze.
+	Via     string `json:"via"`
 	Kind    string `json:"kind"`
 	Loop    string `json:"loop,omitempty"`
 	DelayMs int    `json:"delayMs,omitempty"`
+	// Status is what an error trick answers: 500 (the default) or 502.
+	Status int `json:"status,omitempty"`
+	// Path limits an error trick to the paths that start with it.
+	Path string `json:"path,omitempty"`
+}
+
+// via is the trick's via, switch when none is set.
+func (t Trick) via() string {
+	if t.Via == "" {
+		return ViaSwitch
+	}
+	return t.Via
 }
 
 // Check is one watcher that should notice a strike.
@@ -96,6 +143,8 @@ type Strike struct {
 	State     string     `json:"state"`
 	Checks    []Check    `json:"checks"`
 	Tale      string     `json:"tale,omitempty"`
+	// Pids are the processes a freeze stopped.
+	Pids []int `json:"pids,omitempty"`
 
 	stop chan struct{}
 }
@@ -112,6 +161,7 @@ func (s *Strike) running() bool {
 func (s *Strike) copy() Strike {
 	c := *s
 	c.Checks = append([]Check{}, s.Checks...)
+	c.Pids = append([]int(nil), s.Pids...)
 	c.stop = nil
 	return c
 }
@@ -121,11 +171,13 @@ type Settings struct {
 	Passive       bool `json:"passive"`
 	PerDay        int  `json:"perDay"`
 	AllowWatchers bool `json:"allowWatchers"`
+	// AllowFreeze lets passive strikes freeze a part's process.
+	AllowFreeze bool `json:"allowFreeze"`
 }
 
 // DefaultSettings is Loki before you set anything: passive off.
 func DefaultSettings() Settings {
-	return Settings{Passive: false, PerDay: 1, AllowWatchers: false}
+	return Settings{Passive: false, PerDay: 1, AllowWatchers: false, AllowFreeze: false}
 }
 
 // MaxPerDay is the most passive strikes a day you may ask for.
@@ -145,6 +197,8 @@ type Loki struct {
 	URLs map[string]string
 	// Clients is Loki's token at each part, for its trick switch and routes.
 	Clients map[string]*call.Part
+	// Proxies are the parts Loki stands in front of (LOKI_PROXY), by name.
+	Proxies map[string]*Proxy
 	// Gjallar raises missed:<part>:<kind> with Loki's own token.
 	Gjallar *alert.Client
 	// Heartbeats are the senders Gjallar expects to beat (GJALLAR_HEARTBEATS).
@@ -167,6 +221,13 @@ type Loki struct {
 	// start starts a passive strike: Start, or a fake in tests.
 	start func(ctx context.Context, name string, trick Trick, minutes int, by string) (Strike, error)
 	rand  *mathrand.Rand
+	// processes finds a part's processes to freeze, or says why it can't.
+	processes func(name string) ([]int, string)
+	// signal sends a signal to a process; scheduleThaw starts the detached
+	// thaw that outlives Loki.
+	signal       func(pid int, sig syscall.Signal) error
+	scheduleThaw func(pids []int, after time.Duration) (*Thaw, error)
+	frozen       map[string]*frozen // by strike id
 
 	mu         sync.Mutex
 	settings   Settings
@@ -183,6 +244,7 @@ func New(parts []string, urls map[string]string, clients map[string]*call.Part, 
 		Parts:    parts,
 		URLs:     urls,
 		Clients:  clients,
+		Proxies:  map[string]*Proxy{},
 		Gjallar:  gjallar,
 		Hours:    DefaultHours(),
 		HTTP:     &http.Client{Timeout: 3 * time.Second},
@@ -195,6 +257,11 @@ func New(parts []string, urls map[string]string, clients map[string]*call.Part, 
 		rand:     mathrand.New(mathrand.NewPCG(uint64(time.Now().UnixNano()), 7)),
 		settings: DefaultSettings(),
 		plan:     Plan{BlindSpots: []BlindSpot{}, Tales: []Tale{}},
+
+		processes:    func(name string) ([]int, string) { return FindProcesses("/proc", name) },
+		signal:       syscall.Kill,
+		scheduleThaw: ScheduleThaw,
+		frozen:       map[string]*frozen{},
 	}
 }
 
@@ -235,7 +302,16 @@ func (l *Loki) Load() error {
 	l.strikes = nil
 	for _, s := range state.Strikes {
 		strike := s
+		if strike.Trick.Via == "" {
+			strike.Trick.Via = ViaSwitch
+		}
 		if strike.running() {
+			if strike.Trick.Via == ViaFreeze {
+				// Its detached thaw has done this or will; once more does no harm.
+				for _, pid := range strike.Pids {
+					_ = l.signal(pid, syscall.SIGCONT)
+				}
+			}
 			strike.State = Stopped
 			if strike.Tale == "" {
 				strike.Tale = fmt.Sprintf("Loki was interrupted halfway through tricking %s. The trick ended on its own at %s, as every trick does.", Title(strike.Part), strike.EndsAt.In(l.Hours.Zone).Format("15:04"))
@@ -287,6 +363,10 @@ func (l *Loki) Mount(ctx context.Context, p *part.Part) {
 	p.Handle("PATCH /v1/settings", l.owner(l.patchSettings))
 	p.Loop("plan", time.Hour, l.BuildPlan)
 	p.Loop("passive", time.Minute, l.PassiveTick)
+	go func() {
+		<-ctx.Done()
+		l.ThawAll()
+	}()
 }
 
 func (l *Loki) owner(handler http.HandlerFunc) http.HandlerFunc {
@@ -315,6 +395,7 @@ func (l *Loki) patchSettings(w http.ResponseWriter, r *http.Request) {
 		Passive       *bool `json:"passive"`
 		PerDay        *int  `json:"perDay"`
 		AllowWatchers *bool `json:"allowWatchers"`
+		AllowFreeze   *bool `json:"allowFreeze"`
 	}
 	if err := part.Decode(r, &body); err != nil {
 		part.Error(w, http.StatusBadRequest, err.Error())
@@ -333,6 +414,9 @@ func (l *Loki) patchSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.AllowWatchers != nil {
 		l.settings.AllowWatchers = *body.AllowWatchers
+	}
+	if body.AllowFreeze != nil {
+		l.settings.AllowFreeze = *body.AllowFreeze
 	}
 	settings := l.settings
 	l.mu.Unlock()

@@ -511,14 +511,19 @@ A job that fails 3 times in a row is `failing:<job id>` (warning).
 | Route | Who | What it does |
 | --- | --- | --- |
 | `GET /v1/plan` | anyone | `{ checkedAt, blindSpots, tales }`. Blind spots, rebuilt every hour: `{ id, part, kind, text, severity: low\|medium\|high, trick? }`, where `trick` is the strike that would test it. Tales: `{ id, alertId, part, title, text, openedAt, noticedAfterMs?, healedAfterMs? }`, one per real alert that opened and resolved in the last 14 days |
-| `GET /v1/targets` | anyone | `{ parts: [{ name, up, lokiOn, tricks: [{ kind, loop?, delayMs?, label, expect }] }] }`: each part's tricks, from its `/health`, and what should catch each (`ratatoskr:down:<part>`, `ratatoskr:failing:<part>:<loop>`, `gjallar:alert`…) |
-| `POST /v1/strikes` | owner | `{ part, trick: { kind: health\|loop\|slow, loop?, delayMs? }, minutes? }` (3, at most 10) → `201` Strike |
+| `GET /v1/targets` | anyone | `{ parts: [{ name, up, lokiOn, proxied, freezable, vias: [{ via, available, reason? }], tricks: [{ via, kind, loop?, delayMs?, status?, label, expect }] }] }`: each part's tricks by each way to strike it (switch tricks from its `/health`; proxy tricks only when proxied; freeze only when freezable), why a way is closed, and what should catch each (`ratatoskr:down:<part>`, `ratatoskr:failing:<part>:<loop>`, `gjallar:alert`…) |
+| `POST /v1/strikes` | owner | `{ part, trick: { via?: switch\|proxy\|freeze, kind: health\|loop\|slow\|error\|drop\|hang\|freeze, loop?, delayMs?, status?, path? }, minutes? }` (3, at most 10) → `201` Strike. No `via`: `freeze` for a freeze, `proxy` for error, drop and hang, else `switch` |
 | `GET /v1/strikes` | anyone | `?limit=` (50) → `{ strikes }`, newest first |
-| `GET /v1/strikes/{id}` | anyone | `{ id, part, trick, by: manual\|passive, startedAt, endsAt, healedAt?, state: striking\|watching\|caught\|missed\|stopped, checks: [{ watcher, expected, noticedAt?, ok? }], tale? }` |
+| `GET /v1/strikes/{id}` | anyone | `{ id, part, trick, by: manual\|passive, startedAt, endsAt, healedAt?, state: striking\|watching\|caught\|missed\|stopped, checks: [{ watcher, expected, noticedAt?, ok? }], tale?, pids? }` |
 | `POST /v1/strikes/{id}/stop` | owner | end it now: the trick comes off, and it ends `stopped`, with no verdict |
-| `GET`, `PATCH /v1/settings` | owner changes it | `{ passive, perDay, allowWatchers }`: off, 1 and off until set; kept in `LOKI_STATE` |
+| `GET`, `PATCH /v1/settings` | owner changes it | `{ passive, perDay, allowWatchers, allowFreeze }`: off, 1, off and off until set; kept in `LOKI_STATE` |
 
-Loki never breaks anything itself. Every part has a trick switch
+A trick strikes one of three ways, its `via`: `switch`, from inside, with the
+part's own help; `proxy`, from outside, where the part never knows; and
+`freeze`, which stops the part's process. Every one ends at its `until`, at
+most 10 minutes ahead, even if Loki dies.
+
+**Switch.** Every part has a trick switch
 (`internal/part`), which answers only with `LOKI=on` in that part's
 environment: set it in `parts.env` in dev mode, never on a machine you rely
 on. Without it, `/v1/loki/trick` is `404` and nothing can be tricked. Only
@@ -532,6 +537,44 @@ even if Loki dies:
 | `loop` | the named loop's runs fail with "Loki's trick" | `ratatoskr:failing:<part>:<loop>` and `gjallar:alert`; Ratatoskr's `heartbeat` loop: `gjallar:silent:ratatoskr` |
 | `slow` | every route but `/health` and the trick switch waits `delayMs` (3000, at most 10000) | `ratatoskr:slow:<part>`, which nothing raises yet: a strike shows the blind spot |
 
+**Proxy (dev only).** Parts find each other only through `YGG_<PART>_URL`, so
+Loki can stand at that address. With a part in `LOKI_PROXY`, Loki listens
+on a port of its own for it, the part's port + 100 (Norn 8871, Sindri 8872 …
+Hermóðr 8879), and passes every call through to the real part untouched:
+method, path, query, headers (Authorization too), body, status and response
+headers, server-sent events (Norn's `/v1/events/stream`, Gjallar's
+`/v1/alerts/stream`) streamed as they come and kept open, long calls left
+to run. Nothing shows the proxy to a caller. Point `YGG_<PART>_URL` in
+`parts.env` at the proxy and every part, Ratatoskr included, reaches it
+through Loki; Loki itself calls the real part at `LOKI_UPSTREAM_<PART>`
+(never `YGG_<PART>_URL`), and refuses an upstream that would reach itself.
+
+While Loki is down, a proxied part is cut off from the others: Ratatoskr's
+`/v1/status` shows it down, and Gjallar raises it. Keep the proxy to dev
+mode, and take a part out of `LOKI_PROXY` and its `YGG_<PART>_URL` back to
+its own port before you rely on it.
+
+| Trick (via proxy) | What callers get | Should be caught by |
+| --- | --- | --- |
+| `health` | `/health` answers `503`, the part's own answer with `ok: false` | `ratatoskr:down:<part>` and `gjallar:alert` |
+| `slow` | every call but `/health` waits `delayMs` | `ratatoskr:slow:<part>` (nothing yet) |
+| `error` | every call but `/health` answers `status` (500, or 502); with `path`, only paths under it | `ratatoskr:errors:<part>` (nothing yet) |
+| `drop` | the connection is closed unanswered | `ratatoskr:down:<part>` and `gjallar:alert` |
+| `hang` | calls are held unanswered until the trick ends (then they go through) or the caller gives up | `ratatoskr:down:<part>` and `gjallar:alert` |
+
+**Freeze.** Loki sends the part's process `SIGSTOP`, and `SIGCONT` at
+`until`. The thaw is scheduled when the strike starts, in a detached
+`sh -c 'sleep N; kill -CONT <pid>'` in a session of its own, so it comes
+even if Loki dies; Loki also thaws at once when the strike ends or is
+stopped and when it shuts down, and calls the detached thaw off. A part is
+freezable when Loki sees exactly one process running as `ygg <part>` that it
+may signal: its own PID namespace, its own user. In dev mode Loki runs in
+the dev container, so it can freeze Norn, Gjallar, Munin, Huginn, Dellingr
+and Hermóðr, but not Sindri, Veðrfölnir and Ratatoskr, which run on the
+host; with the installed containers it can freeze none. Expected:
+`ratatoskr:down:<part>` and `gjallar:alert` (Ratatoskr's `heartbeat` to
+Gjallar for Ratatoskr itself). Never Loki itself.
+
 A strike reads Ratatoskr's `/v1/status` and Gjallar's alerts every 10 s and
 notes when each watcher noticed. After the trick ends it waits up to 5
 minutes for the part to be well and the alerts resolved (`healedAt`); a
@@ -540,19 +583,23 @@ watcher noticing then still counts. `caught` is every watcher noticing;
 self-repair picks up, and the next caught strike of that kind resolves it.
 One strike per part at a time, never Loki, never Gjallar while another strike
 runs, and never Ratatoskr unless `allowWatchers` is on. A `health` strike
-on a part raises a real critical alert, so it reaches your phone like one.
+on a part (or a freeze, drop or hang) raises a real critical alert, so it
+reaches your phone like one.
 
 With `passive` on, Loki strikes on its own at most `perDay` times, at random
 times in your working hours (`WORK_HOURS` in `parts.env`, 09:00-17:00, Monday
 to Friday), never at night, and never while Hermóðr says you are in a
 meeting, on a break or in focus: then it tries again 15 minutes later. It
 picks a blind spot that has a trick, or else a random part and trick, never
-Gjallar. Afterwards one quiet Hermóðr message (`push: false`) tells the tale.
+Gjallar: switch tricks on parts whose switch answers, proxy tricks on
+proxied parts, and freezes only with `allowFreeze` on. Afterwards one quiet Hermóðr message (`push: false`) tells the tale.
 
 Blind spots are parts that run but aren't in Ratatoskr's watch list, no
 heartbeat from Ratatoskr in `GJALLAR_HEARTBEATS`, critical alerts with no
 phone channel on Hermóðr, loops never seen failing, parts never yet proven
-going down by a caught strike, and slowness, which nothing times. Tales
+going down by a caught strike, slowness, which nothing times, and a part
+answering errors on its routes while its `/health` is fine, which nobody
+would notice (its trick is a proxy `error` once a part is proxied). Tales
 leave out Loki's own alerts and those a strike caused; `noticedAfterMs` is
 when you acknowledged the alert.
 
@@ -563,6 +610,18 @@ when you acknowledged the alert.
 | `LOKI_STATE` | `data/loki.json` | settings and the last 200 strikes |
 | `LOKI_PARTS` | every part but Loki | the parts it may trick |
 | `GJALLAR_HEARTBEATS` | `ratatoskr=3m` | read to find the heartbeat blind spot; set it in `parts.env` if you changed Gjallar's |
+| `LOKI_PROXY` | none | the parts Loki's proxy stands in front of, `norn,sindri,…` (dev only) |
+| `LOKI_PROXY_ADDR_<PART>` | `127.0.0.1:<port + 100>` | where that part's proxy listens |
+| `LOKI_UPSTREAM_<PART>` | `http://127.0.0.1:<port>` | where the real part is; never read from `YGG_<PART>_URL` |
+
+To put Norn and Hermóðr behind the proxy, in `parts.env` (read by Loki and by
+every part that calls them):
+
+```
+LOKI_PROXY=norn,hermodr
+YGG_NORN_URL=http://127.0.0.1:8871
+YGG_HERMODR_URL=http://127.0.0.1:8879
+```
 
 ### Sindri: the night shift and self-repair
 

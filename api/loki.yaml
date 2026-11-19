@@ -24,10 +24,28 @@ info:
     the trick ends. `slow`: every route but /health and the trick switch
     waits delayMs first.
 
+    How a trick strikes, its `via`:
+    - `switch` (the default): the part's own trick switch above, from inside.
+    - `proxy`: from outside, the part never knows. With the part in
+      `LOKI_PROXY`, Loki listens on a port of its own for it (its port + 100:
+      Norn 8871 … Hermóðr 8879) and passes every call through to the real part
+      untouched, server-sent events streamed as they come, until a trick bends
+      it: `health` (/health answers 503 with `ok: false`), `slow` (every call
+      but /health waits delayMs), `error` (every call but /health answers
+      `status` 500 or 502, or only paths under `path`), `drop` (the connection
+      is closed unanswered), `hang` (calls are held unanswered until the trick
+      ends or the caller gives up). Parts reach it there only when
+      `YGG_<PART>_URL` points at the proxy; Loki itself calls the real part.
+      Dev only: while Loki is down, a proxied part is cut off.
+    - `freeze`: Loki stops the part's process (SIGSTOP) and lets it go
+      (SIGCONT) at until, from a detached process that outlives Loki, and at
+      once when the strike is stopped or Loki shuts down. Only parts whose
+      process Loki can see and signal (its own PID namespace and user).
+
     Rules a replacement must keep:
-    - A trick is an in-process behavior only: it never touches data, files,
-      processes or containers, and it ends at its until on its own, even if
-      Loki dies.
+    - A switch trick is an in-process behavior only: it never touches data,
+      files, processes or containers. Every trick, by any via, ends at its
+      until on its own, even if Loki dies.
     - Strikes are started by the owner (`by: manual`) or by Loki itself
       (`by: passive`). At most 10 minutes, one at a time per part. Never
       Loki itself; never Gjallar while another strike runs (or another
@@ -35,6 +53,8 @@ info:
     - A strike that a watcher missed is raised on Gjallar as
       `missed:<part>:<kind>` (warning), and resolved by the next caught strike
       of that kind on that part.
+    - Never freeze Loki itself. Passive strikes may use proxy tricks, and
+      freeze only with `allowFreeze` on.
     - Passive strikes: only with `passive` on, at most `perDay`, in working
       hours (WORK_HOURS, Monday to Friday), never at night, never while
       Hermóðr says you are in a meeting, on a break or in focus. Each ends
@@ -75,7 +95,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/targets:
     get:
-      summary: Every part, whether it is up and its trick switch answers, and what each trick should be caught by. Ratatoskr's tricks are listed only with allowWatchers on.
+      summary: Every part, whether it is up, its trick switch answers, it is proxied and freezable, and each trick by each via it can strike with and what should catch it (switch tricks always; proxy tricks only when proxied; freeze only when freezable). Ratatoskr's tricks are listed only with allowWatchers on.
       responses:
         "200":
           description: The parts.
@@ -129,7 +149,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409":
-          description: The part is already tricked, Gjallar's rule stands in the way, or the part's trick switch is off (no LOKI=on).
+          description: The part is already tricked, Gjallar's rule stands in the way, the part's trick switch is off (no LOKI=on), it isn't proxied (a proxy trick), or Loki can't freeze it (a freeze).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -170,7 +190,7 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
   /v1/settings:
     get:
-      summary: Passive strikes on or off, how many a day, and whether Ratatoskr may be tricked.
+      summary: Passive strikes on or off, how many a day, whether Ratatoskr may be tricked, and whether passive strikes may freeze a process.
       responses:
         "200":
           description: The settings.
@@ -190,6 +210,7 @@ paths:
                 passive: { type: boolean }
                 perDay: { type: integer, minimum: 1, maximum: 5 }
                 allowWatchers: { type: boolean }
+                allowFreeze: { type: boolean }
       responses:
         "200":
           description: Changed.
@@ -259,9 +280,15 @@ components:
       type: object
       required: [kind]
       properties:
-        kind: { type: string, enum: [health, loop, slow] }
+        via:
+          type: string
+          enum: [switch, proxy, freeze]
+          description: "How it strikes. Left out: freeze for kind freeze, proxy for error, drop and hang, else switch. Kinds by via: switch health, loop, slow; proxy health, slow, error, drop, hang; freeze freeze. Always set in Loki's answers."
+        kind: { type: string, enum: [health, loop, slow, error, drop, hang, freeze] }
         loop: { type: string, description: The loop a loop trick fails, as named on the part's /health. }
         delayMs: { type: integer, minimum: 1, maximum: 10000, description: "A slow trick's delay (3000 when left out)." }
+        status: { type: integer, enum: [500, 502], description: "What an error trick answers (500 when left out)." }
+        path: { type: string, description: "An error trick hits only paths that start with this (every path but /health when left out)." }
     BlindSpot:
       type: object
       required: [id, part, kind, text, severity]
@@ -270,7 +297,7 @@ components:
         part: { type: string }
         kind:
           type: string
-          description: "unwatched (Ratatoskr doesn't watch it), heartbeat (no Gjallar heartbeat), phone (critical alerts may not reach your phone), unproven (a part going down never caught by a strike), loop (a loop never seen failing), slow (nothing times a part's routes)."
+          description: "unwatched (Ratatoskr doesn't watch it), heartbeat (no Gjallar heartbeat), phone (critical alerts may not reach your phone), unproven (a part going down never caught by a strike), loop (a loop never seen failing), slow (nothing times a part's routes), errors (nothing sees a part answer errors while /health is fine; its trick is a proxy error when a part is proxied)."
         text: { type: string, description: In plain words. }
         severity: { type: string, enum: [low, medium, high] }
         trick: { $ref: "#/components/schemas/Trick", description: The strike that would test it, when there is one. }
@@ -295,23 +322,35 @@ components:
         tales: { type: array, items: { $ref: "#/components/schemas/Tale" } }
     TargetTrick:
       type: object
-      required: [kind, label, expect]
+      required: [via, kind, label, expect]
       properties:
-        kind: { type: string, enum: [health, loop, slow] }
+        via: { type: string, enum: [switch, proxy, freeze] }
+        kind: { type: string, enum: [health, loop, slow, error, drop, hang, freeze] }
         loop: { type: string }
         delayMs: { type: integer }
+        status: { type: integer }
         label: { type: string, example: Norn stops answering /health }
         expect:
           type: array
-          description: "What should catch it: ratatoskr:down:<part>, ratatoskr:failing:<part>:<loop>, gjallar:alert (Ratatoskr's alert reaching Gjallar), gjallar:silent:ratatoskr, ratatoskr:slow:<part> (nothing raises this yet)."
+          description: "What should catch it: ratatoskr:down:<part> (health, drop, hang, freeze), ratatoskr:failing:<part>:<loop>, gjallar:alert (Ratatoskr's alert reaching Gjallar), gjallar:silent:ratatoskr, ratatoskr:slow:<part> and ratatoskr:errors:<part> (nothing raises these yet, so such strikes are missed)."
           items: { type: string }
+    Via:
+      type: object
+      required: [via, available]
+      properties:
+        via: { type: string, enum: [switch, proxy, freeze] }
+        available: { type: boolean }
+        reason: { type: string, description: Why not, in plain words, when it isn't available. }
     Target:
       type: object
-      required: [name, up, lokiOn, tricks]
+      required: [name, up, lokiOn, proxied, freezable, vias, tricks]
       properties:
         name: { type: string }
         up: { type: boolean }
         lokiOn: { type: boolean, description: Whether its trick switch answers Loki (LOKI=on and Loki's token there). }
+        proxied: { type: boolean, description: Whether Loki's proxy stands in front of it (LOKI_PROXY). }
+        freezable: { type: boolean, description: Whether Loki can see and signal its process. }
+        vias: { type: array, description: "Each way to strike it, switch, proxy and freeze, and why not when it can't.", items: { $ref: "#/components/schemas/Via" } }
         tricks: { type: array, items: { $ref: "#/components/schemas/TargetTrick" } }
     Check:
       type: object
@@ -338,10 +377,12 @@ components:
           description: "striking while the trick is on; watching while it waits up to 5 minutes for healing (a watcher noticing then still counts); then caught (every watcher noticed), missed (one did not) or stopped."
         checks: { type: array, items: { $ref: "#/components/schemas/Check" } }
         tale: { type: string, description: The story of the strike, once it is over. }
+        pids: { type: array, items: { type: integer }, description: The processes a freeze stopped. }
     Settings:
       type: object
-      required: [passive, perDay, allowWatchers]
+      required: [passive, perDay, allowWatchers, allowFreeze]
       properties:
         passive: { type: boolean, description: Loki strikes on its own (off by default). }
         perDay: { type: integer, minimum: 1, maximum: 5, description: The most passive strikes a day (1). }
         allowWatchers: { type: boolean, description: Ratatoskr may be tricked (off by default). }
+        allowFreeze: { type: boolean, description: Passive strikes may freeze a part's process (off by default). Manual freezes need no setting. }

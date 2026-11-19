@@ -75,14 +75,21 @@ type Seen struct {
 	Channels *Channels
 	// Strikes is every strike kept.
 	Strikes []Strike
+	// Proxied is the parts behind Loki's proxy (LOKI_PROXY).
+	Proxied []string
 }
 
 var severityRank = map[string]int{"high": 0, "medium": 1, "low": 2}
 
 // caughtBefore is whether a strike of this trick on the part was ever caught.
 func (s Seen) caughtBefore(name string, trick Trick) bool {
+	// A part going down counts however it was made to: switch, proxy or freeze.
+	down := func(kind string) bool {
+		return kind == part.TrickHealth || kind == KindDrop || kind == KindHang || kind == KindFreeze
+	}
 	return slices.ContainsFunc(s.Strikes, func(strike Strike) bool {
-		return strike.State == Caught && strike.Part == name && strike.Trick.Kind == trick.Kind && strike.Trick.Loop == trick.Loop
+		same := strike.Trick.Kind == trick.Kind || (down(strike.Trick.Kind) && down(trick.Kind))
+		return strike.State == Caught && strike.Part == name && same && strike.Trick.Loop == trick.Loop
 	})
 }
 
@@ -98,7 +105,7 @@ func BlindSpots(s Seen) []BlindSpot {
 	add := func(id, name, kind, severity, text string, trick *Trick) {
 		spots = append(spots, BlindSpot{ID: id, Part: name, Kind: kind, Severity: severity, Text: text, Trick: trick})
 	}
-	health := &Trick{Kind: part.TrickHealth}
+	health := &Trick{Via: ViaSwitch, Kind: part.TrickHealth}
 
 	// A part that runs but that Ratatoskr doesn't watch.
 	for _, name := range s.Parts {
@@ -115,7 +122,7 @@ func BlindSpots(s Seen) []BlindSpot {
 		var trick *Trick
 		if probe := s.Probes[Ratatoskr]; probe.Health != nil {
 			if _, beats := probe.Health.Loops["heartbeat"]; beats {
-				trick = &Trick{Kind: part.TrickLoop, Loop: "heartbeat"}
+				trick = &Trick{Via: ViaSwitch, Kind: part.TrickLoop, Loop: "heartbeat"}
 			}
 		}
 		add("heartbeat:ratatoskr", Ratatoskr, "heartbeat", "high",
@@ -175,7 +182,7 @@ func BlindSpots(s Seen) []BlindSpot {
 				// Without Gjallar's history, "never seen failing" can't be said.
 				break
 			}
-			trick := &Trick{Kind: part.TrickLoop, Loop: loop}
+			trick := &Trick{Via: ViaSwitch, Kind: part.TrickLoop, Loop: loop}
 			if s.caughtBefore(name, *trick) || s.everRaised(Ratatoskr, "failing:"+name+":"+loop, "stalled:"+name+":"+loop) {
 				continue
 			}
@@ -188,6 +195,17 @@ func BlindSpots(s Seen) []BlindSpot {
 	add("slow", Ratatoskr, "slow", "medium",
 		"If a part answered every call ten seconds late, nobody would know: Ratatoskr reads only /health, which stays quick.", nil)
 
+	// Errors: nobody reads a part's answers but /health. Loki's proxy can show it.
+	errorsPart, errorsTrick := Ratatoskr, (*Trick)(nil)
+	for _, name := range s.Proxied {
+		if name != Ratatoskr && name != Gjallar {
+			errorsPart, errorsTrick = name, &Trick{Via: ViaProxy, Kind: KindError, Status: 500}
+			break
+		}
+	}
+	add("errors", errorsPart, "errors", "medium",
+		"If a part answered errors on its routes while /health stayed fine, nobody would know: Ratatoskr reads only /health, and the callers keep their failures to themselves.", errorsTrick)
+
 	sort.SliceStable(spots, func(i, j int) bool {
 		return severityRank[spots[i].Severity] < severityRank[spots[j].Severity]
 	})
@@ -197,6 +215,11 @@ func BlindSpots(s Seen) []BlindSpot {
 // BuildPlan reads what is there and rebuilds the plan.
 func (l *Loki) BuildPlan(ctx context.Context) error {
 	seen := Seen{Parts: l.Parts, Heartbeats: l.Heartbeats, Watched: l.Watch}
+	for _, name := range l.Parts {
+		if l.Proxies[name] != nil {
+			seen.Proxied = append(seen.Proxied, name)
+		}
+	}
 	var wg sync.WaitGroup
 	var statusErr, alertsErr error
 	wg.Add(4)

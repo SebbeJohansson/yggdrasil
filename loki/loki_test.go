@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,7 +40,8 @@ type world struct {
 	messages  []map[string]any
 	inMeeting bool
 	focus     bool
-	since     time.Time // when Norn was first seen down
+	since     time.Time    // when Norn was first seen down
+	seen      atomic.Value // string: where the watchers reach Norn, its URL or a proxy in front
 }
 
 func newWorld(t *testing.T) *world {
@@ -51,8 +53,10 @@ func newWorld(t *testing.T) *world {
 	w.norn = httptest.NewServer(norn)
 	t.Cleanup(w.norn.Close)
 
+	w.seen.Store(w.norn.URL)
+	quick := &http.Client{Timeout: 300 * time.Millisecond}
 	nornDown := func() bool {
-		response, err := http.Get(w.norn.URL + "/health")
+		response, err := quick.Get(w.seen.Load().(string) + "/health")
 		if err != nil {
 			return true
 		}
