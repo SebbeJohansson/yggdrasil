@@ -79,7 +79,9 @@ rewrite), it swaps people's names and email addresses for placeholders
 (Person 1, Person 2…) and turns them back into names in what the agent
 answers. Names are found from what Norn already knows (you, the calendars,
 the inbox), by the local model (`NAMES_MODEL`, qwen2.5:7b), and by the shape
-of an address. When the local model does not answer, or a known name is still
+of an address. The local model gets 90 s per 4,000 characters, and a second
+try after a timeout (a paged-out XeStrata is slow until that first call brings
+it back). When it still does not answer, or a known name is still
 there after the swap, nothing is sent. A Claude meeting brief is gathered by
 Norn itself (the invitation, and your email and Teams chats with the people
 invited, from the last 30 days) and given to a Claude agent with no tools.

@@ -155,16 +155,34 @@ func chunks(text string, size int) []string {
 
 func utf8RuneStart(b byte) bool { return b&0xC0 != 0x80 }
 
+// NamesTimeout is how long the local model may take over one piece of text.
+var NamesTimeout = 90 * time.Second
+
+// askNames is the local model's raw answer for one piece of text. A timeout
+// is tried once more: when Windows has paged XeStrata's model out, the first
+// try is what brings it back, and reads at a few tokens a second meanwhile.
+func (n *Norn) askNames(ctx context.Context, chunk string) (string, error) {
+	think := false
+	ask := func() (string, error) {
+		return n.LLM.Chat(ctx, []llm.Message{{Role: "system", Content: namesSystem}, {Role: "user", Content: chunk}}, llm.Options{
+			Purpose: "find names", Model: n.Config.NamesModel, Temperature: 0, TopP: 1, MaxTokens: 600,
+			Format: namesFormat, Think: &think, KeepAlive: n.Config.DispatchKeepAlive, Timeout: NamesTimeout,
+		})
+	}
+	raw, err := ask()
+	if err != nil && ctx.Err() == nil && FailureKind(err.Error()) == failTimeout {
+		n.logf("finding names timed out, trying once more: %v", err)
+		raw, err = ask()
+	}
+	return raw, err
+}
+
 // findNames is the people's names the local model finds in text. It fails
 // when the model does not answer: then the text is not sent.
 func (n *Norn) findNames(ctx context.Context, text string) ([]string, error) {
 	var names []string
-	think := false
 	for _, chunk := range chunks(text, namesChunk) {
-		raw, err := n.LLM.Chat(ctx, []llm.Message{{Role: "system", Content: namesSystem}, {Role: "user", Content: chunk}}, llm.Options{
-			Purpose: "find names", Model: n.Config.NamesModel, Temperature: 0, TopP: 1, MaxTokens: 600,
-			Format: namesFormat, Think: &think, KeepAlive: n.Config.DispatchKeepAlive, Timeout: 90 * time.Second,
-		})
+		raw, err := n.askNames(ctx, chunk)
 		if err != nil {
 			return nil, fmt.Errorf("the local model could not look for names: %w", err)
 		}

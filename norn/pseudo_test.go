@@ -187,3 +187,24 @@ func TestExternalCompaniesInDigest(t *testing.T) {
 		t.Fatalf("internal = %+v", internal)
 	}
 }
+
+func TestNamesAreAskedAgainAfterATimeout(t *testing.T) {
+	n, _ := newNorn(t)
+	was := NamesTimeout
+	NamesTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { NamesTimeout = was })
+	var asked int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		if asked == 1 {
+			time.Sleep(400 * time.Millisecond) // the model is still coming back from the pagefile
+		}
+		part.JSON(w, 200, map[string]any{"choices": []map[string]any{{"message": map[string]any{"content": `{"names":["Kalle Ek"]}`}}}})
+	}))
+	t.Cleanup(server.Close)
+	n.LLM = &llm.Client{PrimaryURL: server.URL + "/v1", NoFallback: true}
+	names, err := n.findNames(context.Background(), "Kalle Ek sent the deck.")
+	if err != nil || len(names) != 1 || names[0] != "Kalle Ek" || asked != 2 {
+		t.Fatalf("names %v, err %v, asked %d times", names, err, asked)
+	}
+}
