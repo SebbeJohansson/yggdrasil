@@ -831,6 +831,8 @@ type TaskView struct {
 	Label        *string `json:"label"`
 	LastActivity int64   `json:"lastActivity"`
 	Merged       bool    `json:"merged"`
+	// MergedAt is when the agent's branch merged; 0 when it has not.
+	MergedAt int64 `json:"mergedAt,omitempty"`
 }
 
 func liveStatus(a *Agent) string {
@@ -889,6 +891,9 @@ func (w *Work) TaskViews(tasks []Task) []TaskView {
 			label := s.agent.Label
 			view.Label = &label
 			view.Merged = s.agent.Worktree != nil && s.agent.Worktree.IsLanded()
+			if view.Merged {
+				view.MergedAt = s.agent.MergedAt
+			}
 			if current {
 				view.LastActivity = max(view.LastActivity, s.agent.LastActivity)
 			}

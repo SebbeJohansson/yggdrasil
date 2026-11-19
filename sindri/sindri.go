@@ -31,12 +31,15 @@ type Sindri struct {
 	Sessions *AgentSessions
 	// Work hands work to agents and follows them; nil serves the agents alone.
 	Work *Work
+	// PromptsKeep is how long your indexed prompts are kept (sessionprompts.go); 0 is forever.
+	PromptsKeep time.Duration
 }
 
 // Mount adds Sindri's routes and loops to the part.
 func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("GET /v1/agents", s.list)
 	p.Handle("GET /v1/sessions/recent", s.sessions)
+	s.mountSessionPrompts(p)
 	p.Handle("GET /v1/activity", s.activity)
 	p.Handle("POST /v1/agents", s.start)
 	p.Handle("POST /v1/agents/close-idle", func(w http.ResponseWriter, _ *http.Request) {

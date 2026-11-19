@@ -277,6 +277,23 @@ a winner, a draft goal of that kind that does not race shows the conduit
 that wins it most (`suggestion`; none on a tie). It only suggests: you
 choose with `PUT /v1/goals/{id}/conduit`.
 
+### Sindri: your prompts, kept
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/sessions/prompts?from=&to=` | anyone | `{ prompts, oldest }`: your own prompts in your Claude Code sessions in a range (epoch ms, a day by default, at most 93 days), oldest first: `{ at, session, title, cwd?, project?, branch?, prompt }` |
+
+Claude Code deletes its transcripts after `cleanupPeriodDays` (30 by
+default), so Sindri keeps a small index of what you typed in its own store
+(`session_prompts`): the time from each transcript line, the session, its
+title, folder and branch, and the prompt clipped to 200 characters. Never
+Claude's answers or tool output, and not Sindri's own agents. A loop reads
+new transcript lines every 3 minutes, from where it left off; the first run
+after start reads every transcript still on disk. The same session and time
+is kept once. Norn's Rewind reads it. It is kept forever unless
+`SINDRI_PROMPTS_KEEP` (a duration, e.g. `8760h`) is set in `sindri.env`.
+Goal tasks on `GET /v1/goals` carry `startedAt` and `mergedAt`.
+
 ### Veðrfölnir
 
 The same shapes as my-agent's runner, so my-widget's pages read either.

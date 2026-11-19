@@ -43,6 +43,9 @@ type GoalTask struct {
 	LastActivity int64      `json:"lastActivity"`
 	Result       *string    `json:"result"`
 	Scheduled    *Scheduled `json:"scheduled,omitempty"`
+	// StartedAt is when the task was handed to its agent; MergedAt when its branch merged (0: not).
+	StartedAt int64 `json:"startedAt,omitempty"`
+	MergedAt  int64 `json:"mergedAt,omitempty"`
 }
 
 // GoalNext is the one thing to do next for a goal.
@@ -174,7 +177,8 @@ func (w *Work) GoalViews() ([]GoalView, error) {
 	byGoal := map[int64][]GoalTask{}
 	for _, view := range w.TaskViews(linked) {
 		task := GoalTask{ID: view.ID, Repo: view.Project, Agent: view.Agent, Status: view.Status, Label: view.Label, Branch: view.Branch,
-			Merged: view.Merged, LastActivity: view.LastActivity, Result: view.Result, Scheduled: view.Task.Scheduled}
+			Merged: view.Merged, LastActivity: view.LastActivity, Result: view.Result, Scheduled: view.Task.Scheduled,
+			StartedAt: view.Task.At, MergedAt: view.MergedAt}
 		if view.Status == "no-changes" {
 			task.Branch, task.Merged = nil, false // removed unchanged: nothing to review, ship or count as merged
 		}
