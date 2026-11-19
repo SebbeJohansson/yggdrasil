@@ -338,6 +338,9 @@ func (w *Work) startParts(goal *Goal, repos []string) ([]Started, []string) {
 			parts = append(parts, "Pictures for this goal. Read each one with the Read tool before you start:\n"+strings.Join(lines, "\n"))
 		}
 	}
+	if brief := SelfRepairBrief(goal); brief != "" {
+		parts = append(parts, brief)
+	}
 	parts = append(parts, fmt.Sprintf("(From goal %d, source: %s.)", goal.ID, goal.Source))
 	request := CodeRequest{Session: goal.Session, Prompt: strings.Join(parts, "\n\n"), Name: ShortTask(goal.Title, 50), Projects: repos, GoalID: &goal.ID, Goal: goal.Title}
 	handed := w.Code(request, nil)

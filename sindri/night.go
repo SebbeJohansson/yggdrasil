@@ -95,6 +95,7 @@ func (w *Work) RunNight(ctx context.Context) error {
 			}
 		}
 		run = NightRun{Night: night}
+		w.selfRepairTonight(ctx, night)
 	}
 	goals, err := w.GoalViews()
 	if err != nil {
@@ -180,7 +181,7 @@ func (w *Work) reportNight(ctx context.Context, run *NightRun) error {
 			}
 		}
 		if len(goals) > 0 {
-			if err := w.Hermodr.Tell(ctx, NightReport(goals)); err != nil {
+			if err := w.Hermodr.Tell(ctx, NightReportWithRepairs(goals)); err != nil {
 				return err
 			}
 		}
