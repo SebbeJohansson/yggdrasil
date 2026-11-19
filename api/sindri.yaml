@@ -1214,6 +1214,29 @@ paths:
                     merges: { type: integer }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/goals/merged:
+    get:
+      summary: Every goal Sindri has seen merged, the earliest merged first, as it was then. Never pruned; a goal stays here after its agent is removed or the goal is deleted. The widget's tree grows a branch for each.
+      responses:
+        "200":
+          description: The merged goals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [goals]
+                properties:
+                  goals:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, repos, mergedAt]
+                      properties:
+                        id: { type: integer }
+                        title: { type: string }
+                        repos: { type: array, items: { type: string } }
+                        mergedAt: { type: integer, description: "Unix ms: its last branch's merge, or its last activity for a branch merged outside Sindri." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/goals/candidates:
     get:
       summary: The open "- [ ]" lines of a project's TODO.md, or your open Linear issues, each ready to post as a goal. A goal from Linear moves its issue along as the goal moves.

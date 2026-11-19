@@ -83,8 +83,9 @@ CREATE TABLE IF NOT EXISTS feed (
 
 // Store is Sindri's database.
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
+	db     *sql.DB
+	now    func() time.Time
+	merged mergedLog
 }
 
 // OpenStore opens (and creates) the database; ":memory:" for tests.
@@ -113,6 +114,10 @@ func OpenStore(path string) (*Store, error) {
 	if _, err := db.Exec(whySchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("sindri why schema: %w", err)
+	}
+	if _, err := db.Exec(mergedSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("sindri merged schema: %w", err)
 	}
 	return &Store{db: db, now: time.Now}, nil
 }

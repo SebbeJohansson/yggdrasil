@@ -297,6 +297,14 @@ is kept once. Norn's Rewind reads it. It is kept forever unless
 `SINDRI_PROMPTS_KEEP` (a duration, e.g. `8760h`) is set in `sindri.env`.
 Goal tasks on `GET /v1/goals` carry `startedAt` and `mergedAt`.
 
+`GET /v1/goals/merged` is every goal Sindri has seen merged, `{ goals: [{ id,
+title, repos, mergedAt }] }`, the earliest merged first, as it was when it
+merged. A goal's state is read from its agents, so it stops reading merged
+once its agent is removed, and a goal can be deleted; this log in Sindri's
+database (`merged_goals`) keeps it anyway. It is filled wherever the goals
+are read: the dashboard, the night shift and the Linear sync. The widget's
+tree grows a branch for each.
+
 ### Sindri: a goal's why
 
 | Route | Who | What it does |
