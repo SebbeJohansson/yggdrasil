@@ -16,7 +16,7 @@
 #   YGG_DEV_DIR=<dir>   where the build goes (default bin/dev), one per runner
 set -eu
 cd "$(dirname "$0")/.."
-ALL="norn sindri vedrfolnir gjallar ratatoskr munin huginn dellingr hermodr loki"
+ALL="norn sindri vedrfolnir gjallar ratatoskr munin huginn dellingr hermodr loki heimdall"
 parts="${*:-$ALL}"
 for part in $parts; do
 	case " $ALL " in *" $part "*) ;; *) echo "No part called $part. Parts: $ALL" >&2; exit 2 ;; esac
@@ -32,7 +32,7 @@ fi
 
 # The installed copies: systemd units for these, containers for the rest.
 unit_of() {
-	case "$1" in sindri | vedrfolnir | ratatoskr) echo "ygg-$1.service" ;; *) echo "" ;; esac
+	case "$1" in sindri | vedrfolnir | ratatoskr | heimdall) echo "ygg-$1.service" ;; *) echo "" ;; esac
 }
 stopped_units=""
 stopped_containers=""

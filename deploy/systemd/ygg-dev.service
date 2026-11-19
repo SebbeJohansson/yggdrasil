@@ -1,12 +1,12 @@
 [Unit]
-Description=Yggdrasil dev mode: Sindri, Veðrfölnir and Ratatoskr from the working tree, rebuilt on every save
+Description=Yggdrasil dev mode: Sindri, Veðrfölnir, Ratatoskr and Heimdall from the working tree, rebuilt on every save
 After=network-online.target
 # The installed copies take the same ports.
-Conflicts=ygg-sindri.service ygg-vedrfolnir.service ygg-ratatoskr.service
+Conflicts=ygg-sindri.service ygg-vedrfolnir.service ygg-ratatoskr.service ygg-heimdall.service
 
 [Service]
 WorkingDirectory=%h/projects/yggdrasil
-ExecStart=%h/projects/yggdrasil/scripts/dev.sh sindri vedrfolnir ratatoskr
+ExecStart=%h/projects/yggdrasil/scripts/dev.sh sindri vedrfolnir ratatoskr heimdall
 Environment=YGG_DEV_MANAGED=1
 Environment=YGG_DEV_DIR=bin/dev-host
 Restart=always

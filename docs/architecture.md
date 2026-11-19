@@ -68,6 +68,7 @@ hold it to its spec: the same routes, and every answer in the spec's shape.
 | Dellingr: scheduled jobs | 8778 | container | `dellingr.db`: jobs, runs | built |
 | Hermóðr: messages to you | 8779 | container | `hermodr.db`: the last week of messages | built |
 | Loki: tests the watchers | 8780 | container | `loki.json`: settings, strikes | built |
+| Heimdall: the security watchman | 8781 | host unit (the host's sockets, your repos, the real file modes) | `heimdall.json`: settings, findings | built |
 
 ## Tokens
 
@@ -87,6 +88,7 @@ knows the caller's name:
 | a Yggdrasil part is down, or one of its loops stopped or failed | Ratatoskr |
 | something outside Yggdrasil doesn't answer (Ollama, Laya, Slack…) | Munin |
 | a disk is filling, a unit failed, a container crashed (not Yggdrasil's own) | Veðrfölnir |
+| a vulnerable package, a port open beyond loopback, a key in a commit, a token file others can read | Heimdall |
 | a sign-in expired | the part holding it (Norn, Sindri) |
 | the local model fails most calls for an hour | Norn |
 | Ratatoskr went silent | Gjallar |

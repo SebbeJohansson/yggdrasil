@@ -16,6 +16,7 @@ Why one process per part: [docs/architecture.md](docs/architecture.md).
 | **Dellingr** | runs the jobs you put on a clock | 8778 | container |
 | **Hermóðr** | carries every message for you to the widget and your phone | 8779 | container |
 | **Loki** | tests the watchers: finds blind spots, and tricks a part for a few minutes to see who notices | 8780 | container |
+| **Heimdall** | the security watchman: vulnerable packages, ports open beyond loopback, keys in commits, loose token files | 8781 | host unit |
 
 None of the watching parts fixes anything. Huginn only tells you things;
 Dellingr acts only as far as you set a job up to. Everything listens on 127.0.0.1 only.
@@ -119,9 +120,9 @@ scripts/dev-mode.sh off     # the installed parts again
 ```
 
 Norn, Gjallar, Munin, Huginn, Dellingr, Hermóðr and Loki then run in the `dev` container (compose profile
-`dev`), and Sindri, Veðrfölnir and Ratatoskr in `ygg-dev.service` on the host,
-since they need your repos and toolchain, the host's `/proc` and systemd, or
-must outlive Docker. `on` disables the installed units and stops the
+`dev`), and Sindri, Veðrfölnir, Ratatoskr and Heimdall in `ygg-dev.service`
+on the host, since they need your repos and toolchain, the host's `/proc` and
+systemd, or must outlive Docker. `on` disables the installed units and stops the
 containers; `off` enables the units again.
 
 ## Test
@@ -675,6 +676,58 @@ YGG_NORN_URL=http://127.0.0.1:8871
 YGG_HERMODR_URL=http://127.0.0.1:8879
 ```
 
+### Heimdall
+
+The security watchman, on 8781. Once a night (03:00 in `TIME_ZONE`, or as
+soon as the machine is on after it) and when you ask, it runs five small
+checks and keeps what they find.
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/report` | anyone | `?state=active\|resolved` → `{ checkedAt, running, findings: [{ id, check, severity: low\|medium\|high, title, detail, where?, fix?, repo?, firstSeen, lastSeen, resolvedAt?, critical?, commit? }], checks: [{ name, ok, lastRun, error?, skipped? }] }`, high first |
+| `POST /v1/report/run` | owner | `202 { running: true }`: run every check now, in the background |
+| `GET`, `PATCH /v1/settings` | owner changes it | `{ at, repos, tokenAgeDays }`: 03:00, `HEIMDALL_REPOS` (else `~/projects/yggdrasil` and `~/projects/my-widget`), 180; kept in `HEIMDALL_STATE` |
+
+| Check | What it looks at | Severity |
+| --- | --- | --- |
+| `deps` | each repo's `go.mod`, `yarn.lock`, `package-lock.json` (or exact versions in a `package.json` with no lockfile), up to three folders down, asked of [osv.dev](https://osv.dev) | the advisory's own (GitHub's critical and high are high), medium when it has none |
+| `listening` | every TCP listener in `/proc/net/tcp` and `tcp6` not on 127.0.0.1 or ::1, with its process when Heimdall may see it | Yggdrasil's own ports (8771-8781, and Loki's proxies at port + 100) high; every address (0.0.0.0, ::) medium; one address low |
+| `secrets` | the lines added by each repo's commits since the last run (the first: the last 200), on every branch and tag: GitHub, Slack, OpenAI, Anthropic and AWS keys, private key blocks, and high-entropy values set to a `*TOKEN`, `*KEY` or `*SECRET`; and untracked files named like `.env` that `.gitignore` doesn't cover | a key in a commit high, an unignored `.env` medium |
+| `files` | `~/.config/yggdrasil`, each repo's `.env` files and `HEIMDALL_FILES`: readable by the group or others, or a token file unchanged for longer than `tokenAgeDays` | others high, the group medium, old low |
+| `scopes` | the access Norn's Microsoft and Google sign-ins hold for a feature the widget hides both at home and away | low |
+
+Only package names, versions and ecosystems leave the machine, in one
+`querybatch` to osv.dev, then the ids it named to read each one, with the
+User-Agent `heimdall-deps-check/1`: no name, email, repo or path. No finding,
+alert or log holds a secret's value, only the file, line, kind and a masked
+preview such as `ghp_…4f2a`. A line with `heimdall:ignore` on it is skipped,
+and so are values that look made up (`0123456789`, `example`, `fake`…) or are
+names (`calendar-suggestions-kept`). A secret in a commit stays a finding
+until the commit is gone from every branch and tag; the fix is to rotate the
+key, then remove it from history.
+
+A finding not found again is resolved and kept 30 days. A check that fails
+or is skipped leaves its findings as they were. Each high finding raises
+`<check>:<id>` on Gjallar as a warning, critical for a secret in a pushed
+commit or a part listening beyond loopback, and resolves it when it is
+gone. Self-repair takes `deps:` and `listening:` alerts; a secret is never
+handed to a coding agent.
+
+It runs as a host unit, `ygg-heimdall.service`, like Veðrfölnir: it needs the
+host's sockets and processes (a container sees only its own network), your
+repos with their real history and git, and the real modes of the files in
+`~/.config/yggdrasil`.
+
+| Setting (`heimdall.env`) | Default | What it does |
+| --- | --- | --- |
+| `HEIMDALL_TOKENS` | | `owner=…` |
+| `HEIMDALL_REPOS` | `~/projects/yggdrasil,~/projects/my-widget` | the repos, until `PATCH /v1/settings` sets them; Sindri's projects are added when `SINDRI_TOKEN` is set |
+| `HEIMDALL_FILES` | none | more files to check the mode and age of, as globs (`~/projects/yggdrasil/data/*.json` for Norn's sign-ins) |
+| `HEIMDALL_STATE` | `~/.local/state/yggdrasil/heimdall.json` | settings, findings, what each repo was read up to, the alerts raised |
+| `HEIMDALL_OSV_URL` | `https://api.osv.dev` | osv.dev's API |
+| `GJALLAR_TOKEN`, `NORN_TOKEN`, `SINDRI_TOKEN` | | Heimdall's token at each (`scripts/install.sh` gives them); without `NORN_TOKEN` the scopes check is skipped |
+| `TIME_ZONE` | `Europe/Stockholm` | for the nightly run |
+
 ### Sindri: the night shift and self-repair
 
 | Route | Who | What it does |
@@ -690,9 +743,11 @@ what is wrong with Yggdrasil itself, marked to run tonight, with a source
 starting `self-repair:`:
 
 - Gjallar's active alerts from its own parts (Ratatoskr's `down:`,
-  `stalled:` and `failing:`, Loki's `missed:`, and the parts' own), with the key, title, error
-  and history. Munin, Veðrfölnir, sign-ins, the local model, ntfy and muted
-  alerts are left out: nothing in this repo fixes them.
+  `stalled:` and `failing:`, Loki's `missed:`, Heimdall's `deps:` and
+  `listening:`, and the parts' own), with the key, title, error and history.
+  Munin, Veðrfölnir, sign-ins, the local model, ntfy and muted alerts are left
+  out: nothing in this repo fixes them. So are Heimdall's `secrets:`,
+  `files:` and `scopes:`: a secret never goes to a coding agent.
 - Norn's dispatch picks you corrected the same way at least 3 times in a week
   (`GET /v1/decisions`), as "picked answer, you said code:yggdrasil, 4
   times". Only kinds, agent ids, projects and counts go in, never a

@@ -17,7 +17,7 @@ import (
 
 // DefaultWatch is Ratatoskr's watch list when RATATOSKR_WATCH is unset; Loki
 // reads it only when Ratatoskr doesn't answer.
-const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr,loki"
+const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr,loki,heimdall"
 
 // Main runs Loki until ctx ends. Settings:
 //

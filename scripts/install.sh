@@ -58,7 +58,7 @@ part_token() {
 gjallar_token() {
 	part_token gjallar "$1"
 }
-for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki; do
+for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki heimdall; do
 	gjallar_token "$part" >/dev/null
 done
 
@@ -195,6 +195,20 @@ TIME_ZONE=Europe/Stockholm
 YGG_CORS_ORIGINS=$origins
 EOF
 
+# Heimdall, the security watchman, runs on the host: it reads the host's
+# listening sockets, your repos and this folder. It asks Norn which sign-ins
+# it holds, and Sindri which projects it knows.
+write heimdall.env <<EOF
+HEIMDALL_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token heimdall)
+NORN_TOKEN=$(part_token norn heimdall)
+SINDRI_TOKEN=$(part_token sindri heimdall)
+TIME_ZONE=Europe/Stockholm
+# The repos to check, comma separated; Sindri's projects are added. Empty: ~/projects/yggdrasil and ~/projects/my-widget.
+HEIMDALL_REPOS=
+YGG_CORS_ORIGINS=$origins
+EOF
+
 # Loki tests the watchers by tricking a part for a few minutes, through each
 # part's trick switch, which answers only with LOKI=on (parts.env, dev mode).
 # It reads Ratatoskr's status, Gjallar's alerts and Hermóðr's channels, and
@@ -202,7 +216,7 @@ EOF
 # added at a part, restart that part.
 loki_env="LOKI_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token loki)"
-for part in norn sindri vedrfolnir ratatoskr munin huginn dellingr hermodr; do
+for part in norn sindri vedrfolnir ratatoskr munin huginn dellingr hermodr heimdall; do
 	loki_env="$loki_env
 $(echo "$part" | tr a-z A-Z)_TOKEN=$(part_token "$part" loki)"
 done
@@ -211,6 +225,7 @@ $loki_env
 TIME_ZONE=Europe/Stockholm
 YGG_CORS_ORIGINS=$origins
 EOF
+ensure loki.env HEIMDALL_TOKEN "$(part_token heimdall loki)"
 
 write parts.env <<'EOF'
 # Where every part lives, read by every part. Leave a line commented to use
@@ -226,12 +241,14 @@ write parts.env <<'EOF'
 #YGG_HUGINN_URL=http://127.0.0.1:8777
 #YGG_DELLINGR_URL=http://127.0.0.1:8778
 #YGG_HERMODR_URL=http://127.0.0.1:8779
+#YGG_LOKI_URL=http://127.0.0.1:8780
+#YGG_HEIMDALL_URL=http://127.0.0.1:8781
 
 # Your working day, Monday to Friday: Ratatoskr's rhythm and Norn's gap read it.
 #WORK_HOURS=09:00-17:00
 
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
-RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr,loki
+RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr,loki,heimdall
 
 # Lets Loki trick the parts for a few minutes, to test the watchers. Dev mode
 # only, never on a machine you rely on. Unset, the trick switch is not there.
@@ -242,6 +259,9 @@ if ! grep -q '^RATATOSKR_WATCH=.*hermodr' "$config/parts.env"; then
 fi
 if ! grep -q '^RATATOSKR_WATCH=.*loki' "$config/parts.env"; then
 	echo "  Note: add loki to RATATOSKR_WATCH in $config/parts.env if this machine runs it"
+fi
+if ! grep -q '^RATATOSKR_WATCH=.*heimdall' "$config/parts.env"; then
+	echo "  Note: add heimdall to RATATOSKR_WATCH in $config/parts.env"
 fi
 
 umask 022
@@ -257,8 +277,8 @@ for unit in deploy/systemd/*.service; do
 	install -m 0644 "$unit" "$HOME/.config/systemd/user/"
 done
 systemctl --user daemon-reload
-systemctl --user enable ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service
-systemctl --user restart ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service
+systemctl --user enable ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service
+systemctl --user restart ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service
 
 echo
 echo "Done. Your owner token (for the widget and curl) is in $config/owner.token."

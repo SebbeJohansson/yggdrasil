@@ -98,9 +98,19 @@ type AlertEvent struct {
 
 // repairableSources are the parts whose alerts code in this repo can fix.
 // Loki's missed:<part>:<kind> is a watcher that did not notice a trick.
-// Munin (tcgpriser, offline, statuspage, XeStrata…) and Veðrfölnir (disks,
-// units and containers that are not Yggdrasil's) watch what lies outside it.
-var repairableSources = []string{"ratatoskr", "gjallar", "norn", "sindri", "huginn", "dellingr", "hermodr", "loki"}
+// Heimdall's deps:<id> (a vulnerable package) and listening:<id> (a port
+// beyond loopback) can be fixed in code; onlyKeys keeps the rest of its
+// alerts out. Munin (tcgpriser, offline, statuspage, XeStrata…) and
+// Veðrfölnir (disks, units and containers that are not Yggdrasil's) watch
+// what lies outside it.
+var repairableSources = []string{"ratatoskr", "gjallar", "norn", "sindri", "huginn", "dellingr", "hermodr", "loki", "heimdall"}
+
+// onlyKeys are, for a source, the only alert keys self-repair takes. A
+// secret Heimdall found is never handed to a coding agent: its secrets:
+// alerts, like its files: and scopes:, are left to you.
+var onlyKeys = map[string][]string{
+	"heimdall": {"deps:", "listening:"},
+}
 
 // outsideKeys are alerts a Yggdrasil part raises about something outside it:
 // a sign-in to renew, the local model, a phone channel. A part gone silent
@@ -121,6 +131,9 @@ const mergedRest = 24 * time.Hour
 // Muted alerts are left alone: you said not to bother you with them.
 func Repairable(a RepairAlert) bool {
 	if a.Muted || a.State == "resolved" || !slices.Contains(repairableSources, a.Source) {
+		return false
+	}
+	if only, limited := onlyKeys[a.Source]; limited && !slices.ContainsFunc(only, func(prefix string) bool { return strings.HasPrefix(a.Key, prefix) }) {
 		return false
 	}
 	return !slices.ContainsFunc(outsideKeys[a.Source], func(prefix string) bool { return strings.HasPrefix(a.Key, prefix) })
