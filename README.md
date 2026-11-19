@@ -294,8 +294,9 @@ nobody books over it, with nobody invited and the Outlook category
 `GET /v1/calendar` it has `break: true`. Norn reads the calendar first and
 answers `409` when something you did not decline overlaps the slot. It needs
 the Microsoft sign-in with `Calendars.ReadWrite`. A break is not a meeting:
-Norn sends no `calendar.*` events for it, and Ratatoskr ends a stretch at it
-and does not count it toward a packed week.
+Norn sends no `calendar.*` events for it, Ratatoskr ends a stretch at it
+and does not count it toward a packed week, and Hermóðr holds messages
+through it and says `inBreak` rather than `inMeeting`.
 
 ### Dellingr
 
@@ -354,11 +355,12 @@ its `NORN_TOKEN`.
 | `POST /v1/messages` | a part | `{ title, text?, link?, priority?: low\|normal\|high\|urgent, hold?, push? }` → `201`. The sender is the caller's token name |
 | `GET /v1/messages` | anyone | `?state=held\|sent\|listed\|failed`, `?unseen=true`: the last 7 days. The widget reads this |
 | `POST /v1/messages/{id}/seen` | owner | the widget stops listing it |
-| `GET /v1/channels` | anyone | ntfy: set up or not, the lowest priority each sends, the last send; quiet hours; whether you are in a meeting |
+| `GET /v1/channels` | anyone | ntfy: set up or not, the lowest priority each sends, the last send; quiet hours; whether you are in a meeting (`inMeeting`, `meetingEndsAt`) or on a break you kept free (`inBreak`, `breakEndsAt`) |
 | `POST /v1/channels/{name}/test` | owner | a test message to one channel, past every rule |
 
 Urgent messages go out at once. Others wait through `QUIET_HOURS`, and, when
-they ask to `hold`, while you are in a meeting (your calendars, from Norn).
+they ask to `hold`, while you are in a meeting or on a break you kept free
+(your calendars, from Norn).
 `push: false` lists a message for the widget only. Each channel sends what is
 at or above its `<CHANNEL>_MIN`. Slack and Discord were left out on
 purpose: nothing from your inbox should land where others in a workspace or

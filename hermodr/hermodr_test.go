@@ -374,3 +374,33 @@ INSERT INTO focus_log (started, ended, until, goal_id, goal_title) VALUES (1, 2,
 		t.Fatalf("old history %+v", sessions)
 	}
 }
+
+func TestABreakYouKeptFreeHoldsAllButUrgent(t *testing.T) {
+	now := time.Date(2026, 11, 17, 14, 0, 0, 0, time.UTC)
+	h, _, other := newTest(t, &now, "")
+	h.SetMeetings([]CalendarEvent{{Start: now.Add(-5 * time.Minute).UnixMilli(), End: now.Add(15 * time.Minute).UnixMilli(), ShowAs: "busy", Break: true}})
+	held := h.Take(context.Background(), Message{ID: "1", Title: "A long run of meetings", Priority: "low", Hold: true, Push: true, At: now})
+	urgent := h.Take(context.Background(), Message{ID: "2", Title: "Critical", Priority: "urgent", Hold: true, Push: true, At: now})
+	if held.State != "held" || held.Reason != "on a break until 14:15" || urgent.State != "sent" {
+		t.Fatalf("%+v / %+v", held, urgent)
+	}
+
+	p := part.New(Name, contracttest.Tokens(), nil)
+	h.Mount(p)
+	request := httptest.NewRequest(http.MethodGet, "/v1/channels", nil)
+	request.Header.Set("Authorization", "Bearer "+contracttest.Owner)
+	recorder := httptest.NewRecorder()
+	p.ServeHTTP(recorder, request)
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"inBreak":true`) || !strings.Contains(body, `"inMeeting":false`) || !strings.Contains(body, `"breakEndsAt":"2026-11-17T14:15:00Z"`) {
+		t.Fatalf("channels: %s", body)
+	}
+
+	now = now.Add(16 * time.Minute)
+	if err := h.release(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := h.message(context.Background(), "1"); m.State != "sent" || len(other.sent) != 2 {
+		t.Fatalf("after the break %+v, other %d", m, len(other.sent))
+	}
+}
