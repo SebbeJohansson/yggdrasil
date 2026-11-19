@@ -180,9 +180,9 @@ nothing goes to Gjallar.
 
 | Pattern | Active when |
 | --- | --- |
-| `stretch` | you are inside a run of meetings with no gap of `RATATOSKR_YOU_BREAK` (15m) or more, `RATATOSKR_YOU_STRETCH` (4h) long or more. A break you kept free (Norn's `POST /v1/calendar/breaks`) ends a run like such a gap, however short |
+| `stretch` | you are inside a run of meetings with no gap of `RATATOSKR_YOU_BREAK` (15m) or more, `RATATOSKR_YOU_STRETCH` (4h) long or more. A break you kept free (Norn's `POST /v1/calendar/breaks`) ends a run like such a gap, however short. A focus block you booked from the week's plan does not: it is not a meeting, but not time away from the screen either, so it carries the run on (focus alone is no stretch) |
 | `late` | it is past `RATATOSKR_YOU_LATE` (23:00, until 05:00) and one of your own Claude Code sessions changed in the last 10 minutes, or you just answered a Sindri agent that asked you something (an agent working on its own does not count) |
-| `week` | meetings fill `RATATOSKR_YOU_PACKED` (60) percent or more of the working hours (`WORK_HOURS`, 09:00-17:00, Monday to Friday) from the start of today to Friday |
+| `week` | meetings fill `RATATOSKR_YOU_PACKED` (60) percent or more of the working hours (`WORK_HOURS`, 09:00-17:00, Monday to Friday) from the start of today to Friday. Focus blocks you booked do not count, and are never named as its free time |
 
 When one starts, it sends one quiet message through Hermóðr: priority low,
 held through meetings, listed in the widget only, worded as a suggestion
@@ -192,8 +192,8 @@ Hermóðr's history after a restart, and none while Hermóðr says it is quiet
 hours (a late evening inside `QUIET_HOURS` is seen on `GET /v1/you` but never
 sent). No counts, no scores. Messages carry times only: meeting subjects and
 people never leave Norn. It reads Norn's `GET /v1/calendar` (the work
-calendar; declined, free, out-of-office and all-day events and breaks you
-kept free left out) and
+calendar; declined, free, out-of-office and all-day events, breaks you
+kept free and focus blocks you booked left out) and
 Sindri's `GET /v1/sessions/recent` and `GET /v1/agents`, with `NORN_TOKEN` and
 `SINDRI_TOKEN` in `ratatoskr.env` (`scripts/install.sh` adds them; restart
 Norn and Sindri after).
@@ -481,6 +481,56 @@ does not count it toward a packed week, and passive Loki does not strike in
 it. Calendar, goals and promises stay on this machine: nothing here goes to
 Claude.
 
+### Norn: the week's plan (the weave)
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/weave` | anyone | `{ week, madeAt, words, waiting, days: [{ date, words, blocks: [{ id, kind: focus\|break, start, end, for?, link?, booked, eventId?, skipped }] }] }`; `week` is `""` before the first plan |
+| `POST /v1/weave/book` | owner | `{ ids? }` (every open block when empty) → `{ results: [{ id, booked, eventId?, error? }], weave }` |
+| `POST /v1/weave/remake` | owner | make it again now; blocks already booked stay |
+| `POST /v1/weave/blocks/{id}/skip` | owner | leave one block out (`409` once booked) |
+| `GET`, `PUT /v1/settings/weave` | owner to change | `{ on, makeAt, focusMinutes }`: on, `18:00` and `90` until set |
+
+Once a week Norn proposes the coming Monday to Friday, within `WORK_HOURS`. It
+looks every 3 minutes, and on start: from Sunday's `makeAt` (18:00 in
+`TIME_ZONE`) the next week is due, and on a weekday the current one, so a
+busy, since a break is not for work, and so does a focus block you booked)
+within the working day, `WORK_HOURS` in
+Wednesday plans the rest of the week. A week is planned once; only Make it
+again plans it anew. The plan waits for a fresh read of the work calendar.
+
+It is made by Norn's own code, not a model. Busy is what the gap reads as
+busy, and breaks and focus blocks Yggdrasil booked count as booked. A day is
+packed when meetings fill 60% of its working hours, as Ratatoskr's packed
+week counts them. Then:
+
+- **Focus blocks**: at most one a day, never on a packed day or one with a
+  focus block booked already, in the longest free stretch of `focusMinutes`
+  or more, mornings (before 12:00) first, two hours at most. Each gets a
+  suggested use from what waits: a promise due on or after its day (or late
+  already), soonest first ("the promise to Anna due Thursday: send the
+  deck"); what a draft that runs tonight did, on the first day; then a review,
+  a race to pick, a draft to start, an agent to answer.
+- **Breaks**: after each run of meetings of 3 hours or more (gaps under 15
+  minutes do not end a run), 15 to 30 minutes in the first free time after
+  it, unless a break you kept is there already.
+- One line per day ("Tuesday is heavy: a break after lunch, no focus
+  block.") and one for the week. The local model (`SUMMARY_MODEL`) may say
+  the week's line more warmly; a line that drops a day, adds a number or
+  exclaims is thrown away, and without the model the plain line stands.
+
+When it is made with a block in it, Norn sends `weave.ready` once, and
+Huginn's `week-plan` rule tells the widget. Nothing is booked by itself: Book
+keeps each block the way a break is kept, a break as "Break", a focus block as
+"Focus" with the Outlook category `Yggdrasil focus` (`focus: true` on
+`GET /v1/calendar`), busy, one `transactionId` per slot, so a double click is
+one event. A slot no longer free gets its reason. A focus block is not a
+meeting: no `calendar.*` events or save points for it, Hermóðr holds what asks
+to hold through it (`inFocusBlock`), the gap offers nothing in it, Ratatoskr
+does not count it toward a packed week, and passive Loki does not strike in
+it. Calendar, goals and promises stay on this machine: nothing here goes to
+Claude.
+
 ### Norn: save points
 
 | Route | Who | What it does |
@@ -663,12 +713,12 @@ its own port before you rely on it.
 | `hang` | calls are held unanswered until the trick ends (then they go through) or the caller gives up | `ratatoskr:down:<part>` and `gjallar:alert` |
 
 **Freeze.** Loki sends the part's process `SIGSTOP`, and `SIGCONT` at
-`until`. The thaw is scheduled when the strike starts, in a detached
+| `GET /v1/channels` | anyone | ntfy: set up or not, the lowest priority each sends, the last send; quiet hours; whether you are in a meeting (`inMeeting`, `meetingEndsAt`) on a break you kept free (`inBreak`, `breakEndsAt`) or in a focus block you booked (`inFocusBlock`, `focusEndsAt`) |
 `sh -c 'sleep N; kill -CONT <pid>'` in a session of its own, so it comes
 even if Loki dies; Loki also thaws at once when the strike ends or is
 stopped and when it shuts down, and calls the detached thaw off. A part is
-freezable when Loki sees exactly one process running as `ygg <part>` that it
-may signal: its own PID namespace, its own user. In dev mode Loki runs in
+they ask to `hold`, while you are in a meeting, on a break you kept free or
+in a focus block you booked (your calendars, from Norn).
 the dev container, so it can freeze Norn, Gjallar, Munin, Huginn, Dellingr
 and Hermóðr, but not Sindri, Veðrfölnir and Ratatoskr, which run on the
 host; with the installed containers it can freeze none. Expected:

@@ -120,18 +120,28 @@ type StretchSeen struct {
 	Since, NextGap time.Time
 	// PauseAt and PauseEnds are the next short gap inside the run, if one is ahead.
 	PauseAt, PauseEnds time.Time
+	// Focus is whether a focus block you booked is part of the run.
+	Focus bool
 }
 
 // Stretch is active while now is inside a run of meetings with no gap of
 // Break or more that lasts Stretch or more. A break you kept free in the
 // calendar ends a run like such a gap does, however short it is.
 func Stretch(meetings []Span, now time.Time, rhythm Rhythm, breaks ...Span) StretchSeen {
-	busy := Join(meetings, 0)
+	return StretchWithFocus(meetings, nil, now, rhythm, breaks...)
+}
+
+// StretchWithFocus is Stretch with the focus blocks you booked from the
+// week's plan (Norn's weave). A focus block is not a meeting, but it is not
+// time away from the screen either: it does not end a run of meetings, it
+// carries it on. A run of focus alone is no stretch.
+func StretchWithFocus(meetings, focus []Span, now time.Time, rhythm Rhythm, breaks ...Span) StretchSeen {
+	busy := Join(append(append([]Span(nil), meetings...), focus...), 0)
 	for _, run := range splitAt(Join(busy, rhythm.Break), busy, breaks) {
-		if now.Before(run.Start) || !now.Before(run.End) || run.length() < rhythm.Stretch {
+		if now.Before(run.Start) || !now.Before(run.End) || run.length() < rhythm.Stretch || !overlapsAny(run, meetings) {
 			continue
 		}
-		seen := StretchSeen{Active: true, Since: run.Start, NextGap: run.End}
+		seen := StretchSeen{Active: true, Since: run.Start, NextGap: run.End, Focus: overlapsAny(run, focus)}
 		for i := 1; i < len(busy); i++ {
 			gap := Span{busy[i-1].End, busy[i].Start}
 			if gap.Start.Before(now) || gap.Start.Before(run.Start) || gap.End.After(run.End) || gap.length() < Pause {
@@ -236,24 +246,32 @@ type WeekSeen struct {
 
 // Week is active when, from the start of today to Friday's end, meetings
 // fill Packed percent or more of the working hours. Weekends are never packed.
-func Week(meetings []Span, now time.Time, rhythm Rhythm) WeekSeen {
+// Focus blocks you booked are not meetings, so they do not fill the week,
+// but they are not free either: Free never falls in one.
+func Week(meetings []Span, now time.Time, rhythm Rhythm, focus ...Span) WeekSeen {
 	now = now.In(rhythm.Zone)
 	if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
 		return WeekSeen{}
 	}
-	busy := Join(meetings, 0)
+	meetingsOnly := Join(meetings, 0)
+	busy := Join(append(append([]Span(nil), meetings...), focus...), 0)
 	var working, booked time.Duration
 	var free *Span
 	for day := now; day.Weekday() != time.Saturday; day = day.AddDate(0, 0, 1) {
 		hours := Span{at(day, rhythm.DayFrom), at(day, rhythm.DayTo)}
 		working += hours.length()
+		for _, m := range meetingsOnly {
+			start, end := maxTime(m.Start, hours.Start), minTime(m.End, hours.End)
+			if end.After(start) {
+				booked += end.Sub(start)
+			}
+		}
 		cursor := hours.Start
 		for _, m := range busy {
 			start, end := maxTime(m.Start, hours.Start), minTime(m.End, hours.End)
 			if !end.After(start) {
 				continue
 			}
-			booked += end.Sub(start)
 			free = longer(free, Span{maxTime(cursor, now), start})
 			cursor = maxTime(cursor, end)
 		}
@@ -298,16 +316,18 @@ type CalendarEvent struct {
 	ShowAs   string `json:"showAs"`
 	// Break is a break you kept free (Norn's POST /v1/calendar/breaks).
 	Break bool `json:"break"`
+	// Focus is a focus block you booked from the week's plan (Norn's POST /v1/weave/book).
+	Focus bool `json:"focus"`
 }
 
 // Meetings are the events that take your time: not all-day, not declined,
 // not shown as free, out of office or working elsewhere, and not a break
-// you kept free.
+// you kept free or a focus block you booked.
 func Meetings(events []CalendarEvent) []Span {
 	var spans []Span
 	for _, e := range events {
 		switch {
-		case e.AllDay, e.Response == "declined", e.Break:
+		case e.AllDay, e.Response == "declined", e.Break, e.Focus:
 			continue
 		}
 		switch e.ShowAs {
@@ -324,6 +344,18 @@ func Breaks(events []CalendarEvent) []Span {
 	var spans []Span
 	for _, e := range events {
 		if e.Break && !e.AllDay {
+			spans = append(spans, Span{time.UnixMilli(e.Start), time.UnixMilli(e.End)})
+		}
+	}
+	return spans
+}
+
+// FocusBlocks are the focus blocks you booked, protected time: not
+// meetings, and not an end to a run of them.
+func FocusBlocks(events []CalendarEvent) []Span {
+	var spans []Span
+	for _, e := range events {
+		if e.Focus && !e.AllDay {
 			spans = append(spans, Span{time.UnixMilli(e.Start), time.UnixMilli(e.End)})
 		}
 	}
@@ -480,7 +512,9 @@ func (y *You) Message(pattern string, stretch StretchSeen, week WeekSeen) tell.M
 	m := tell.Message{Title: y.title(pattern), Priority: "low", Hold: true}
 	switch pattern {
 	case PatternStretch:
-		if !stretch.PauseAt.IsZero() {
+		if stretch.Focus {
+			m.Text = fmt.Sprintf("Meetings and focus run back to back until %s. The gap at %s is a good moment to step away from the screen.", clock(stretch.NextGap), clock(stretch.NextGap))
+		} else if !stretch.PauseAt.IsZero() {
 			m.Text = fmt.Sprintf("Meetings run back to back until %s. The pause at %s is enough to stand up and get some water, and the gap at %s is a good moment to step away.",
 				clock(stretch.NextGap), clock(stretch.PauseAt), clock(stretch.NextGap))
 		} else {
@@ -512,7 +546,7 @@ func (y *You) Round(ctx context.Context) error {
 		return nil
 	}
 	var errs []string
-	var meetings, breaks []Span
+	var meetings, breaks, focus []Span
 	calendarOK := false
 	if y.Norn.On() {
 		var calendar struct {
@@ -524,7 +558,7 @@ func (y *You) Round(ctx context.Context) error {
 		} else if calendar.At == nil {
 			errs = append(errs, "norn: no fresh calendar")
 		} else {
-			meetings, breaks, calendarOK = Meetings(calendar.Events), Breaks(calendar.Events), true
+			meetings, breaks, focus, calendarOK = Meetings(calendar.Events), Breaks(calendar.Events), FocusBlocks(calendar.Events), true
 		}
 	}
 	var activity []time.Time
@@ -559,8 +593,8 @@ func (y *You) Round(ctx context.Context) error {
 	var stretch StretchSeen
 	var week WeekSeen
 	if calendarOK {
-		stretch = Stretch(meetings, now, y.Rhythm, breaks...)
-		week = Week(meetings, now, y.Rhythm)
+		stretch = StretchWithFocus(meetings, focus, now, y.Rhythm, breaks...)
+		week = Week(meetings, now, y.Rhythm, focus...)
 	}
 	late := Late(activity, now, y.Rhythm)
 

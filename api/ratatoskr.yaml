@@ -83,7 +83,11 @@ paths:
         late (late), most of the week's working hours in meetings (week). Each
         pattern is active or not, since when, and the next free time. A
         break you kept free (Norn's events with break true) is never a
-        meeting, and ends a stretch like a real gap. on is false while
+        meeting, and ends a stretch like a real gap. A focus block you booked
+        (focus true) is protected time: not a meeting, so it does not fill the
+        week and is never named as its free time, but not time away from the
+        screen either, so it does not end a stretch; it carries a run of
+        meetings on (focus alone is no stretch). on is false while
         watching you is off (PATCH /v1/settings/you, else RATATOSKR_YOU).
       responses:
         "200":
