@@ -235,6 +235,35 @@ restart raises nothing twice.
 A new source is a package under `munin/` that implements `munin/source`, and
 one line in `Sources` in `munin/sources.go`.
 
+### Sindri
+
+Coding agents, worktrees, goals and the night shift; `api/sindri.yaml` has
+every route. Races:
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `PUT /v1/goals/{id}/race` | owner | `{ race }`: a draft goal races. Marked "run tonight" too, the night shift starts it twice, once on each conduit of the pair, each in its own worktree and branch |
+| `POST /v1/goals/{id}/race/pick` | owner | `{ winner: <conduit>\|neither, merge? }` once both lanes have finished: the winner's branches merge through the usual merge (`merge: false` keeps them to review), the loser's worktrees and branches are removed. `neither` removes both and closes the goal |
+| `GET /v1/races` | anyone | `{ races }`: every goal that raced, with its lanes (`racing`) and your pick |
+| `GET /v1/races/stats` | anyone | wins per kind per conduit, from every pick |
+| `PUT /v1/goals/{id}/conduit` | anyone | `{ conduit }`: what a goal runs on when it starts as usual; `""` is the default |
+| `GET /v1/settings/races`, `PATCH` | owner to change | `{ pair, minPicks }` (Claude Code against OpenCode, 5), and which conduits are up |
+
+The conduits are Claude Code, OpenCode and Copilot CLI. An OpenCode agent is
+a session of the `opencode serve` at `OPENCODE_URL`, in its own worktree;
+OpenCode's own config decides its tool permissions. When only one conduit
+of the pair is up, the goal runs once on it, and the goal (`raceNote`) and
+the morning report say so. The morning report lists the races ready to pick,
+and picks nothing itself.
+
+Each pick is kept with the goal's kind (ui, bugfix, refactor, tests, docs,
+backend, other), judged from the goal's text by Norn's local model (asked
+with `/local`, so it stays on this machine), and by keywords until it
+answers or when Norn is out of reach. Once a kind has `minPicks` picks with
+a winner, a draft goal of that kind that does not race shows the conduit
+that wins it most (`suggestion`; none on a tie). It only suggests: you
+choose with `PUT /v1/goals/{id}/conduit`.
+
 ### Veðrfölnir
 
 The same shapes as my-agent's runner, so my-widget's pages read either.

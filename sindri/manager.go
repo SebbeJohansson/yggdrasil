@@ -85,12 +85,15 @@ type Manager struct {
 	// retake is the agents whose screenshots a restart stopped.
 	retake []string
 	// herdr runs question agents in its panes while herdrUp; nil is off.
-	herdr      *Herdr
-	herdrUp    bool
+	herdr   *Herdr
+	herdrUp bool
+	// opencode runs agents with engine "opencode" while opencodeUp; nil is off.
+	opencode   *OpencodeClient
+	opencodeUp bool
 	claudeDir  string
 	delivering map[string]bool
-	logf   func(string, ...any)
-	now    func() time.Time
+	logf       func(string, ...any)
+	now        func() time.Time
 	// OnChange is told when an agent changes, so its messages reach Norn soon.
 	OnChange func(id string)
 }
@@ -258,14 +261,14 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	if engine == "" {
 		engine = "claude"
 	}
-	if !slices.Contains(Engines, engine) {
+	if !slices.Contains(Engines, engine) && (engine != "opencode" || m.opencode == nil) {
 		return nil, httpErr(400, "`engine` must be one of %s", strings.Join(Engines, ", "))
 	}
-	if engine == "copilot" && request.NoTools {
-		return nil, httpErr(400, "`noTools` is for Claude only: Copilot has no way to start without its built-in tools and MCP servers")
+	if engine != "claude" && request.NoTools {
+		return nil, httpErr(400, "`noTools` is for Claude only: Copilot and OpenCode have no way to start without their built-in tools and MCP servers")
 	}
 	toHerdr := m.herdrTakes(request)
-	if !toHerdr {
+	if !toHerdr && engine != "opencode" {
 		if err := m.ensureCapacityLocked(); err != nil {
 			return nil, err
 		}
@@ -316,6 +319,10 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	}
 	if toHerdr {
 		m.startHerdrLocked(a, prompt)
+		return a, nil
+	}
+	if engine == "opencode" {
+		m.startOpencodeLocked(a, prompt)
 		return a, nil
 	}
 	m.agents[a.ID] = a
@@ -634,6 +641,15 @@ func (m *Manager) Prompt(id, text string, images []string, queue bool) (*Agent, 
 		m.promptHerdrLocked(a, text, images)
 		return a, nil
 	}
+	if a.Opencode != nil {
+		if busy(a.Status) && !queue {
+			return nil, httpErr(409, "agent is %s; wait for the turn to end", a.Status)
+		}
+		if len(images) > 0 {
+			text += "\n\nImages to look at:\n" + strings.Join(images, "\n")
+		}
+		return a, m.promptOpencodeLocked(a, text)
+	}
 	_, running := m.live[id]
 	if busy(a.Status) || (a.Engine == "copilot" && running) {
 		if !queue {
@@ -695,6 +711,9 @@ func (m *Manager) Handoff(id, note, to string) (*Agent, error) {
 	}
 	if a.Herdr != nil {
 		return nil, httpErr(409, "this agent runs in a herdr pane: carry it on there")
+	}
+	if a.Opencode != nil {
+		return nil, httpErr(409, "this agent runs in OpenCode: carry it on there")
 	}
 	from := engineOf(a)
 	if to == "" {
@@ -758,6 +777,10 @@ func (m *Manager) Answer(id, requestID string, allow bool, message string) (*Age
 		}
 		return m.answerHerdr(id, requestID, allow, message)
 	}
+	if err == nil && a.Opencode != nil {
+		m.mu.Unlock()
+		return m.answerOpencode(id, requestID, allow)
+	}
 	defer m.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -801,6 +824,12 @@ func (m *Manager) Abort(id string) (*Agent, error) {
 	}
 	if a.Herdr != nil {
 		return nil, httpErr(409, "this agent runs in a herdr pane: stop it there")
+	}
+	if a.Opencode != nil {
+		if busy(a.Status) {
+			m.abortOpencodeLocked(a)
+		}
+		return a, nil
 	}
 	if process, ok := m.live[id]; ok {
 		process.aborted = true
@@ -1239,7 +1268,8 @@ func (m *Manager) load() {
 		return
 	}
 	for _, a := range saved {
-		if running(a.Status) {
+		// An OpenCode session runs on in its server; the "opencode" loop reads it again.
+		if running(a.Status) && a.Opencode == nil {
 			a.Status, a.Pending, a.Tool = Done, nil, ""
 			a.addLog(LogEntry{At: m.ms(), Kind: "exit", Text: "stopped when Sindri restarted"})
 			if a.ScreenshotFor != "" {

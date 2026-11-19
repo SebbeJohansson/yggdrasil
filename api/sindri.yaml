@@ -73,7 +73,7 @@ paths:
                 disallowedTools: { type: array, maxItems: 150, items: { type: string } }
                 noTools: { type: boolean }
                 appendSystemPrompt: { type: string, maxLength: 8000 }
-                engine: { type: string, enum: [claude, copilot] }
+                engine: { type: string, enum: [claude, copilot, opencode], description: "opencode runs it as a session of the `opencode serve` at OPENCODE_URL." }
                 session: { type: string, description: The Norn conversation the agent posts into. }
       responses:
         "201": { $ref: "#/components/responses/Agent" }
@@ -526,6 +526,7 @@ paths:
                 mode: { type: string, enum: [auto, manual] }
                 goalId: { type: integer }
                 goal: { type: string, description: What the ledger calls it, in your words. }
+                engine: { type: string, enum: [claude, copilot, opencode], description: The engine the agents run on; empty is the coding-agent setting. }
       responses:
         "200":
           description: What was started, in words and by agent.
@@ -801,6 +802,141 @@ paths:
         "201": { $ref: "#/components/responses/Goal" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/goals/{id}/race:
+    put:
+      summary: Mark a draft goal to race at the night shift, or unmark it. It then starts once on each conduit of the race pair, each in its own worktree and branch. Owner only.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [race]
+              properties:
+                race: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Goal" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/conduit:
+    put:
+      summary: The conduit a goal runs on when it starts as usual (not raced). Empty is Sindri's default. A goal's suggestion only shows it; this is where you choose.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conduit]
+              properties:
+                conduit: { type: string, enum: ["", claude, opencode, copilot] }
+      responses:
+        "200": { $ref: "#/components/responses/Goal" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/goals/{id}/race/pick:
+    post:
+      summary: Pick the winner of a race whose lanes have both finished. The winner's branches merge through the usual merge (merge false keeps them to review); the loser's worktrees and branches are removed. neither removes both and closes the goal. The pick is kept with the goal's kind. Owner only.
+      parameters: [{ $ref: "#/components/parameters/GoalID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [winner]
+              properties:
+                winner: { type: string, description: "A conduit of the race, or neither." }
+                merge: { type: boolean, default: true }
+      responses:
+        "200":
+          description: The goal, the pick, and what happened to each branch.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [goal, pick, merged, discarded, failed]
+                properties:
+                  goal: { $ref: "#/components/schemas/Goal" }
+                  pick: { $ref: "#/components/schemas/RacePick" }
+                  merged: { type: array, items: { type: string } }
+                  discarded: { type: array, items: { type: string } }
+                  failed: { type: array, items: { type: string }, description: Branches that could not be merged or removed; they stay. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/races:
+    get:
+      summary: Every goal that raced, newest first, with its lanes.
+      responses:
+        "200":
+          description: The races.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [races]
+                properties:
+                  races: { type: array, items: { $ref: "#/components/schemas/Goal" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/races/stats:
+    get:
+      summary: Wins per kind per conduit, from every pick.
+      responses:
+        "200":
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conduits, kinds, picks, minPicks]
+                properties:
+                  conduits: { type: array, items: { type: string } }
+                  picks: { type: integer }
+                  minPicks: { type: integer, description: How many picks with a winner a kind needs before a winner is suggested for it. }
+                  kinds:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, picks, neither, wins, raced]
+                      properties:
+                        kind: { type: string }
+                        picks: { type: integer }
+                        neither: { type: integer }
+                        wins: { type: object, additionalProperties: { type: integer } }
+                        raced: { type: object, additionalProperties: { type: integer } }
+                        suggested: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/races:
+    get:
+      summary: Which two conduits race, how many picks a kind needs before a winner is suggested, and which conduits are up.
+      responses:
+        "200": { $ref: "#/components/responses/Races" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Change them. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pair: { type: array, minItems: 2, maxItems: 2, items: { type: string, enum: [claude, opencode, copilot] } }
+                minPicks: { type: integer, minimum: 1, maximum: 1000 }
+      responses:
+        "200": { $ref: "#/components/responses/Races" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
   /v1/sessions:
     get:
       summary: Every coding-agent session on this machine, each source on its own. Claude Code's running sessions (registry and live sockets), OpenCode's (a running opencode serve), and herdr's panes. A source that is off or down has sessions null and says why.
@@ -1314,6 +1450,25 @@ components:
             properties:
               on: { type: boolean }
               perNight: { type: integer, example: 3 }
+    Races:
+      description: The race settings.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [pair, minPicks, conduits]
+            properties:
+              pair: { type: array, items: { type: string } }
+              minPicks: { type: integer }
+              conduits:
+                type: array
+                items:
+                  type: object
+                  required: [name, label, up]
+                  properties:
+                    name: { type: string }
+                    label: { type: string }
+                    up: { type: boolean }
     GoalStarted:
       description: The goal, and which agents started or were told.
       content:
@@ -1446,29 +1601,78 @@ components:
         night: { type: boolean, description: Whether the goal starts on its own tonight. Cleared when the night shift starts it. }
         images: { type: array, items: { $ref: "#/components/schemas/GoalImage" } }
         state: { type: string, enum: [draft, running, needs-you, done, merged, closed] }
-        tasks:
-          type: array
-          items:
-            type: object
-            required: [id, repo, agent, status, label, branch, merged, lastActivity, result]
-            properties:
-              id: { type: integer }
-              repo: { type: [string, "null"] }
-              agent: { type: string }
-              status: { type: string }
-              label: { type: [string, "null"] }
-              branch: { type: [string, "null"] }
-              merged: { type: boolean }
-              lastActivity: { type: integer }
-              result: { type: [string, "null"] }
+        tasks: { type: array, items: { $ref: "#/components/schemas/GoalTask" } }
+        race: { type: boolean, description: Whether the goal races at the night shift. }
+        kind: { type: string, enum: [ui, bugfix, refactor, tests, docs, backend, other], description: "What kind of work it is, judged from its text: by Norn's local model, or a keyword guess until it has answered." }
+        conduit: { type: string, description: "The conduit you chose for a normal run; empty is Sindri's default." }
+        suggestion:
+          type: object
+          description: For a draft that does not race, the conduit that wins its kind most, once the kind has enough picks. A suggestion only.
+          required: [conduit, kind, wins, picks]
+          properties:
+            conduit: { type: string }
+            kind: { type: string }
+            wins: { type: integer }
+            picks: { type: integer }
+        racing:
+          type: object
+          description: The race, once started.
+          required: [pair, startedAt, lanes, ready, pick]
+          properties:
+            pair: { type: array, items: { type: string } }
+            startedAt: { type: integer }
+            ready: { type: boolean, description: Every lane has finished; the race waits for your pick. }
+            pick:
+              type: [object, "null"]
+              description: Your pick, once made; null before.
+              required: [at, goal, kind, pair, winner]
+              properties:
+                at: { type: integer }
+                goal: { type: integer }
+                kind: { type: string }
+                pair: { type: array, items: { type: string } }
+                winner: { type: string }
+            lanes:
+              type: array
+              items:
+                type: object
+                required: [conduit, label, state, tasks]
+                properties:
+                  conduit: { type: string }
+                  label: { type: string }
+                  state: { type: string, enum: [draft, running, needs-you, done, merged] }
+                  tasks: { type: array, items: { $ref: "#/components/schemas/GoalTask" } }
+        raceNote: { type: string, description: Why a goal marked to race ran once instead. }
         next:
           type: object
           required: [action, text]
           properties:
-            action: { type: string, enum: [start, resume, answer, review, none] }
+            action: { type: string, enum: [start, resume, answer, review, pick, none] }
             text: { type: string }
             repo: { type: string }
             agent: { type: string }
+    GoalTask:
+      type: object
+      required: [id, repo, agent, status, label, branch, merged, lastActivity, result]
+      properties:
+        id: { type: integer }
+        repo: { type: [string, "null"] }
+        agent: { type: string }
+        status: { type: string }
+        label: { type: [string, "null"] }
+        branch: { type: [string, "null"] }
+        merged: { type: boolean }
+        lastActivity: { type: integer }
+        result: { type: [string, "null"] }
+    RacePick:
+      type: object
+      required: [at, goal, kind, pair, winner]
+      properties:
+        at: { type: integer }
+        goal: { type: integer }
+        kind: { type: string }
+        pair: { type: array, items: { type: string } }
+        winner: { type: string, description: The winning conduit, or neither. }
     Health:
       type: object
       required: [ok, part, version, startedAt, loops]
@@ -1526,7 +1730,16 @@ components:
         lastActivity: { type: integer }
         costUsd: { type: number }
         numTurns: { type: integer }
-        engine: { type: string, enum: [copilot], description: Absent for Claude Code. }
+        engine: { type: string, enum: [copilot, opencode], description: Absent for Claude Code. }
+        opencode:
+          type: object
+          description: An OpenCode agent's session.
+          required: [directory]
+          properties:
+            sessionId: { type: string }
+            directory: { type: string }
+            promptedAt: { type: integer }
+            seenBusy: { type: boolean }
         worktree:
           type: object
           required: [repo, path, branch, base, baseCommit]

@@ -106,6 +106,10 @@ func OpenStore(path string) (*Store, error) {
 	// Columns added since a table was made; an error means it is already there.
 	_, _ = db.Exec(`ALTER TABLE goals ADD COLUMN closed_at INTEGER`)
 	_, _ = db.Exec(`ALTER TABLE goals ADD COLUMN night INTEGER NOT NULL DEFAULT 0`)
+	if _, err := db.Exec(raceSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("sindri race schema: %w", err)
+	}
 	return &Store{db: db, now: time.Now}, nil
 }
 
