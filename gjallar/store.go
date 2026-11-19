@@ -385,6 +385,44 @@ func (s *Store) Events(ctx context.Context, id int64) ([]Event, error) {
 	return events, rows.Err()
 }
 
+// Healing is one time an alert healed: its resolved event, with the alert it
+// healed and when that spell of it began. An alert that comes back and heals
+// again heals again: each is its own healing. Events are never removed, so
+// this goes back to Gjallar's first alert.
+type Healing struct {
+	ID       int64     `json:"id"`
+	AlertID  int64     `json:"alertId"`
+	Source   string    `json:"source"`
+	Key      string    `json:"key"`
+	Title    string    `json:"title"`
+	By       string    `json:"by"`
+	OpenedAt time.Time `json:"openedAt"`
+	HealedAt time.Time `json:"healedAt"`
+}
+
+// Healed is up to limit healings after the event id given, oldest first.
+func (s *Store) Healed(ctx context.Context, after int64, limit int) ([]Healing, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT e.id, e.alert_id, a.source, a.key, a.title, e.by, e.at,
+		COALESCE((SELECT MAX(o.at) FROM events o WHERE o.alert_id = e.alert_id AND o.kind IN ('opened', 'reopened') AND o.at <= e.at), a.first_seen)
+		FROM events e JOIN alerts a ON a.id = e.alert_id
+		WHERE e.kind = 'resolved' AND e.id > ? ORDER BY e.id LIMIT ?`, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	healed := []Healing{}
+	for rows.Next() {
+		var h Healing
+		var at, opened int64
+		if err := rows.Scan(&h.ID, &h.AlertID, &h.Source, &h.Key, &h.Title, &h.By, &at, &opened); err != nil {
+			return nil, err
+		}
+		h.HealedAt, h.OpenedAt = time.UnixMilli(at), time.UnixMilli(opened)
+		healed = append(healed, h)
+	}
+	return healed, rows.Err()
+}
+
 // Expired is every unresolved alert whose expiresAt has passed.
 func (s *Store) Expired(ctx context.Context) ([]Alert, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM alerts a WHERE a.state != ? AND a.expires_at IS NOT NULL AND a.expires_at <= ?`, Resolved, ms(s.now()))

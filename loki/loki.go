@@ -21,6 +21,7 @@
 //     GET  /v1/targets              every part, its loops, and what each trick should be caught by
 //     POST /v1/strikes              owner: trick one part for a few minutes
 //     GET  /v1/strikes              the strikes, newest first
+//     GET  /v1/strikes/log          every strike that ended, oldest first, never trimmed
 //     GET  /v1/strikes/{id}         one strike
 //     POST /v1/strikes/{id}/stop    owner: end it now
 //     GET  /v1/settings             { passive, perDay, allowWatchers, allowFreeze }
@@ -209,8 +210,10 @@ type Loki struct {
 	Hours Hours
 	// StatePath is where settings and strikes are kept; empty keeps them in memory.
 	StatePath string
-	HTTP      *http.Client
-	Logf      func(format string, args ...any)
+	// LogPath is the strike log, every strike that ended (log.go); empty keeps it in memory.
+	LogPath string
+	HTTP    *http.Client
+	Logf    func(format string, args ...any)
 
 	// Poll is how often a strike looks at the watchers; HealWait how long it
 	// waits for healing after the trick ends; Minute is a strike's minute.
@@ -232,6 +235,9 @@ type Loki struct {
 	mu         sync.Mutex
 	settings   Settings
 	strikes    []*Strike // newest first
+	log        []Strike  // every strike that ended, oldest first (log.go)
+	logged     map[string]bool
+	logMu      sync.Mutex // one append at a time
 	plan       Plan
 	plannedDay string
 	slots      []time.Time
@@ -262,6 +268,7 @@ func New(parts []string, urls map[string]string, clients map[string]*call.Part, 
 		signal:       syscall.Kill,
 		scheduleThaw: ScheduleThaw,
 		frozen:       map[string]*frozen{},
+		logged:       map[string]bool{},
 	}
 }
 
@@ -277,9 +284,25 @@ func KnownParts() []string {
 	return names
 }
 
-// Load reads the state file: settings and strikes. A strike that was running
-// when Loki stopped is marked stopped; its trick ended on its own.
+// Load reads the strike log and the state file: settings and strikes. A
+// strike that was running when Loki stopped is marked stopped; its trick
+// ended on its own. Ended strikes not yet in the log are added to it, so a
+// Loki from before the log keeps the strikes it still has.
 func (l *Loki) Load() error {
+	l.mu.Lock()
+	err := l.loadLog()
+	l.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if err := l.loadState(); err != nil {
+		return err
+	}
+	l.logEnded(l.Strikes(KeepStrikes))
+	return nil
+}
+
+func (l *Loki) loadState() error {
 	if l.StatePath == "" {
 		return nil
 	}
@@ -322,8 +345,10 @@ func (l *Loki) Load() error {
 	return nil
 }
 
-// save writes the state file, aside and renamed. Call it without l.mu.
+// save writes the state file, aside and renamed, and logs the strikes that
+// ended. Call it without l.mu.
 func (l *Loki) save() {
+	l.logEnded(l.Strikes(KeepStrikes))
 	if l.StatePath == "" {
 		return
 	}
@@ -357,6 +382,7 @@ func (l *Loki) Mount(ctx context.Context, p *part.Part) {
 	p.Handle("GET /v1/targets", l.getTargets)
 	p.Handle("POST /v1/strikes", l.owner(l.postStrike))
 	p.Handle("GET /v1/strikes", l.listStrikes)
+	p.Handle("GET /v1/strikes/log", l.strikeLog)
 	p.Handle("GET /v1/strikes/{id}", l.getStrike)
 	p.Handle("POST /v1/strikes/{id}/stop", l.owner(l.stopStrike))
 	p.Handle("GET /v1/settings", l.getSettings)

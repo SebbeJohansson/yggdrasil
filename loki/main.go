@@ -24,6 +24,7 @@ const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermo
 //	LOKI_ADDR          listen address (127.0.0.1:8780)
 //	LOKI_TOKENS        who may call it: owner=…
 //	LOKI_STATE         where settings and strikes are kept (data/loki.json)
+//	LOKI_LOG           the strike log, every strike that ended (data/loki-strikes.jsonl)
 //	LOKI_PARTS         the parts it may trick (every part but Loki)
 //	<PART>_TOKEN       Loki's token at each part (NORN_TOKEN, GJALLAR_TOKEN…), at YGG_<PART>_URL:
 //	                   its trick switch, Ratatoskr's status, Gjallar's alerts, Hermóðr's channels
@@ -87,6 +88,7 @@ func Main(ctx context.Context) error {
 		return fmt.Errorf("WORK_HOURS: %w", err)
 	}
 	l.StatePath = env.String("LOKI_STATE", "data/loki.json")
+	l.LogPath = env.String("LOKI_LOG", "data/loki-strikes.jsonl")
 	if err := l.Load(); err != nil {
 		return fmt.Errorf("LOKI_STATE: %w", err)
 	}

@@ -196,6 +196,9 @@ func (w *Work) GoalViews() ([]GoalView, error) {
 		current := currentParts(tasks)
 		why, _ := w.Store.GoalWhy(goal.ID)
 		view := GoalView{Goal: goal, Images: images, State: GoalState(current), Tasks: tasks, Next: NextFor(current), Why: why}
+		if view.State == "merged" {
+			_ = w.Store.RememberMerged(MergedGoal{ID: goal.ID, Title: goal.Title, Repos: goal.Repos, MergedAt: mergedAt(tasks, w.Store.ms())})
+		}
 		if goal.ClosedAt != nil {
 			view.State, view.Next = "closed", GoalNext{Action: "none", Text: "Closed"}
 		}
@@ -657,6 +660,7 @@ func (w *Work) MountWork(p *part.Part) {
 	})
 	p.Handle("POST /v1/goals", w.addGoal)
 	p.Handle("GET /v1/goals/candidates", w.candidates)
+	p.Handle("GET /v1/goals/merged", w.mergedGoals)
 	p.Handle("PATCH /v1/goals/{id}", w.patchGoal)
 	p.Handle("DELETE /v1/goals/{id}", func(rw http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)

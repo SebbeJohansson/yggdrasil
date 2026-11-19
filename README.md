@@ -150,6 +150,7 @@ Ratatoskr reads it. Everything else needs `Authorization: Bearer <token>`.
 | `POST /v1/alerts` | a part | `{ key, severity: info\|warning\|critical, title, detail?, link?, traceId?, expiresAt? }` → `201` opened, or `200` updated. The source is the caller's token name. The same source and key updates the open alert; a resolved one opens again, and an acknowledged one opens again when its severity goes up |
 | `POST /v1/alerts/resolve` | a part | `{ key }` → `{ resolved }`. Only the part's own alerts |
 | `GET /v1/alerts` | anyone | `?state=active` (default: open and acknowledged), `open`, `acknowledged`, `resolved`, `all`; `?limit=` (200) → `{ alerts }`, most recently seen first |
+| `GET /v1/alerts/healed` | anyone | `?after=<id>&limit=` (1000, at most 5000) → `{ healed: [{ id, alertId, source, key, title, by, openedAt, healedAt }] }`: every time an alert healed (its resolved event), oldest first. An alert that comes back and heals again is listed again. Events are never removed, so it goes back to the first alert; the widget's tree draws a scar for each |
 | `GET /v1/alerts/mine` | a part | `{ alerts }`: the caller's own open and acknowledged alerts. A part reads it on start, so it resolves what it raised before a restart. The owner has none |
 | `GET /v1/alerts/stream` | anyone | server-sent events, one `alert` per change. It needs the token, so read it with `fetch`, not `EventSource` |
 | `GET /v1/alerts/{id}` | anyone | `{ alert, events }`: the alert and its history |
@@ -295,6 +296,14 @@ after start reads every transcript still on disk. The same session and time
 is kept once. Norn's Rewind reads it. It is kept forever unless
 `SINDRI_PROMPTS_KEEP` (a duration, e.g. `8760h`) is set in `sindri.env`.
 Goal tasks on `GET /v1/goals` carry `startedAt` and `mergedAt`.
+
+`GET /v1/goals/merged` is every goal Sindri has seen merged, `{ goals: [{ id,
+title, repos, mergedAt }] }`, the earliest merged first, as it was when it
+merged. A goal's state is read from its agents, so it stops reading merged
+once its agent is removed, and a goal can be deleted; this log in Sindri's
+database (`merged_goals`) keeps it anyway. It is filled wherever the goals
+are read: the dashboard, the night shift and the Linear sync. The widget's
+tree grows a branch for each.
 
 ### Sindri: a goal's why
 
@@ -722,6 +731,7 @@ A job that fails 3 times in a row is `failing:<job id>` (warning).
 | `GET /v1/targets` | anyone | `{ parts: [{ name, up, lokiOn, proxied, freezable, vias: [{ via, available, reason? }], tricks: [{ via, kind, loop?, delayMs?, status?, label, expect }] }] }`: each part's tricks by each way to strike it (switch tricks from its `/health`; proxy tricks only when proxied; freeze only when freezable), why a way is closed, and what should catch each (`ratatoskr:down:<part>`, `ratatoskr:failing:<part>:<loop>`, `gjallar:alert`…) |
 | `POST /v1/strikes` | owner | `{ part, trick: { via?: switch\|proxy\|freeze, kind: health\|loop\|slow\|error\|drop\|hang\|freeze, loop?, delayMs?, status?, path? }, minutes? }` (3, at most 10) → `201` Strike. No `via`: `freeze` for a freeze, `proxy` for error, drop and hang, else `switch` |
 | `GET /v1/strikes` | anyone | `?limit=` (50) → `{ strikes }`, newest first |
+| `GET /v1/strikes/log` | anyone | `{ strikes }`: every strike that ended, oldest first, each once. The state keeps the last 200; this log, an append-only file at `LOKI_LOG`, is never trimmed. The widget's tree draws a raven for each |
 | `GET /v1/strikes/{id}` | anyone | `{ id, part, trick, by: manual\|passive, startedAt, endsAt, healedAt?, state: striking\|watching\|caught\|missed\|stopped, checks: [{ watcher, expected, noticedAt?, ok? }], tale?, pids? }` |
 | `POST /v1/strikes/{id}/stop` | owner | end it now: the trick comes off, and it ends `stopped`, with no verdict |
 | `GET`, `PATCH /v1/settings` | owner changes it | `{ passive, perDay, allowWatchers, allowFreeze }`: off, 1, off and off until set; kept in `LOKI_STATE` |
@@ -816,6 +826,7 @@ when you acknowledged the alert.
 | `LOKI_TOKENS` | | `owner=…` |
 | `<PART>_TOKEN` | | Loki's token at each part: `NORN_TOKEN`, `GJALLAR_TOKEN`, `RATATOSKR_TOKEN`, `HERMODR_TOKEN`… (`scripts/install.sh` gives them) |
 | `LOKI_STATE` | `data/loki.json` | settings and the last 200 strikes |
+| `LOKI_LOG` | `data/loki-strikes.jsonl` | every strike that ended, one line each, appended and never trimmed. On first start it takes in the strikes `LOKI_STATE` still has |
 | `LOKI_PARTS` | every part but Loki | the parts it may trick |
 | `GJALLAR_HEARTBEATS` | `ratatoskr=3m` | read to find the heartbeat blind spot; set it in `parts.env` if you changed Gjallar's |
 | `LOKI_PROXY` | none | the parts Loki's proxy stands in front of, `norn,sindri,…` (dev only) |

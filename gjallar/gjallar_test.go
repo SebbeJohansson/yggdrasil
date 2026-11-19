@@ -279,3 +279,44 @@ func TestMineIsThePartsOwnActiveAlerts(t *testing.T) {
 		t.Fatalf("the owner has alerts of its own: %v", body)
 	}
 }
+
+func TestHealedListsEveryHealingOldestFirst(t *testing.T) {
+	f := newFixture(t)
+	raise := alert.Raise{Key: "down:norn", Severity: alert.Warning, Title: "Norn doesn't answer"}
+	f.call("POST", "/v1/alerts", ratToken, raise)
+	opened := f.clock
+	f.clock = f.clock.Add(4 * time.Minute)
+	f.call("POST", "/v1/alerts/resolve", ratToken, map[string]string{"key": "down:norn"})
+	f.clock = f.clock.Add(time.Hour)
+	reopened := f.clock
+	f.call("POST", "/v1/alerts", ratToken, raise)
+	f.clock = f.clock.Add(2 * time.Minute)
+	f.call("POST", "/v1/alerts/resolve", ratToken, map[string]string{"key": "down:norn"})
+	f.call("POST", "/v1/alerts", muninToken, alert.Raise{Key: "disk", Severity: alert.Info, Title: "still open"})
+
+	status, body := f.call("GET", "/v1/alerts/healed", ownerToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %v", status, body)
+	}
+	healed := body["healed"].([]any)
+	if len(healed) != 2 {
+		t.Fatalf("%d healings, want 2: %v", len(healed), healed)
+	}
+	first, second := healed[0].(map[string]any), healed[1].(map[string]any)
+	if first["alertId"] != second["alertId"] || first["source"] != "ratatoskr" || first["by"] != "ratatoskr" {
+		t.Fatalf("got %v and %v", first, second)
+	}
+	if got, _ := time.Parse(time.RFC3339Nano, first["openedAt"].(string)); !got.Equal(opened) {
+		t.Fatalf("first opened %v, want %v", got, opened)
+	}
+	if got, _ := time.Parse(time.RFC3339Nano, second["openedAt"].(string)); !got.Equal(reopened) {
+		t.Fatalf("second opened %v, want %v", got, reopened)
+	}
+	_, page := f.call("GET", "/v1/alerts/healed?after="+strconv.Itoa(int(first["id"].(float64))), ownerToken, nil)
+	if rest := page["healed"].([]any); len(rest) != 1 || rest[0].(map[string]any)["id"] != second["id"] {
+		t.Fatalf("after the first: %v", rest)
+	}
+	if status, _ := f.call("GET", "/v1/alerts/healed?limit=0", ownerToken, nil); status != http.StatusBadRequest {
+		t.Fatalf("limit 0: status %d", status)
+	}
+}

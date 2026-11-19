@@ -159,6 +159,20 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /v1/strikes/log:
+    get:
+      summary: Every strike that ended, oldest first, each once. Loki keeps its last 200 strikes; this log is never trimmed (LOKI_LOG, an append-only file). The widget's tree draws a raven for each.
+      responses:
+        "200":
+          description: The strikes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [strikes]
+                properties:
+                  strikes: { type: array, items: { $ref: "#/components/schemas/Strike" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/strikes/{id}:
     get:
       summary: One strike.
