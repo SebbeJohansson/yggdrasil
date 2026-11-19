@@ -190,11 +190,13 @@ type fakeParts struct {
 	sent     []map[string]any
 	earlier  []map[string]any
 	sessions []map[string]any
+	calls    int
 }
 
 func (f *fakeParts) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls++
 	answer := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 	switch r.Method + " " + r.URL.Path {
 	case "GET /v1/calendar":
@@ -290,5 +292,45 @@ func TestWorkingLateIsSeenFromYourSessions(t *testing.T) {
 	}
 	if len(f.sent) != 1 || f.sent[0]["title"] != "It's past 23:00" {
 		t.Fatalf("sent %v", f.sent)
+	}
+}
+
+func TestABreakYouKeptFreeIsNotAMeetingAndEndsAStretch(t *testing.T) {
+	r := rhythm()
+	r.Break = 30 * time.Minute
+	events := []CalendarEvent{
+		{Start: day(9, 0).UnixMilli(), End: day(11, 0).UnixMilli(), ShowAs: "busy"},
+		// A 15 minute break kept free: shorter than RATATOSKR_YOU_BREAK, still a break.
+		{Start: day(11, 0).UnixMilli(), End: day(11, 15).UnixMilli(), ShowAs: "busy", Break: true},
+		{Start: day(11, 15).UnixMilli(), End: day(14, 0).UnixMilli(), ShowAs: "busy"},
+	}
+	meetings, breaks := Meetings(events), Breaks(events)
+	if len(meetings) != 2 || len(breaks) != 1 {
+		t.Fatalf("meetings %v, breaks %v", meetings, breaks)
+	}
+	if Stretch(meetings, day(12, 0), r, breaks...).Active {
+		t.Fatalf("the break at 11:00 ends the run: 11:15-14:00 is not a stretch")
+	}
+	if !Stretch(meetings, day(12, 0), r).Active {
+		t.Fatalf("without the break, 09:00-14:00 with a 15 minute gap is a stretch when a real gap is 30")
+	}
+	// The run before the break ends at it.
+	long := []CalendarEvent{
+		{Start: day(8, 0).UnixMilli(), End: day(12, 30).UnixMilli(), ShowAs: "busy"},
+		{Start: day(12, 30).UnixMilli(), End: day(12, 50).UnixMilli(), ShowAs: "busy", Break: true},
+		{Start: day(12, 50).UnixMilli(), End: day(15, 0).UnixMilli(), ShowAs: "busy"},
+	}
+	seen := Stretch(Meetings(long), day(10, 0), r, Breaks(long)...)
+	if !seen.Active || !seen.NextGap.Equal(day(12, 30)) {
+		t.Fatalf("want a stretch until the break at 12:30, got %+v", seen)
+	}
+	// A whole week of breaks is not a packed week.
+	var week []CalendarEvent
+	for d := 0; d < 2; d++ {
+		from := time.Date(2026, 11, 19+d, 9, 0, 0, 0, stockholm)
+		week = append(week, CalendarEvent{Start: from.UnixMilli(), End: from.Add(8 * time.Hour).UnixMilli(), ShowAs: "busy", Break: true})
+	}
+	if Week(Meetings(week), day(8, 0), r).Active {
+		t.Fatalf("breaks filled the week")
 	}
 }

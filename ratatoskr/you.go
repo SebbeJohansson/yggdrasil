@@ -123,10 +123,11 @@ type StretchSeen struct {
 }
 
 // Stretch is active while now is inside a run of meetings with no gap of
-// Break or more that lasts Stretch or more.
-func Stretch(meetings []Span, now time.Time, rhythm Rhythm) StretchSeen {
+// Break or more that lasts Stretch or more. A break you kept free in the
+// calendar ends a run like such a gap does, however short it is.
+func Stretch(meetings []Span, now time.Time, rhythm Rhythm, breaks ...Span) StretchSeen {
 	busy := Join(meetings, 0)
-	for _, run := range Join(busy, rhythm.Break) {
+	for _, run := range splitAt(Join(busy, rhythm.Break), busy, breaks) {
 		if now.Before(run.Start) || !now.Before(run.End) || run.length() < rhythm.Stretch {
 			continue
 		}
@@ -142,6 +143,36 @@ func Stretch(meetings []Span, now time.Time, rhythm Rhythm) StretchSeen {
 		return seen
 	}
 	return StretchSeen{}
+}
+
+// splitAt cuts each run at the gaps between busy spans that a break falls in.
+func splitAt(runs, busy, breaks []Span) []Span {
+	if len(breaks) == 0 {
+		return runs
+	}
+	var split []Span
+	for _, run := range runs {
+		start := run.Start
+		for i := 1; i < len(busy); i++ {
+			gap := Span{busy[i-1].End, busy[i].Start}
+			if !gap.Start.After(start) || !gap.End.Before(run.End) || !overlapsAny(gap, breaks) {
+				continue
+			}
+			split = append(split, Span{start, gap.Start})
+			start = gap.End
+		}
+		split = append(split, Span{start, run.End})
+	}
+	return split
+}
+
+func overlapsAny(s Span, spans []Span) bool {
+	for _, other := range spans {
+		if other.Start.Before(s.End) && s.Start.Before(other.End) {
+			return true
+		}
+	}
+	return false
 }
 
 func at(day time.Time, minutes int) time.Time {
@@ -265,15 +296,18 @@ type CalendarEvent struct {
 	AllDay   bool   `json:"allDay"`
 	Response string `json:"response"`
 	ShowAs   string `json:"showAs"`
+	// Break is a break you kept free (Norn's POST /v1/calendar/breaks).
+	Break bool `json:"break"`
 }
 
 // Meetings are the events that take your time: not all-day, not declined,
-// not shown as free, out of office or working elsewhere.
+// not shown as free, out of office or working elsewhere, and not a break
+// you kept free.
 func Meetings(events []CalendarEvent) []Span {
 	var spans []Span
 	for _, e := range events {
 		switch {
-		case e.AllDay, e.Response == "declined":
+		case e.AllDay, e.Response == "declined", e.Break:
 			continue
 		}
 		switch e.ShowAs {
@@ -281,6 +315,17 @@ func Meetings(events []CalendarEvent) []Span {
 			continue
 		}
 		spans = append(spans, Span{time.UnixMilli(e.Start), time.UnixMilli(e.End)})
+	}
+	return spans
+}
+
+// Breaks are the breaks you kept free, which end a stretch.
+func Breaks(events []CalendarEvent) []Span {
+	var spans []Span
+	for _, e := range events {
+		if e.Break && !e.AllDay {
+			spans = append(spans, Span{time.UnixMilli(e.Start), time.UnixMilli(e.End)})
+		}
 	}
 	return spans
 }
@@ -333,8 +378,13 @@ type You struct {
 	Hermodr *call.Part
 	// Every is how often it looks (RATATOSKR_YOU_EVERY, 5m).
 	Every time.Duration
+	// StatePath is where on or off is kept (RATATOSKR_STATE); empty keeps nothing.
+	StatePath string
 
+	// round lets one Round run at a time: the loop's, or one after turning on.
+	round  sync.Mutex
 	mu     sync.Mutex
+	on     bool
 	now    func() time.Time
 	seeded bool
 	since  map[string]time.Time
@@ -348,7 +398,7 @@ func NewYou(rhythm Rhythm, norn, sindri, hermodr *call.Part) *You {
 	if rhythm.Zone == nil {
 		rhythm.Zone = time.Local
 	}
-	return &You{Rhythm: rhythm, Norn: norn, Sindri: sindri, Hermodr: hermodr, Every: 5 * time.Minute, now: time.Now,
+	return &You{Rhythm: rhythm, Norn: norn, Sindri: sindri, Hermodr: hermodr, Every: 5 * time.Minute, now: time.Now, on: true,
 		since: map[string]time.Time{}, told: map[string]time.Time{}, status: YouStatus{On: true, Patterns: []Pattern{}}}
 }
 
@@ -456,8 +506,13 @@ func (y *You) Message(pattern string, stretch StretchSeen, week WeekSeen) tell.M
 // tells you of one that just started, unless it is quiet hours or you were
 // already told today.
 func (y *You) Round(ctx context.Context) error {
+	y.round.Lock()
+	defer y.round.Unlock()
+	if !y.IsOn() {
+		return nil
+	}
 	var errs []string
-	var meetings []Span
+	var meetings, breaks []Span
 	calendarOK := false
 	if y.Norn.On() {
 		var calendar struct {
@@ -469,7 +524,7 @@ func (y *You) Round(ctx context.Context) error {
 		} else if calendar.At == nil {
 			errs = append(errs, "norn: no fresh calendar")
 		} else {
-			meetings, calendarOK = Meetings(calendar.Events), true
+			meetings, breaks, calendarOK = Meetings(calendar.Events), Breaks(calendar.Events), true
 		}
 	}
 	var activity []time.Time
@@ -504,7 +559,7 @@ func (y *You) Round(ctx context.Context) error {
 	var stretch StretchSeen
 	var week WeekSeen
 	if calendarOK {
-		stretch = Stretch(meetings, now, y.Rhythm)
+		stretch = Stretch(meetings, now, y.Rhythm, breaks...)
 		week = Week(meetings, now, y.Rhythm)
 	}
 	late := Late(activity, now, y.Rhythm)
@@ -560,7 +615,10 @@ func (y *You) Round(ctx context.Context) error {
 		p.ToldAt = y.toldNow(p.Name, now)
 	}
 	y.mu.Lock()
-	y.status = YouStatus{On: true, Patterns: patterns, CheckedAt: ptr(now), Errors: errs}
+	// Turned off while it looked: what it saw is not shown.
+	if y.on {
+		y.status = YouStatus{On: true, Patterns: patterns, CheckedAt: ptr(now), Errors: errs}
+	}
 	y.mu.Unlock()
 	if len(errs) > 0 {
 		return errors.New(strings.Join(errs, "; "))

@@ -472,7 +472,7 @@ paths:
               properties:
                 tenant: { type: string, pattern: "^[\\w.-]{1,100}$", description: A tenant id or domain; organizations by default. }
                 mail: { type: boolean, description: Ask for Mail.Read. }
-                calendar: { type: boolean, description: "Ask for Calendars.ReadWrite: Norn reads the calendar, and deletes your own copy of a meeting when you apply a calendar suggestion." }
+                calendar: { type: boolean, description: "Ask for Calendars.ReadWrite: Norn reads the calendar, and deletes your own copy of a meeting when you apply a calendar suggestion, and adds a break you keep free." }
                 force: { type: boolean, description: Sign in again even though the scopes are held. }
       responses:
         "200": { $ref: "#/components/responses/Microsoft" }
@@ -580,6 +580,34 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/calendar/breaks:
+    post:
+      summary: >-
+        Keep a free slot free: a "Break" event in the work calendar (Outlook),
+        shown as busy, nobody invited, with the Outlook category "Yggdrasil
+        break" so Yggdrasil knows it as its own (break true on the calendar's
+        events). 15 minutes to 2 hours, ending ahead, starting at most 7 days
+        ahead. Reads the calendar first; 409 when something you did not
+        decline (not all day, not shown as free) overlaps the slot. The same
+        slot again answers 200 with the break already there. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [start, end]
+              properties:
+                start: { type: integer, description: Epoch ms. }
+                end: { type: integer, description: Epoch ms. }
+      responses:
+        "200": { $ref: "#/components/responses/Break" }
+        "201": { $ref: "#/components/responses/Break" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "502": { $ref: "#/components/responses/BadGateway" }
   /v1/calendar/personal:
     get:
       summary: The same from Google Calendar, with Google Tasks that have a due date. Empty while switched off where you are.
@@ -1375,6 +1403,15 @@ components:
                   tasks: { type: boolean }
               error: { type: string }
               calendar: { $ref: "#/components/schemas/CalendarRead" }
+    Break:
+      description: The break, as the calendar shows it.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [event]
+            properties:
+              event: { $ref: "#/components/schemas/CalendarEvent" }
     Calendar:
       description: The calendar.
       content:
@@ -1532,6 +1569,7 @@ components:
         series: { type: string, description: "The recurring meeting it is one of, the same for every occurrence; left out for a one-off." }
         rooms: { type: array, items: { type: string }, description: "The rooms booked for it, by name; left out when none." }
         join: { type: string, description: "Its Teams or Google Meet link: the calendar's own, else the first in the invitation's text; left out when none." }
+        break: { type: boolean, description: "A break kept free with POST /v1/calendar/breaks (Outlook category \"Yggdrasil break\"), not a meeting; left out otherwise. No calendar.* events are sent for it." }
     VaultNote:
       type: object
       required: [path, title, link]

@@ -80,8 +80,10 @@ paths:
         Your own rhythm as last seen, for a widget to show on hover: a long run
         of meetings with no real gap (stretch), a session of yours still active
         late (late), most of the week's working hours in meetings (week). Each
-        pattern is active or not, since when, and the next free time. on is
-        false when RATATOSKR_YOU is off.
+        pattern is active or not, since when, and the next free time. A
+        break you kept free (Norn's events with break true) is never a
+        meeting, and ends a stretch like a real gap. on is false while
+        watching you is off (PATCH /v1/settings/you, else RATATOSKR_YOU).
       responses:
         "200":
           description: What it sees.
@@ -107,6 +109,31 @@ paths:
                   checkedAt: { type: string, format: date-time }
                   errors: { type: array, items: { type: string }, description: "Sources it could not read last time." }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/you:
+    get:
+      summary: Whether it is watching you. RATATOSKR_YOU until the owner sets it here; what is set outlives a restart.
+      responses:
+        "200": { $ref: "#/components/responses/YouSetting" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: >-
+        Turn watching you on or off. Off reads nothing and sends nothing, and
+        GET /v1/you says on false with no patterns; on looks again at once.
+        Kept across restarts. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/YouSetting" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 components:
   securitySchemes:
     bearer:
@@ -118,6 +145,25 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: The request was not valid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Only the owner may do this.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    YouSetting:
+      description: Watching you, on or off.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on]
+            properties:
+              on: { type: boolean }
   schemas:
     Health:
       type: object

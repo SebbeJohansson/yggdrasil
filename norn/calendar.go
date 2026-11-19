@@ -63,6 +63,9 @@ type CalendarEvent struct {
 	// Join is its Teams or Google Meet link: the calendar's own, else the
 	// first one in the invitation's text.
 	Join string `json:"join,omitempty"`
+	// Break is a break Yggdrasil kept free in the work calendar
+	// (POST /v1/calendar/breaks), not a meeting.
+	Break bool `json:"break,omitempty"`
 }
 
 // joinLink is the first Teams or Google Meet link in text.
@@ -250,7 +253,7 @@ func GraphCalendarURL(from, to time.Time) string {
 	params := url.Values{
 		"startDateTime": {from.UTC().Format(time.RFC3339Nano)},
 		"endDateTime":   {to.UTC().Format(time.RFC3339Nano)},
-		"$select":       {"id,subject,start,end,isAllDay,location,organizer,attendees,responseStatus,showAs,isOnlineMeeting,onlineMeeting,body,locations,isCancelled,seriesMasterId"},
+		"$select":       {"id,subject,start,end,isAllDay,location,organizer,attendees,responseStatus,showAs,isOnlineMeeting,onlineMeeting,body,locations,isCancelled,seriesMasterId,categories"},
 		"$orderby":      {"start/dateTime"},
 		"$top":          {"200"},
 	}
@@ -312,6 +315,7 @@ func graphPage(body []byte) (events, cancelled []CalendarEvent, next string) {
 			} `json:"attendees"`
 			ResponseStatus struct{ Response string } `json:"responseStatus"`
 			ShowAs         string                    `json:"showAs"`
+			Categories     []string                  `json:"categories"`
 		} `json:"value"`
 		Next string `json:"@odata.nextLink"`
 	}
@@ -350,6 +354,7 @@ func graphPage(body []byte) (events, cancelled []CalendarEvent, next string) {
 			Location: strings.TrimSpace(raw.Location.DisplayName), Organizer: raw.Organizer.EmailAddress.Name,
 			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID, Attendees: attendees, Series: raw.SeriesMasterID,
 			Rooms: rooms, Join: JoinLink(raw.Body.Content, joinURL(raw.OnlineMeeting)),
+			Break: slices.Contains(raw.Categories, BreakCategory),
 		}
 		if raw.IsCancelled {
 			cancelled = append(cancelled, event)
@@ -790,6 +795,9 @@ func CalendarLines(snapshot CalendarSnapshot, now time.Time, zone *time.Location
 		}
 		if words := responseWords[event.Response]; words != "" {
 			details = append(details, words)
+		}
+		if event.Break {
+			details = append(details, "a break you kept free, not a meeting")
 		}
 		switch event.ShowAs {
 		case "free":

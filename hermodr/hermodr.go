@@ -1,11 +1,11 @@
 // Package hermodr carries every message meant for you: into one history the
 // widget reads, and, when you set it up, to your phone (ntfy). Urgent messages go at once; the rest wait through quiet hours, and
-// through a meeting when they ask to hold.
+// through a meeting or a break you kept free when they ask to hold.
 //
 //	POST /v1/messages              any part: { title, text?, link?, priority?, hold?, push? }
 //	GET  /v1/messages              the last 7 days; ?state= and ?unseen=true
 //	POST /v1/messages/{id}/seen    owner
-//	GET  /v1/channels              each channel, quiet hours, in a meeting
+//	GET  /v1/channels              each channel, quiet hours, in a meeting or on a break
 //	POST /v1/channels/{name}/test  owner
 package hermodr
 
@@ -124,6 +124,8 @@ func (q Quiet) Until(t time.Time) (time.Time, bool) {
 
 type meeting struct {
 	Start, End int64
+	// Break is a break you kept free, not a meeting.
+	Break bool
 }
 
 type channelState struct {
@@ -316,6 +318,9 @@ func (h *Hermodr) holdFor(m Message) (string, bool) {
 		if until, busy := h.inMeeting(now); busy {
 			return "in a meeting until " + time.UnixMilli(until).In(h.Zone).Format("15:04"), true
 		}
+		if until, resting := h.inBreak(now); resting {
+			return "on a break until " + time.UnixMilli(until).In(h.Zone).Format("15:04"), true
+		}
 	}
 	return "", false
 }
@@ -465,9 +470,12 @@ func (h *Hermodr) channels(w http.ResponseWriter, _ *http.Request) {
 		_, inside := h.Quiet.Until(now)
 		quiet = map[string]any{"from": hhmm(h.Quiet.From), "to": hhmm(h.Quiet.To), "now": inside}
 	}
-	answer := map[string]any{"channels": list, "quiet": quiet, "inMeeting": false}
+	answer := map[string]any{"channels": list, "quiet": quiet, "inMeeting": false, "inBreak": false}
 	if until, busy := h.inMeeting(now); busy {
 		answer["inMeeting"], answer["meetingEndsAt"] = true, time.UnixMilli(until)
+	}
+	if until, resting := h.inBreak(now); resting {
+		answer["inBreak"], answer["breakEndsAt"] = true, time.UnixMilli(until)
 	}
 	part.JSON(w, http.StatusOK, answer)
 }
@@ -500,13 +508,23 @@ func (h *Hermodr) test(w http.ResponseWriter, r *http.Request) {
 
 // --- meetings and held messages ---
 
+// inMeeting is whether now is in a meeting, and until when.
 func (h *Hermodr) inMeeting(now time.Time) (int64, bool) {
+	return h.inside(now, false)
+}
+
+// inBreak is whether now is in a break you kept free, and until when.
+func (h *Hermodr) inBreak(now time.Time) (int64, bool) {
+	return h.inside(now, true)
+}
+
+func (h *Hermodr) inside(now time.Time, breaks bool) (int64, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	nowMs := now.UnixMilli()
 	var until int64
 	for _, m := range h.meetings {
-		if m.Start <= nowMs && nowMs < m.End && m.End > until {
+		if m.Break == breaks && m.Start <= nowMs && nowMs < m.End && m.End > until {
 			until = m.End
 		}
 	}
@@ -520,6 +538,8 @@ type CalendarEvent struct {
 	AllDay   bool   `json:"allDay"`
 	Response string `json:"response"`
 	ShowAs   string `json:"showAs"`
+	// Break is a break you kept free (Norn's POST /v1/calendar/breaks).
+	Break bool `json:"break"`
 }
 
 // SetMeetings replaces what Hermóðr knows of your calendars.
@@ -527,7 +547,7 @@ func (h *Hermodr) SetMeetings(events []CalendarEvent) {
 	var meetings []meeting
 	for _, e := range events {
 		if !e.AllDay && e.Response != "declined" && e.ShowAs != "free" {
-			meetings = append(meetings, meeting{Start: e.Start, End: e.End})
+			meetings = append(meetings, meeting{Start: e.Start, End: e.End, Break: e.Break})
 		}
 	}
 	h.mu.Lock()

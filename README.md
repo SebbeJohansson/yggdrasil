@@ -166,6 +166,7 @@ to ntfy when Hermóðr can't take it), at most once per alert every 15 minutes.
 | --- | --- |
 | `GET /v1/status` | `{ parts, checks, gjallarUp }`: every part as last seen, and every check. The widget reads this directly, so it can show "Gjallar is down" without Gjallar |
 | `GET /v1/you` | `{ on, patterns, checkedAt?, errors? }`: each of `stretch`, `late` and `week` with `active`, `since`, `nextGap` (and `nextGapEnds`) and `toldAt`, for a widget to show on hover |
+| `GET`, `PATCH /v1/settings/you` | `{ on }`: watching you on or off, from the dashboard. Changing it is owner only, and it outlives a restart (`RATATOSKR_STATE`); `RATATOSKR_YOU` is the default until you set it |
 
 It checks the parts in `RATATOSKR_WATCH` every 30 s, at their `YGG_<PART>_URL`. Down is `down:<part>`
 (critical). A loop that hasn't run within three of its intervals plus a
@@ -178,7 +179,7 @@ nothing goes to Gjallar.
 
 | Pattern | Active when |
 | --- | --- |
-| `stretch` | you are inside a run of meetings with no gap of `RATATOSKR_YOU_BREAK` (15m) or more, `RATATOSKR_YOU_STRETCH` (4h) long or more |
+| `stretch` | you are inside a run of meetings with no gap of `RATATOSKR_YOU_BREAK` (15m) or more, `RATATOSKR_YOU_STRETCH` (4h) long or more. A break you kept free (Norn's `POST /v1/calendar/breaks`) ends a run like such a gap, however short |
 | `late` | it is past `RATATOSKR_YOU_LATE` (23:00, until 05:00) and one of your own Claude Code sessions changed in the last 10 minutes, or you just answered a Sindri agent that asked you something (an agent working on its own does not count) |
 | `week` | meetings fill `RATATOSKR_YOU_PACKED` (60) percent or more of the working hours (`RATATOSKR_YOU_HOURS`, 09:00-17:00, Monday to Friday) from the start of today to Friday |
 
@@ -190,14 +191,16 @@ Hermóðr's history after a restart, and none while Hermóðr says it is quiet
 hours (a late evening inside `QUIET_HOURS` is seen on `GET /v1/you` but never
 sent). No counts, no scores. Messages carry times only: meeting subjects and
 people never leave Norn. It reads Norn's `GET /v1/calendar` (the work
-calendar; declined, free, out-of-office and all-day events left out) and
+calendar; declined, free, out-of-office and all-day events and breaks you
+kept free left out) and
 Sindri's `GET /v1/sessions/recent` and `GET /v1/agents`, with `NORN_TOKEN` and
 `SINDRI_TOKEN` in `ratatoskr.env` (`scripts/install.sh` adds them; restart
 Norn and Sindri after).
 
 | Setting (`ratatoskr.env`) | Default | What it does |
 | --- | --- | --- |
-| `RATATOSKR_YOU` | `on` | `off`: reads nothing, sends nothing, and `GET /v1/you` says `on: false` |
+| `RATATOSKR_YOU` | `on` | `off`: reads nothing, sends nothing, and `GET /v1/you` says `on: false`. Only the default: what you set with `PATCH /v1/settings/you` wins |
+| `RATATOSKR_STATE` | `~/.local/state/yggdrasil/ratatoskr.json` | where that is kept |
 | `RATATOSKR_YOU_EVERY` | `5m` | how often it looks; the `you` loop on `/health` |
 | `RATATOSKR_YOU_STRETCH` | `4h` | how long a run of meetings is a stretch |
 | `RATATOSKR_YOU_BREAK` | `15m` | the shortest gap that counts as a real break |
@@ -314,6 +317,22 @@ with the calendar, now `Calendars.ReadWrite`). Each reaction goes
 to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A
 stream down for 5 minutes is `stream:<part>` (warning).
 
+### Norn: keeping a break free
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `POST /v1/calendar/breaks` | owner | `{ start, end }` (epoch ms, 15 min to 2 h, at most 7 days ahead) → `201 { event }`, or `200 { event }` when that slot already is a break |
+
+It puts a "Break" event in your work calendar (Outlook), shown as busy so
+nobody books over it, with nobody invited and the Outlook category
+`Yggdrasil break`, which is how Yggdrasil knows it as its own: on
+`GET /v1/calendar` it has `break: true`. Norn reads the calendar first and
+answers `409` when something you did not decline overlaps the slot. It needs
+the Microsoft sign-in with `Calendars.ReadWrite`. A break is not a meeting:
+Norn sends no `calendar.*` events for it, Ratatoskr ends a stretch at it
+and does not count it toward a packed week, and Hermóðr holds messages
+through it and says `inBreak` rather than `inMeeting`.
+
 ### Dellingr
 
 | Route | What it does |
@@ -371,11 +390,12 @@ its `NORN_TOKEN`.
 | `POST /v1/messages` | a part | `{ title, text?, link?, priority?: low\|normal\|high\|urgent, hold?, push? }` → `201`. The sender is the caller's token name |
 | `GET /v1/messages` | anyone | `?state=held\|sent\|listed\|failed`, `?unseen=true`: the last 7 days. The widget reads this |
 | `POST /v1/messages/{id}/seen` | owner | the widget stops listing it |
-| `GET /v1/channels` | anyone | ntfy: set up or not, the lowest priority each sends, the last send; quiet hours; whether you are in a meeting |
+| `GET /v1/channels` | anyone | ntfy: set up or not, the lowest priority each sends, the last send; quiet hours; whether you are in a meeting (`inMeeting`, `meetingEndsAt`) or on a break you kept free (`inBreak`, `breakEndsAt`) |
 | `POST /v1/channels/{name}/test` | owner | a test message to one channel, past every rule |
 
 Urgent messages go out at once. Others wait through `QUIET_HOURS`, and, when
-they ask to `hold`, while you are in a meeting (your calendars, from Norn).
+they ask to `hold`, while you are in a meeting or on a break you kept free
+(your calendars, from Norn).
 `push: false` lists a message for the widget only. Each channel sends what is
 at or above its `<CHANNEL>_MIN`. Slack and Discord were left out on
 purpose: nothing from your inbox should land where others in a workspace or
