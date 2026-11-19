@@ -601,15 +601,16 @@ func (w *Work) MountWork(p *part.Part) {
 	})
 	p.Handle("PATCH /v1/settings/coding-agent", func(rw http.ResponseWriter, r *http.Request) {
 		var body CodingAgentSettings
-		if err := part.Decode(r, &body); err != nil || !slices.Contains(Engines, body.Primary) {
-			part.Error(rw, http.StatusBadRequest, "`primary` must be claude or copilot")
+		on := w.Agents.EnginesOn()
+		if err := part.Decode(r, &body); err != nil || !slices.Contains(on, body.Primary) {
+			part.Error(rw, http.StatusBadRequest, "`primary` must be one of "+strings.Join(on, ", ")+" (the ones turned on here)")
 			return
 		}
-		if err := w.Store.SetSetting("coding-agent", body); err != nil {
+		if err := w.Store.SetSetting("coding-agent", CodingAgentSettings{Primary: body.Primary}); err != nil {
 			fail(rw, err)
 			return
 		}
-		part.JSON(rw, http.StatusOK, body)
+		part.JSON(rw, http.StatusOK, w.CodingAgent())
 	})
 	p.Handle("GET /v1/settings/automation", func(rw http.ResponseWriter, _ *http.Request) {
 		part.JSON(rw, http.StatusOK, w.Automation())

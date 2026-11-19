@@ -1553,6 +1553,10 @@ components:
       required: [primary]
       properties:
         primary: { type: string, enum: [claude, copilot] }
+        engines:
+          type: array
+          description: The CLIs turned on here; COPILOT_BIN=off leaves copilot out. Read only.
+          items: { type: string, enum: [claude, copilot] }
     TaskView:
       type: object
       required: [id, at, session, goal, kind, project, branch, agent, partOf, outcome, result, endedAt, status, label, lastActivity, merged]

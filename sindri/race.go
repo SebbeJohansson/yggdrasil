@@ -95,7 +95,7 @@ func binUp(bin string) bool {
 var Conduits = []Conduit{
 	{Name: "claude", Label: "Claude Code", Engine: "claude", Up: func(m *Manager) bool { return binUp(m.options.ClaudeBin) }},
 	{Name: "opencode", Label: "OpenCode", Engine: "opencode", Up: func(m *Manager) bool { return m.OpencodeOn() }, Off: func(m *Manager) bool { return m == nil || !m.OpencodeSetUp() }},
-	{Name: "copilot", Label: "Copilot CLI", Engine: "copilot", Up: func(m *Manager) bool { return binUp(m.options.CopilotBin) }},
+	{Name: "copilot", Label: "Copilot CLI", Engine: "copilot", Up: func(m *Manager) bool { return m.CopilotOn() && binUp(m.options.CopilotBin) }, Off: func(m *Manager) bool { return m == nil || !m.CopilotOn() }},
 }
 
 func conduitNamed(name string) *Conduit {

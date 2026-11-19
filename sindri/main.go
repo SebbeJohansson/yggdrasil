@@ -30,7 +30,7 @@ import (
 //	OPENCODE_URL        a running `opencode serve` (http://127.0.0.1:4096); off turns it off
 //	HERDR_SOCKET        herdr's socket (herdr's own default); off turns herdr off
 //	DELEGATE_IN         herdr: question agents run in herdr panes while it answers; sindri: here
-//	COPILOT_BIN         GitHub Copilot CLI (~/.local/bin/copilot)
+//	COPILOT_BIN         GitHub Copilot CLI (~/.local/bin/copilot); off turns it off
 //	SINDRI_DB           tasks, goals, approvals (~/.local/state/yggdrasil/sindri.db)
 //	DELEGATE_MODEL      the model agents run on (sonnet)
 //	SINDRI_ASK_CWD      where question agents run (<root>/yggdrasil/workspace)

@@ -258,7 +258,10 @@ OpenCode's own config decides its tool permissions. `OPENCODE_URL=off` in
 `sindri.env` turns OpenCode off completely: Sindri neither reads its
 sessions nor starts agents in it, and it is not listed, raced, suggested or
 offered for a goal (a race pair naming it becomes the first two conduits
-that are on). When only one conduit
+that are on). `COPILOT_BIN=off` does the same for GitHub Copilot CLI: no
+agent starts or carries on in it, it is not a choice for the coding agent
+(`GET /v1/settings/coding-agent` lists the `engines` that are on, and a
+saved `copilot` reads as `claude`), and it is not raced. When only one conduit
 of the pair is up, the goal runs once on it, and the goal (`raceNote`) and
 the morning report say so. The morning report lists the races ready to pick,
 and picks nothing itself.

@@ -386,3 +386,23 @@ func TestOpencodeTurnedOffIsNotListedRacedOrSuggested(t *testing.T) {
 		t.Fatalf("chose OpenCode while it is off: %d", response.StatusCode)
 	}
 }
+
+func TestCopilotTurnedOffIsNotOfferedStartedOrRaced(t *testing.T) {
+	w, _ := newWork(t)
+	w.Agents.options.CopilotBin = "off"
+	_ = w.Store.SetSetting("coding-agent", CodingAgentSettings{Primary: "copilot"})
+	if got := w.CodingAgent(); got.Primary != "claude" || slices.Contains(got.Engines, "copilot") {
+		t.Fatalf("coding agent %+v", got)
+	}
+	for _, c := range w.conduitInfos() {
+		if c.Name == "copilot" {
+			t.Fatalf("listed Copilot while it is off: %+v", w.conduitInfos())
+		}
+	}
+	if pair := w.Races().Pair; slices.Contains(pair, "copilot") {
+		t.Fatalf("pair %v", pair)
+	}
+	if _, err := w.Agents.Start(StartRequest{Cwd: "demo", Prompt: "x", Engine: "copilot"}); err == nil || !strings.Contains(err.Error(), "Copilot is off") {
+		t.Fatalf("started Copilot while it is off: %v", err)
+	}
+}

@@ -264,6 +264,9 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	if !slices.Contains(Engines, engine) && (engine != "opencode" || m.opencode == nil) {
 		return nil, httpErr(400, "`engine` must be one of %s", strings.Join(Engines, ", "))
 	}
+	if engine == "copilot" && !m.CopilotOn() {
+		return nil, httpErr(400, "Copilot is off here (COPILOT_BIN=off)")
+	}
 	if engine != "claude" && request.NoTools {
 		return nil, httpErr(400, "`noTools` is for Claude only: Copilot and OpenCode have no way to start without their built-in tools and MCP servers")
 	}
@@ -722,6 +725,8 @@ func (m *Manager) Handoff(id, note, to string) (*Agent, error) {
 	switch {
 	case !slices.Contains(Engines, to):
 		return nil, httpErr(400, "`to` must be one of %s", strings.Join(Engines, ", "))
+	case to == "copilot" && !m.CopilotOn():
+		return nil, httpErr(409, "Copilot is off here (COPILOT_BIN=off)")
 	case to == from:
 		return nil, httpErr(409, "this agent already runs on %s", engineNames[from])
 	case a.NoTools:
@@ -1358,4 +1363,21 @@ func Summarise(a *Agent) map[string]any {
 	}
 	fields["pending"] = pending
 	return fields
+}
+
+// CopilotOn is whether GitHub Copilot CLI is turned on here: COPILOT_BIN=off
+// turns it off, so no agent starts or carries on in it.
+func (m *Manager) CopilotOn() bool {
+	return m.options.CopilotBin != "off"
+}
+
+// EnginesOn is the engines new agents may run on here.
+func (m *Manager) EnginesOn() []string {
+	var on []string
+	for _, engine := range Engines {
+		if engine != "copilot" || m.CopilotOn() {
+			on = append(on, engine)
+		}
+	}
+	return on
 }

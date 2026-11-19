@@ -34,6 +34,9 @@ const scheduledRetry = 30 * time.Minute
 // CodingAgentSettings say which CLI new agents run on.
 type CodingAgentSettings struct {
 	Primary string `json:"primary"` // claude or copilot
+	// Engines is the CLIs turned on here (COPILOT_BIN=off leaves Copilot
+	// out). Read only: it is never saved.
+	Engines []string `json:"engines,omitempty"`
 }
 
 // AutomationSettings say what Sindri does on its own.
@@ -104,6 +107,10 @@ type Work struct {
 func (w *Work) CodingAgent() CodingAgentSettings {
 	settings := CodingAgentSettings{Primary: "claude"}
 	w.Store.Setting("coding-agent", &settings)
+	settings.Engines = w.Agents.EnginesOn()
+	if !slices.Contains(settings.Engines, settings.Primary) {
+		settings.Primary = "claude"
+	}
 	return settings
 }
 
