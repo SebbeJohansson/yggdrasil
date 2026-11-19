@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"yggdrasil/internal/alert"
+	"yggdrasil/internal/call"
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/ntfy"
 	"yggdrasil/internal/part"
@@ -27,6 +28,20 @@ const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermo
 //	YGG_GJALLAR_URL   Gjallar (http://127.0.0.1:8774); GJALLAR_TOKEN is Ratatoskr's token there
 //	YGG_HERMODR_URL   Hermóðr, which tells you when Gjallar is down; HERMODR_TOKEN is Ratatoskr's token there
 //	NTFY_URL, NTFY_TOKEN  a phone push used when Gjallar is down and Hermóðr can't take it
+//
+// Watching you (you.go):
+//
+//	RATATOSKR_YOU          on (default) or off: off sends nothing and reads nothing
+//	RATATOSKR_YOU_EVERY    how often to look (5m)
+//	RATATOSKR_YOU_STRETCH  a run of meetings this long with no real gap (4h)
+//	RATATOSKR_YOU_BREAK    the shortest gap that counts as a real one (15m)
+//	RATATOSKR_YOU_LATE     a session of yours still active after this is working late (23:00)
+//	RATATOSKR_YOU_PACKED   percent of the week's working hours in meetings that makes it packed (60)
+//	RATATOSKR_YOU_HOURS    your working hours, Monday to Friday (09:00-17:00)
+//	RATATOSKR_YOU_PUSH     off (default): listed in the widget only; on: Hermóðr may push it too
+//	TIME_ZONE              yours (Europe/Stockholm)
+//	YGG_NORN_URL           Norn; NORN_TOKEN is Ratatoskr's token there (the work calendar)
+//	YGG_SINDRI_URL         Sindri; SINDRI_TOKEN is Ratatoskr's token there (your sessions and agents)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("RATATOSKR_TOKENS")
 	if err != nil {
@@ -49,7 +64,45 @@ func Main(ctx context.Context) error {
 			tell.NewHermodr(where.URL("hermodr"), env.String("HERMODR_TOKEN", "")),
 			tell.Direct{Push: ntfy.New(env.String("NTFY_URL", ""), env.String("NTFY_TOKEN", ""))},
 		})
+	if r.You, err = you(); err != nil {
+		return err
+	}
 	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))
 	r.Mount(p, env.Duration("RATATOSKR_EVERY", 30*time.Second))
 	return p.Run(ctx, where.Addr(Name))
+}
+
+// you reads the settings for watching you; nil when RATATOSKR_YOU is off.
+func you() (*You, error) {
+	switch mode := env.String("RATATOSKR_YOU", "on"); mode {
+	case "off":
+		return nil, nil
+	case "on":
+	default:
+		return nil, fmt.Errorf("RATATOSKR_YOU is on or off, not %q", mode)
+	}
+	rhythm := DefaultRhythm()
+	zone, err := time.LoadLocation(env.String("TIME_ZONE", "Europe/Stockholm"))
+	if err != nil {
+		return nil, fmt.Errorf("TIME_ZONE: %w", err)
+	}
+	rhythm.Zone = zone
+	rhythm.Stretch = env.Duration("RATATOSKR_YOU_STRETCH", rhythm.Stretch)
+	rhythm.Break = env.Duration("RATATOSKR_YOU_BREAK", rhythm.Break)
+	if rhythm.Late, err = ParseClock(env.String("RATATOSKR_YOU_LATE", "23:00")); err != nil {
+		return nil, fmt.Errorf("RATATOSKR_YOU_LATE: %w", err)
+	}
+	if rhythm.DayFrom, rhythm.DayTo, err = ParseHours(env.String("RATATOSKR_YOU_HOURS", "09:00-17:00")); err != nil {
+		return nil, fmt.Errorf("RATATOSKR_YOU_HOURS: %w", err)
+	}
+	if rhythm.Packed = env.Int("RATATOSKR_YOU_PACKED", rhythm.Packed); rhythm.Packed < 1 || rhythm.Packed > 100 {
+		return nil, fmt.Errorf("RATATOSKR_YOU_PACKED is a percent, 1 to 100, not %d", rhythm.Packed)
+	}
+	rhythm.Push = env.String("RATATOSKR_YOU_PUSH", "off") == "on"
+	y := NewYou(rhythm,
+		call.New("norn", where.URL("norn"), env.String("NORN_TOKEN", ""), 10*time.Second),
+		call.New("sindri", where.URL("sindri"), env.String("SINDRI_TOKEN", ""), 10*time.Second),
+		call.New("hermodr", where.URL("hermodr"), env.String("HERMODR_TOKEN", ""), 30*time.Second))
+	y.Every = env.Duration("RATATOSKR_YOU_EVERY", y.Every)
+	return y, nil
 }

@@ -11,6 +11,10 @@
 //   - It beats to Gjallar every minute, and Gjallar raises "ratatoskr is
 //     silent" when the beats stop. Each watches the other.
 //
+// It also watches you, the same way: a long run of meetings, working late, a
+// packed week. Those are never faults: one quiet message through Hermóðr at
+// most, never an alert (you.go).
+//
 // Ratatoskr runs outside the compose project (a systemd user unit), so a
 // broken `docker compose up` cannot take it down with everything else.
 //
@@ -18,6 +22,7 @@
 //
 //	GET /health
 //	GET /v1/status   every part as last seen, and every check
+//	GET /v1/you      your own rhythm as last seen (you.go)
 package ratatoskr
 
 import (
@@ -64,6 +69,8 @@ type Ratatoskr struct {
 	// Fallback tells you Gjallar is down: Hermóðr, then ntfy straight.
 	Fallback tell.Teller
 	HTTP     *http.Client
+	// You watches your own rhythm (you.go); nil is off.
+	You *You
 
 	watch        *watch.Watch
 	mu           sync.Mutex
@@ -120,7 +127,11 @@ func Allowance(every time.Duration) time.Duration {
 // Mount adds the routes and loops to the part.
 func (r *Ratatoskr) Mount(p *part.Part, every time.Duration) {
 	p.Handle("GET /v1/status", r.status)
+	p.Handle("GET /v1/you", r.You.serve)
 	p.Loop("check", every, r.check)
+	if r.You != nil {
+		p.Loop("you", r.You.Every, r.You.Round)
+	}
 	p.Loop("heartbeat", time.Minute, func(ctx context.Context) error {
 		err := r.Gjallar.Heartbeat(ctx)
 		if err == alert.ErrOff {

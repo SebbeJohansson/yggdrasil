@@ -167,6 +167,11 @@ ensure() {
 for part in gjallar ratatoskr huginn dellingr sindri; do
 	ensure "$part.env" HERMODR_TOKEN "$(part_token hermodr "$part")"
 done
+# Ratatoskr also watches your own rhythm: your work calendar from Norn, your
+# sessions and agents from Sindri (README, Ratatoskr). RATATOSKR_YOU=off stops it.
+ensure ratatoskr.env NORN_TOKEN "$(part_token norn ratatoskr)"
+ensure ratatoskr.env SINDRI_TOKEN "$(part_token sindri ratatoskr)"
+ensure ratatoskr.env TIME_ZONE Europe/Stockholm
 
 # Huginn and Dellingr call Norn and Sindri with tokens of their own. After a
 # token is added there, restart Norn and Sindri (docker compose up -d, and

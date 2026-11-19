@@ -19,6 +19,10 @@ info:
       gjallarUp false.
     - Beat to Gjallar (POST /v1/heartbeat) every minute.
     - Run outside the compose project.
+    - Watching you (GET /v1/you) is never a fault: nothing about it goes to
+      Gjallar. At most one message per pattern per day (the week: per
+      week), through Hermóðr at priority low with hold, never during quiet
+      hours, and with times only: no meeting subjects, no people.
 servers:
   - url: http://127.0.0.1:8775
 security:
@@ -69,6 +73,39 @@ paths:
                         checkedAt: { type: string, format: date-time }
                   checks: { type: array, items: { $ref: "#/components/schemas/Check" } }
                   gjallarUp: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/you:
+    get:
+      summary: >-
+        Your own rhythm as last seen, for a widget to show on hover: a long run
+        of meetings with no real gap (stretch), a session of yours still active
+        late (late), most of the week's working hours in meetings (week). Each
+        pattern is active or not, since when, and the next free time. on is
+        false when RATATOSKR_YOU is off.
+      responses:
+        "200":
+          description: What it sees.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [on, patterns]
+                properties:
+                  on: { type: boolean }
+                  patterns:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, active]
+                      properties:
+                        name: { type: string, enum: [stretch, late, week] }
+                        active: { type: boolean }
+                        since: { type: string, format: date-time }
+                        nextGap: { type: string, format: date-time, description: "stretch: when the run of meetings ends. week: the longest free block of working hours still ahead." }
+                        nextGapEnds: { type: string, format: date-time, description: "week: when that free block ends." }
+                        toldAt: { type: string, format: date-time, description: "When you were told of it today (the week: this week)." }
+                  checkedAt: { type: string, format: date-time }
+                  errors: { type: array, items: { type: string }, description: "Sources it could not read last time." }
         "401": { $ref: "#/components/responses/Unauthorized" }
 components:
   securitySchemes:

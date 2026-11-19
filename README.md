@@ -165,12 +165,47 @@ to ntfy when Hermóðr can't take it), at most once per alert every 15 minutes.
 | Route | What it does |
 | --- | --- |
 | `GET /v1/status` | `{ parts, checks, gjallarUp }`: every part as last seen, and every check. The widget reads this directly, so it can show "Gjallar is down" without Gjallar |
+| `GET /v1/you` | `{ on, patterns, checkedAt?, errors? }`: each of `stretch`, `late` and `week` with `active`, `since`, `nextGap` (and `nextGapEnds`) and `toldAt`, for a widget to show on hover |
 
 It checks the parts in `RATATOSKR_WATCH` every 30 s, at their `YGG_<PART>_URL`. Down is `down:<part>`
 (critical). A loop that hasn't run within three of its intervals plus a
 minute is `stalled:<part>:<loop>` (warning). A loop whose last run failed is
 `failing:<part>:<loop>` (warning), with the error as the detail; it resolves
 after the loop runs cleanly again.
+
+It watches you the same way, every 5 minutes, and none of it is a fault:
+nothing goes to Gjallar.
+
+| Pattern | Active when |
+| --- | --- |
+| `stretch` | you are inside a run of meetings with no gap of `RATATOSKR_YOU_BREAK` (15m) or more, `RATATOSKR_YOU_STRETCH` (4h) long or more |
+| `late` | it is past `RATATOSKR_YOU_LATE` (23:00, until 05:00) and one of your own Claude Code sessions changed in the last 10 minutes, or you just answered a Sindri agent that asked you something (an agent working on its own does not count) |
+| `week` | meetings fill `RATATOSKR_YOU_PACKED` (60) percent or more of the working hours (`RATATOSKR_YOU_HOURS`, 09:00-17:00, Monday to Friday) from the start of today to Friday |
+
+When one starts, it sends one quiet message through Hermóðr: priority low,
+held through meetings, listed in the widget only, worded as a suggestion
+("The next gap is at 14:00, a good moment to step away from the screen").
+At most one per pattern per day (`week`: per week), read back from
+Hermóðr's history after a restart, and none while Hermóðr says it is quiet
+hours (a late evening inside `QUIET_HOURS` is seen on `GET /v1/you` but never
+sent). No counts, no scores. Messages carry times only: meeting subjects and
+people never leave Norn. It reads Norn's `GET /v1/calendar` (the work
+calendar; declined, free, out-of-office and all-day events left out) and
+Sindri's `GET /v1/sessions/recent` and `GET /v1/agents`, with `NORN_TOKEN` and
+`SINDRI_TOKEN` in `ratatoskr.env` (`scripts/install.sh` adds them; restart
+Norn and Sindri after).
+
+| Setting (`ratatoskr.env`) | Default | What it does |
+| --- | --- | --- |
+| `RATATOSKR_YOU` | `on` | `off`: reads nothing, sends nothing, and `GET /v1/you` says `on: false` |
+| `RATATOSKR_YOU_EVERY` | `5m` | how often it looks; the `you` loop on `/health` |
+| `RATATOSKR_YOU_STRETCH` | `4h` | how long a run of meetings is a stretch |
+| `RATATOSKR_YOU_BREAK` | `15m` | the shortest gap that counts as a real break |
+| `RATATOSKR_YOU_LATE` | `23:00` | when working late starts |
+| `RATATOSKR_YOU_PACKED` | `60` | the percent of working hours in meetings that makes a week packed |
+| `RATATOSKR_YOU_HOURS` | `09:00-17:00` | your working hours, Monday to Friday |
+| `RATATOSKR_YOU_PUSH` | `off` | `on` lets Hermóðr push these to your phone too (with `NTFY_MIN=low` in `hermodr.env`, since they are low) |
+| `TIME_ZONE` | `Europe/Stockholm` | yours |
 
 ### Munin
 
