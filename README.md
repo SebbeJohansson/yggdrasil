@@ -277,6 +277,23 @@ a winner, a draft goal of that kind that does not race shows the conduit
 that wins it most (`suggestion`; none on a tie). It only suggests: you
 choose with `PUT /v1/goals/{id}/conduit`.
 
+### Sindri: your prompts, kept
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/sessions/prompts?from=&to=` | anyone | `{ prompts, oldest }`: your own prompts in your Claude Code sessions in a range (epoch ms, a day by default, at most 93 days), oldest first: `{ at, session, title, cwd?, project?, branch?, prompt }` |
+
+Claude Code deletes its transcripts after `cleanupPeriodDays` (30 by
+default), so Sindri keeps a small index of what you typed in its own store
+(`session_prompts`): the time from each transcript line, the session, its
+title, folder and branch, and the prompt clipped to 200 characters. Never
+Claude's answers or tool output, and not Sindri's own agents. A loop reads
+new transcript lines every 3 minutes, from where it left off; the first run
+after start reads every transcript still on disk. The same session and time
+is kept once. Norn's Rewind reads it. It is kept forever unless
+`SINDRI_PROMPTS_KEEP` (a duration, e.g. `8760h`) is set in `sindri.env`.
+Goal tasks on `GET /v1/goals` carry `startedAt` and `mergedAt`.
+
 ### Veðrfölnir
 
 The same shapes as my-agent's runner, so my-widget's pages read either.
@@ -439,6 +456,38 @@ minutes, nothing fits, or a save point still waits to be picked up. `link` is
 the dashboard path that does it: the goal with its agent open (on its review
 for a review), `/dashboard/races/<goal>`, or `/dashboard/inbox#promises`. It
 all stays on this machine: nothing here goes to Claude.
+
+### Norn: Rewind
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/rewind?from=&to=` | anyone | `{ from, to, entries, unavailable }`: one timeline (epoch ms; today in `TIME_ZONE` by default, at most 31 days): `{ at, end?, kind, title, detail?, link?, source }` in time order |
+| `POST /v1/rewind/ask` | anyone | `{ q }`: "Tuesday afternoon", "yesterday at 3", "when did I last work on races?" → `{ from, to, focus, entries, said, words, fromModel, unavailable }`, the entries that match marked `match` |
+
+Built when asked from what Yggdrasil already keeps; nothing is copied. How
+far back each source reaches:
+
+| Source | Kinds | How far back |
+| --- | --- | --- |
+| Outlook and Google calendars | `meeting`, `break` | any range: Graph's calendarView and Google Calendar are asked for it when it is older than the day Norn keeps (kept 5 minutes per range); declined, all-day and free meetings left out |
+| Sindri's prompt index | `session`, `prompt` | from the oldest transcript on disk when Sindri first indexed, then forever (`SINDRI_PROMPTS_KEEP`) |
+| Sindri's goals and agents | `goal`, `merge`, `agent` | forever: goals made, started, merged, closed; agents outside a goal |
+| your messages to Norn and its agents | `chat` | forever |
+| what Norn learned | `memory` | until you delete it |
+| promises | `promise` | open ones forever, done or dropped ones 60 days |
+| save points | `savepoint` | the last 200 |
+| reply drafts you used | `reply` | the last 500 |
+| Obsidian notes changed | `note` | titles and links only, never note text. A note's last change always; earlier changes from when Norn first ran with Rewind (it notes each note's modification time every 5 minutes) |
+
+A burst (your prompts in one session, or messages in one conversation, with
+pauses of at most 10 minutes) is one entry with the first and the last, each
+clipped to 200 characters. A question goes to the local model only
+(`CHAT_URL`, never Claude or Sindri), which only splits it into the words for
+when and the words to look for; Norn turns the when into a range in
+`TIME_ZONE` ("Tuesday" is the latest Tuesday, "i tisdags" and "last Tuesday"
+the one before today, "at 3" is 14:00-16:00). Without a model the question is
+read as it is. Words with no day look back 31 days and send only the matches,
+`focus` on the latest.
 
 ### Dellingr
 

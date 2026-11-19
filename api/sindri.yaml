@@ -985,6 +985,45 @@ paths:
                     lastText: { type: string }
                     working: { type: boolean, description: Changed in the last two minutes and the turn has not ended. }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/sessions/prompts:
+    get:
+      summary: >-
+        Your own prompts in your Claude Code sessions in a range, oldest first,
+        for Norn's Rewind. Read from Sindri's index (session_prompts in its
+        store), which a loop fills every 3 minutes from new transcript lines,
+        and on start from every transcript still on disk, so prompts outlive
+        Claude Code's cleanup of old transcripts. Only what you typed, clipped
+        to 200 characters, with its time, session, title, folder and branch;
+        never Claude's answers. Sindri's own agents are left out. Kept forever
+        unless SINDRI_PROMPTS_KEEP (a duration) is set. At most 5000 a call.
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Epoch ms; a day ago by default." }
+        - { name: to, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Epoch ms, not included; now by default. At most 93 days after from." }
+      responses:
+        "200":
+          description: The prompts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [prompts, oldest]
+                properties:
+                  prompts:
+                    type: array
+                    items:
+                      type: object
+                      required: [at, session, title, prompt]
+                      properties:
+                        at: { type: integer, description: The transcript line's timestamp, epoch ms. }
+                        session: { type: string }
+                        title: { type: string, description: Claude's title for the session, else your first prompt. }
+                        cwd: { type: string }
+                        project: { type: string }
+                        branch: { type: string }
+                        prompt: { type: string }
+                  oldest: { type: [integer, "null"], description: The oldest prompt the index holds; null when empty. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/sessions/opencode/permissions/{id}:
     post:
       summary: Allow once, or reject, a permission an OpenCode session asks for.
@@ -1579,6 +1618,7 @@ components:
         label: { type: [string, "null"] }
         lastActivity: { type: integer }
         merged: { type: boolean }
+        mergedAt: { type: integer, description: When the agent's branch merged; left out when it has not. }
     GoalImage:
       type: object
       required: [id, goal, at, name, mediaType, kind, note, bytes]
@@ -1669,6 +1709,8 @@ components:
         merged: { type: boolean }
         lastActivity: { type: integer }
         result: { type: [string, "null"] }
+        startedAt: { type: integer, description: When the task was handed to its agent (epoch ms). }
+        mergedAt: { type: integer, description: When its branch merged (epoch ms); left out when it has not. }
     RacePick:
       type: object
       required: [at, goal, kind, pair, winner]

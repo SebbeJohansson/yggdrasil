@@ -103,6 +103,8 @@ type Norn struct {
 	Promises *Promises
 	// Gap is where the gap's waiting things come from (gap.go).
 	Gap *GapSources
+	// Rewind is the timeline's state (rewind.go).
+	Rewind rewindState
 	// suggestions remembers what the improve check said about each sentence.
 	suggestions *SuggestionCache
 	logf        func(format string, args ...any)
@@ -163,6 +165,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountSavePoints(p)
 	n.mountPromises(p)
 	n.mountGap(p)
+	n.mountRewind(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

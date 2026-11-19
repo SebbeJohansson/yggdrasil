@@ -1165,6 +1165,79 @@ paths:
               schema: { $ref: "#/components/schemas/MeetingPrep" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/rewind:
+    get:
+      summary: >-
+        Rewind: one timeline for a range, built when asked from what Yggdrasil
+        already keeps, in time order. Meetings from both calendars (read from
+        Graph and Google for that range when it is older than the day Norn
+        keeps; declined, all-day and free ones left out), save points,
+        promises made and kept, your messages to Norn and its agents (a burst
+        per conversation), what Norn learned, reply drafts you used, Sindri's
+        goals (made, started, merged, closed), agents outside goals, your own
+        Claude Code sessions and prompts (Sindri's index; a burst of prompts
+        with pauses of at most 10 minutes is one entry with the first and the
+        last), and Obsidian notes changed (titles and links, never note text).
+        Prompts and messages are clipped to 200 characters. A source that
+        could not be read is named in unavailable. Stays on this machine.
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Epoch ms; the start of today in TIME_ZONE by default." }
+        - { name: to, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Epoch ms, not included; a day after from by default. At most 31 days after from." }
+      responses:
+        "200":
+          description: The timeline.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, entries, unavailable]
+                properties:
+                  from: { type: integer }
+                  to: { type: integer }
+                  entries: { type: array, items: { $ref: "#/components/schemas/RewindEntry" } }
+                  unavailable: { type: array, items: { type: string }, description: "The sources that could not be read: calendar:work, calendar:personal, norn, sindri, obsidian." }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/rewind/ask:
+    post:
+      summary: >-
+        A question about the past in plain words ("Tuesday afternoon",
+        "yesterday at 3", "when did I last work on races?"). The local model
+        only (never Claude or Sindri) splits it into the words for when and
+        the words to look for; Norn turns the when into a range in TIME_ZONE.
+        Without a model, the question is read for date words and its other
+        words are looked for. A named time of day gives its day's timeline
+        with the entries in that time marked; words mark the entries holding
+        them; words with no day look back 31 days and send only the matches.
+        focus is where to look first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [q]
+              properties:
+                q: { type: string, minLength: 1, maxLength: 300 }
+      responses:
+        "200":
+          description: The range and what matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, focus, entries, said, words, fromModel, unavailable]
+                properties:
+                  from: { type: integer, description: The range asked about, epoch ms. }
+                  to: { type: integer }
+                  focus: { type: integer, description: "Where to look first: the first match in a dated range, else the latest match; 0 when nothing matched." }
+                  entries: { type: array, items: { $ref: "#/components/schemas/RewindEntry" } }
+                  said: { type: string, description: "The range and the words in plain words: \"Tuesday 18 November, 14:00-16:00\"." }
+                  words: { type: array, items: { type: string } }
+                  fromModel: { type: boolean }
+                  unavailable: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/savepoints:
     get:
       summary: >-
@@ -1869,6 +1942,18 @@ components:
         link: { type: string, description: "The dashboard path that does it: the goal with its part open (on its review for review), the race, or /dashboard/inbox#promises." }
         goalId: { type: integer }
         promiseId: { type: integer }
+    RewindEntry:
+      type: object
+      required: [at, kind, title, source]
+      properties:
+        at: { type: integer, description: Epoch ms. }
+        end: { type: integer, description: "When it ended: a meeting, a session's last prompt, a burst's last." }
+        kind: { type: string, enum: [meeting, break, session, prompt, goal, merge, agent, promise, note, chat, savepoint, memory, reply] }
+        title: { type: string }
+        detail: { type: string }
+        link: { type: string, description: "A dashboard path, or obsidian:// for a note." }
+        source: { type: string, description: "calendar:work, calendar:personal, norn, sindri or obsidian." }
+        match: { type: boolean, description: "On POST /v1/rewind/ask: it holds what was asked about." }
     SavePoint:
       type: object
       required: [id, at, meeting, meetingId, meetingStart, meetingEnd, title, link, goal, session, readyAt, doneAt]

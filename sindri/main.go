@@ -111,6 +111,7 @@ func Main(ctx context.Context) error {
 	work.Transcripts = filepath.Join(claudeDir, "projects")
 	s := &Sindri{Agents: agents, Root: agents.roots[0], Work: work,
 		ClaudeProjects: env.String("CLAUDE_PROJECTS", filepath.Join(claudeDir, "projects")),
+		PromptsKeep:    env.Duration("SINDRI_PROMPTS_KEEP", 0),
 		Sessions:       NewAgentSessions(ClaudeRoot{ClaudeDir: claudeDir, SocketDir: socketDir}, opencode, herdr)}
 	s.Sessions.Agents = agents
 	s.Mount(p)
