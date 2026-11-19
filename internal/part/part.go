@@ -40,6 +40,7 @@ type Part struct {
 	started time.Time
 	logger  *log.Logger
 	routes  []string
+	tricks  tricks
 }
 
 // New makes a part. tokens maps a token to its caller's name; origins are the
@@ -53,6 +54,7 @@ func New(name string, tokens map[string]string, origins []string) *Part {
 		started: time.Now(),
 		logger:  log.New(log.Writer(), "["+name+"] ", log.LstdFlags),
 	}
+	p.tricks.now = time.Now
 	p.mux.HandleFunc("GET /health", p.health)
 	p.routes = append(p.routes, "GET /health")
 	if spec := api.Spec(name); spec != nil {
@@ -62,6 +64,7 @@ func New(name string, tokens map[string]string, origins []string) *Part {
 		})
 		p.routes = append(p.routes, "GET /openapi.yaml")
 	}
+	p.mountTricks()
 	return p
 }
 
@@ -124,6 +127,13 @@ func (p *Part) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if delay := p.slowFor(r.URL.Path); delay > 0 && r.Method != http.MethodOptions {
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
+	}
 	p.mux.ServeHTTP(w, r)
 }
 
@@ -133,6 +143,7 @@ type Loop struct {
 	Name  string
 	Every time.Duration
 	run   func(context.Context) error
+	part  *Part
 
 	mu        sync.Mutex
 	lastRunAt time.Time
@@ -141,12 +152,19 @@ type Loop struct {
 
 // Loop adds work to run now and then every `every` once the part runs.
 func (p *Part) Loop(name string, every time.Duration, run func(context.Context) error) *Loop {
-	loop := &Loop{Name: name, Every: every, run: run}
+	loop := &Loop{Name: name, Every: every, run: run, part: p}
 	p.loops = append(p.loops, loop)
 	return loop
 }
 
 func (l *Loop) once(ctx context.Context, logger *log.Logger) {
+	if l.part != nil && l.part.loopTricked(l.Name) {
+		// Loki's trick: the run is skipped and fails, so Ratatoskr should see it.
+		l.mu.Lock()
+		l.lastRunAt, l.lastError = time.Now(), TrickError
+		l.mu.Unlock()
+		return
+	}
 	err := func() (err error) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
@@ -200,15 +218,28 @@ type Health struct {
 
 func (p *Part) health(w http.ResponseWriter, _ *http.Request) {
 	health := Health{OK: true, Part: p.Name, Version: Version, StartedAt: p.started, Loops: map[string]LoopHealth{}}
+	trick := p.tricks.active()
 	for _, loop := range p.loops {
 		loop.mu.Lock()
 		entry := LoopHealth{EverySeconds: int(loop.Every / time.Second), LastError: loop.lastError}
+		switch {
+		case trick != nil && trick.Kind == TrickLoop && trick.Loop == loop.Name:
+			entry.LastError = TrickError
+		case entry.LastError == TrickError:
+			// The trick is over: a failure it caused is not the loop's.
+			entry.LastError = ""
+		}
 		if !loop.lastRunAt.IsZero() {
 			at := loop.lastRunAt
 			entry.LastRunAt = &at
 		}
 		loop.mu.Unlock()
 		health.Loops[loop.Name] = entry
+	}
+	if trick != nil && trick.Kind == TrickHealth {
+		health.OK = false
+		JSON(w, http.StatusServiceUnavailable, health)
+		return
 	}
 	JSON(w, http.StatusOK, health)
 }
