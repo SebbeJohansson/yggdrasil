@@ -42,6 +42,14 @@ func (m *Manager) UseOpencode(c *OpencodeClient) {
 	m.opencode = c
 }
 
+// OpencodeSetUp is whether OpenCode is set up here at all (OPENCODE_URL is not
+// off), whether or not its server answers.
+func (m *Manager) OpencodeSetUp() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.opencode != nil
+}
+
 // OpencodeOn is whether OpenCode agents can start: a server is set up and
 // its last read worked.
 func (m *Manager) OpencodeOn() bool {

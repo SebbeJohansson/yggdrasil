@@ -251,7 +251,11 @@ every route. Races:
 
 The conduits are Claude Code, OpenCode and Copilot CLI. An OpenCode agent is
 a session of the `opencode serve` at `OPENCODE_URL`, in its own worktree;
-OpenCode's own config decides its tool permissions. When only one conduit
+OpenCode's own config decides its tool permissions. `OPENCODE_URL=off` in
+`sindri.env` turns OpenCode off completely: Sindri neither reads its
+sessions nor starts agents in it, and it is not listed, raced, suggested or
+offered for a goal (a race pair naming it becomes the first two conduits
+that are on). When only one conduit
 of the pair is up, the goal runs once on it, and the goal (`raceNote`) and
 the morning report say so. The morning report lists the races ready to pick,
 and picks nothing itself.

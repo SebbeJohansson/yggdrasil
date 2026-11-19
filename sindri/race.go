@@ -77,6 +77,9 @@ type Conduit struct {
 	Engine string
 	// Up is whether it can start an agent now.
 	Up func(m *Manager) bool
+	// Off is whether it is turned off on this machine (OPENCODE_URL=off): then
+	// it is not listed, raced, suggested or chosen at all. nil is never off.
+	Off func(m *Manager) bool
 }
 
 func binUp(bin string) bool {
@@ -91,7 +94,7 @@ func binUp(bin string) bool {
 // entry, with an engine the manager starts.
 var Conduits = []Conduit{
 	{Name: "claude", Label: "Claude Code", Engine: "claude", Up: func(m *Manager) bool { return binUp(m.options.ClaudeBin) }},
-	{Name: "opencode", Label: "OpenCode", Engine: "opencode", Up: func(m *Manager) bool { return m.OpencodeOn() }},
+	{Name: "opencode", Label: "OpenCode", Engine: "opencode", Up: func(m *Manager) bool { return m.OpencodeOn() }, Off: func(m *Manager) bool { return m == nil || !m.OpencodeSetUp() }},
 	{Name: "copilot", Label: "Copilot CLI", Engine: "copilot", Up: func(m *Manager) bool { return binUp(m.options.CopilotBin) }},
 }
 
@@ -102,6 +105,25 @@ func conduitNamed(name string) *Conduit {
 		}
 	}
 	return nil
+}
+
+// conduit is the conduit with that name, unless it is unknown or turned off here.
+func (w *Work) conduit(name string) *Conduit {
+	if c := conduitNamed(name); c != nil && (c.Off == nil || !c.Off(w.Agents)) {
+		return c
+	}
+	return nil
+}
+
+// conduits is every conduit that is not turned off here.
+func (w *Work) conduits() []Conduit {
+	var on []Conduit
+	for _, c := range Conduits {
+		if w.conduit(c.Name) != nil {
+			on = append(on, c)
+		}
+	}
+	return on
 }
 
 func conduitLabel(name string) string {
@@ -125,10 +147,18 @@ type RaceSettings struct {
 	MinPicks int      `json:"minPicks"`
 }
 
-// Races is the race settings; Claude Code against OpenCode and 5 picks until set.
+// Races is the race settings; Claude Code against OpenCode and 5 picks until
+// set. A pair with a conduit turned off here is the first two that are on.
 func (w *Work) Races() RaceSettings {
 	settings := RaceSettings{Pair: []string{"claude", "opencode"}, MinPicks: 5}
 	w.Store.Setting("races", &settings)
+	if len(settings.Pair) != 2 || w.conduit(settings.Pair[0]) == nil || w.conduit(settings.Pair[1]) == nil {
+		on := w.conduits()
+		settings.Pair = []string{}
+		for _, c := range on[:min(2, len(on))] {
+			settings.Pair = append(settings.Pair, c.Name)
+		}
+	}
 	return settings
 }
 
@@ -500,7 +530,7 @@ func raceLines(goals []GoalView) (lines []string, ready bool, rest []GoalView) {
 func (w *Work) laneRequest(goal *Goal, lane string, request *CodeRequest) {
 	if lane == "" {
 		lane = w.Store.raceOf(goal.ID).conduit
-		if c := conduitNamed(lane); c != nil && c.Up(w.Agents) {
+		if c := w.conduit(lane); c != nil && c.Up(w.Agents) {
 			request.Engine = c.Engine
 		}
 		return
@@ -536,7 +566,7 @@ func (w *Work) StartRace(id int64) ([]Started, []string, string, error) {
 	pair := w.Races().Pair
 	var up, down []string
 	for _, name := range pair {
-		if c := conduitNamed(name); c != nil && c.Up(w.Agents) {
+		if c := w.conduit(name); c != nil && c.Up(w.Agents) {
 			up = append(up, name)
 		} else {
 			down = append(down, conduitLabel(name))
@@ -747,7 +777,7 @@ func (w *Work) Suggest(kind string) *ConduitSuggestion {
 		}
 	}
 	best := leader(stats, minPicks)
-	if best == "" {
+	if best == "" || w.conduit(best) == nil {
 		return nil
 	}
 	return &ConduitSuggestion{Conduit: best, Kind: kind, Wins: stats.Wins[best], Picks: stats.Picks - stats.Neither}
@@ -756,8 +786,9 @@ func (w *Work) Suggest(kind string) *ConduitSuggestion {
 // --- routes ----------------------------------------------------------------------------
 
 func (w *Work) conduitInfos() []ConduitInfo {
-	infos := make([]ConduitInfo, len(Conduits))
-	for i, c := range Conduits {
+	on := w.conduits()
+	infos := make([]ConduitInfo, len(on))
+	for i, c := range on {
 		infos[i] = ConduitInfo{Name: c.Name, Label: c.Label, Up: c.Up(w.Agents)}
 	}
 	return infos
@@ -809,9 +840,10 @@ func (w *Work) mountRaces(p *part.Part) {
 		var body struct {
 			Conduit *string `json:"conduit"`
 		}
-		if err := part.Decode(r, &body); err != nil || body.Conduit == nil || (*body.Conduit != "" && conduitNamed(*body.Conduit) == nil) {
-			names := make([]string, len(Conduits))
-			for i, c := range Conduits {
+		if err := part.Decode(r, &body); err != nil || body.Conduit == nil || (*body.Conduit != "" && w.conduit(*body.Conduit) == nil) {
+			on := w.conduits()
+			names := make([]string, len(on))
+			for i, c := range on {
 				names[i] = c.Name
 			}
 			part.Error(rw, http.StatusBadRequest, "`conduit` must be one of "+strings.Join(names, ", ")+", or \"\" for the default")
@@ -885,8 +917,8 @@ func (w *Work) mountRaces(p *part.Part) {
 		}
 		settings := w.Races()
 		if body.Pair != nil {
-			if len(body.Pair) != 2 || body.Pair[0] == body.Pair[1] || conduitNamed(body.Pair[0]) == nil || conduitNamed(body.Pair[1]) == nil {
-				part.Error(rw, http.StatusBadRequest, "`pair` must be two different conduits")
+			if len(body.Pair) != 2 || body.Pair[0] == body.Pair[1] || w.conduit(body.Pair[0]) == nil || w.conduit(body.Pair[1]) == nil {
+				part.Error(rw, http.StatusBadRequest, "`pair` must be two different conduits that are turned on here")
 				return
 			}
 			settings.Pair = body.Pair

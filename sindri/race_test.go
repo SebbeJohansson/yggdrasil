@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -164,7 +165,8 @@ func TestNeitherRemovesBothBranchesAndClosesTheGoal(t *testing.T) {
 }
 
 func TestARaceWithOneConduitUpRunsOnceAndSaysSo(t *testing.T) {
-	w, _ := newWork(t) // OpenCode is off here, so only Claude Code is up
+	w, _ := newWork(t)
+	w.Agents.UseOpencode(&OpencodeClient{BaseURL: "http://127.0.0.1:1"}) // set up, but not answering: only Claude Code is up
 	goal, _ := w.Store.AddGoal("Add a work file", []string{"demo"}, "manual", "", "goal-1")
 	_ = w.Store.SetGoalRace(goal.ID, true)
 	started, _, note, err := w.StartRace(goal.ID)
@@ -184,6 +186,7 @@ func TestARaceWithOneConduitUpRunsOnceAndSaysSo(t *testing.T) {
 
 func TestASuggestionNeedsEnoughPicksAndAClearWinner(t *testing.T) {
 	w, _ := newWork(t)
+	w.Agents.UseOpencode(&OpencodeClient{BaseURL: "http://127.0.0.1:1"})
 	pick := func(goal int64, kind, winner string) {
 		t.Helper()
 		if _, err := w.Store.db.Exec(`INSERT INTO race_picks (at, goal_id, kind, pair, winner) VALUES (1, ?, ?, '["claude","opencode"]', ?)`, goal, kind, winner); err != nil {
@@ -232,6 +235,7 @@ func TestASuggestionNeedsEnoughPicksAndAClearWinner(t *testing.T) {
 
 func TestOnlyTheOwnerMarksRacesAndPicks(t *testing.T) {
 	w, _ := newWork(t)
+	w.Agents.UseOpencode(&OpencodeClient{BaseURL: "http://127.0.0.1:1"})
 	goal, _ := w.Store.AddGoal("A goal", []string{"demo"}, "manual", "", "goal-1")
 	p := part.New(Name, contracttest.Tokens(), nil)
 	(&Sindri{Agents: w.Agents, Root: w.Agents.roots[0], Work: w}).Mount(p)
@@ -345,5 +349,40 @@ func TestAnAgentRunsInOpencodeInItsOwnWorktree(t *testing.T) {
 	}
 	if _, err := m.Merge(a.ID); err == nil {
 		t.Fatalf("merged while its turn runs")
+	}
+}
+
+func TestOpencodeTurnedOffIsNotListedRacedOrSuggested(t *testing.T) {
+	w, _ := newWork(t) // no OpencodeClient: OPENCODE_URL=off
+	for _, c := range w.conduitInfos() {
+		if c.Name == "opencode" {
+			t.Fatalf("listed OpenCode while it is off: %+v", w.conduitInfos())
+		}
+	}
+	if pair := w.Races().Pair; slices.Contains(pair, "opencode") || len(pair) != 2 {
+		t.Fatalf("pair %v", pair)
+	}
+	for i := range 6 {
+		if _, err := w.Store.db.Exec(`INSERT INTO race_picks (at, goal_id, kind, pair, winner) VALUES (1, ?, 'bugfix', '["claude","opencode"]', 'opencode')`, 200+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s := w.Suggest("bugfix"); s != nil {
+		t.Fatalf("suggested OpenCode while it is off: %+v", s)
+	}
+	goal, _ := w.Store.AddGoal("A goal", []string{"demo"}, "manual", "", "goal-1")
+	p := part.New(Name, contracttest.Tokens(), nil)
+	(&Sindri{Agents: w.Agents, Root: w.Agents.roots[0], Work: w}).Mount(p)
+	server := httptest.NewServer(p)
+	defer server.Close()
+	request, _ := http.NewRequest("PUT", fmt.Sprintf("%s/v1/goals/%d/conduit", server.URL, goal.ID), strings.NewReader(`{"conduit":"opencode"}`))
+	request.Header.Set("Authorization", "Bearer "+contracttest.Owner)
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 400 {
+		t.Fatalf("chose OpenCode while it is off: %d", response.StatusCode)
 	}
 }
