@@ -331,7 +331,7 @@ Ratatoskr watches those.
 
 It follows Norn's `GET /v1/events/stream` (`inbox.arrived`, `calendar.added`,
 `calendar.moved`, `calendar.removed`, `calendar.ended`, `calendar.duplicate`,
-`calendar.stale`, `savepoint.ready`, `promise.due`) and Gjallar's alert
+`calendar.stale`, `savepoint.ready`, `promise.due`, `weave.ready`) and Gjallar's alert
 stream, which it turns into `alert.opened`, `alert.escalated` and
 `alert.resolved`. Built-in rules: a message from your manager or above, an
 urgent direct message, a brief for a meeting added or moved into the next
@@ -345,7 +345,9 @@ covers, or whose invite was cancelled (widget only; Norn's
 with the calendar, now `Calendars.ReadWrite`), and, when a meeting ends, what
 you were on before it ("You were on: …" with your last prompt, linking to the
 goal or session; widget only and not held, so the prompt never reaches ntfy),
-and a promise you made that is due (below). Each reaction goes
+a promise you made that is due (below), and the week's plan when Norn made
+it (`week-plan`: "The week's plan" with the week's line, linking to the plan;
+widget only and not held). Each reaction goes
 to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A
 stream down for 5 minutes is `stream:<part>` (warning).
 
@@ -446,6 +448,56 @@ Once a week Norn proposes the coming Monday to Friday, within `WORK_HOURS`. It
 looks every 3 minutes, and on start: from Sunday's `makeAt` (18:00 in
 `TIME_ZONE`) the next week is due, and on a weekday the current one, so a
 machine that was off on Sunday plans on Monday morning, and one started on
+Wednesday plans the rest of the week. A week is planned once; only Make it
+again plans it anew. The plan waits for a fresh read of the work calendar.
+
+It is made by Norn's own code, not a model. Busy is what the gap reads as
+busy, and breaks and focus blocks Yggdrasil booked count as booked. A day is
+packed when meetings fill 60% of its working hours, as Ratatoskr's packed
+week counts them. Then:
+
+- **Focus blocks**: at most one a day, never on a packed day or one with a
+  focus block booked already, in the longest free stretch of `focusMinutes`
+  or more, mornings (before 12:00) first, two hours at most. Each gets a
+  suggested use from what waits: a promise due on or after its day (or late
+  already), soonest first ("the promise to Anna due Thursday: send the
+  deck"); what a draft that runs tonight did, on the first day; then a review,
+  a race to pick, a draft to start, an agent to answer.
+- **Breaks**: after each run of meetings of 3 hours or more (gaps under 15
+  minutes do not end a run), 15 to 30 minutes in the first free time after
+  it, unless a break you kept is there already.
+- One line per day ("Tuesday is heavy: a break after lunch, no focus
+  block.") and one for the week. The local model (`SUMMARY_MODEL`) may say
+  the week's line more warmly; a line that drops a day, adds a number or
+  exclaims is thrown away, and without the model the plain line stands.
+
+When it is made with a block in it, Norn sends `weave.ready` once, and
+Huginn's `week-plan` rule tells the widget. Nothing is booked by itself: Book
+keeps each block the way a break is kept, a break as "Break", a focus block as
+"Focus" with the Outlook category `Yggdrasil focus` (`focus: true` on
+`GET /v1/calendar`), busy, one `transactionId` per slot, so a double click is
+one event. A slot no longer free gets its reason. A focus block is not a
+meeting: no `calendar.*` events or save points for it, Hermóðr holds what asks
+to hold through it (`inFocusBlock`), the gap offers nothing in it, Ratatoskr
+does not count it toward a packed week, and passive Loki does not strike in
+it. Calendar, goals and promises stay on this machine: nothing here goes to
+Claude.
+
+### Norn: the week's plan (the weave)
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/weave` | anyone | `{ week, madeAt, words, waiting, days: [{ date, words, blocks: [{ id, kind: focus\|break, start, end, for?, link?, booked, eventId?, skipped }] }] }`; `week` is `""` before the first plan |
+| `POST /v1/weave/book` | owner | `{ ids? }` (every open block when empty) → `{ results: [{ id, booked, eventId?, error? }], weave }` |
+| `POST /v1/weave/remake` | owner | make it again now; blocks already booked stay |
+| `POST /v1/weave/blocks/{id}/skip` | owner | leave one block out (`409` once booked) |
+| `GET`, `PUT /v1/settings/weave` | owner to change | `{ on, makeAt, focusMinutes }`: on, `18:00` and `90` until set |
+
+Once a week Norn proposes the coming Monday to Friday, within `WORK_HOURS`. It
+looks every 3 minutes, and on start: from Sunday's `makeAt` (18:00 in
+`TIME_ZONE`) the next week is due, and on a weekday the current one, so a
+busy, since a break is not for work, and so does a focus block you booked)
+within the working day, `WORK_HOURS` in
 Wednesday plans the rest of the week. A week is planned once; only Make it
 again plans it anew. The plan waits for a fresh read of the work calendar.
 
@@ -663,12 +715,12 @@ A job that fails 3 times in a row is `failing:<job id>` (warning).
 | `GET /v1/plan` | anyone | `{ checkedAt, blindSpots, tales }`. Blind spots, rebuilt every hour: `{ id, part, kind, text, severity: low\|medium\|high, trick? }`, where `trick` is the strike that would test it. Tales: `{ id, alertId, part, title, text, openedAt, noticedAfterMs?, healedAfterMs? }`, one per real alert that opened and resolved in the last 14 days |
 | `GET /v1/targets` | anyone | `{ parts: [{ name, up, lokiOn, proxied, freezable, vias: [{ via, available, reason? }], tricks: [{ via, kind, loop?, delayMs?, status?, label, expect }] }] }`: each part's tricks by each way to strike it (switch tricks from its `/health`; proxy tricks only when proxied; freeze only when freezable), why a way is closed, and what should catch each (`ratatoskr:down:<part>`, `ratatoskr:failing:<part>:<loop>`, `gjallar:alert`…) |
 | `POST /v1/strikes` | owner | `{ part, trick: { via?: switch\|proxy\|freeze, kind: health\|loop\|slow\|error\|drop\|hang\|freeze, loop?, delayMs?, status?, path? }, minutes? }` (3, at most 10) → `201` Strike. No `via`: `freeze` for a freeze, `proxy` for error, drop and hang, else `switch` |
-| `GET /v1/strikes` | anyone | `?limit=` (50) → `{ strikes }`, newest first |
+| `GET /v1/channels` | anyone | ntfy: set up or not, the lowest priority each sends, the last send; quiet hours; whether you are in a meeting (`inMeeting`, `meetingEndsAt`) on a break you kept free (`inBreak`, `breakEndsAt`) or in a focus block you booked (`inFocusBlock`, `focusEndsAt`) |
 | `GET /v1/strikes/{id}` | anyone | `{ id, part, trick, by: manual\|passive, startedAt, endsAt, healedAt?, state: striking\|watching\|caught\|missed\|stopped, checks: [{ watcher, expected, noticedAt?, ok? }], tale?, pids? }` |
 | `POST /v1/strikes/{id}/stop` | owner | end it now: the trick comes off, and it ends `stopped`, with no verdict |
 | `GET`, `PATCH /v1/settings` | owner changes it | `{ passive, perDay, allowWatchers, allowFreeze }`: off, 1, off and off until set; kept in `LOKI_STATE` |
-
-A trick strikes one of three ways, its `via`: `switch`, from inside, with the
+they ask to `hold`, while you are in a meeting, on a break you kept free or
+in a focus block you booked (your calendars, from Norn).
 part's own help; `proxy`, from outside, where the part never knows; and
 `freeze`, which stops the part's process. Every one ends at its `until`, at
 most 10 minutes ahead, even if Loki dies.

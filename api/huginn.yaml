@@ -59,6 +59,10 @@ info:
       development work, and keeps the answer on it with Norn's
       `PUT /v1/promises/{id}/dev`; the dashboard then offers to make it a
       goal. No goal is made for you.
+    - weave.ready: Norn made the week's plan (its GET /v1/weave), once a
+      week. The built-in week-plan rule tells the widget only (never the
+      phone, `push: false`), not held, titled "The week's plan", with the
+      week's line, linking to the plan on the dashboard. Fields: week, words.
     - A stream that stays down for 5 minutes is raised on Gjallar as
       `stream:<part>` (warning).
     - Learning your habits (`/v1/observations`, `/v1/suggestions`): the
@@ -386,7 +390,7 @@ components:
       properties:
         id: { type: string }
         enabled: { type: boolean }
-        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact, calendar-duplicate, calendar-stale, linear-todo, save-point, promise-due." }
+        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact, calendar-duplicate, calendar-stale, linear-todo, save-point, promise-due, week-plan." }
         createdBy: { type: string, description: owner, or the name of the part or agent that made it. }
         lastFiredAt: { type: string, format: date-time }
         lastResult: { type: string, enum: [delivered, failed, skipped] }
@@ -397,7 +401,7 @@ components:
       properties:
         event:
           type: string
-          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, calendar.duplicate, calendar.stale, alert.opened, alert.escalated, alert.resolved, linear.todo, savepoint.ready, promise.due]
+          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, calendar.duplicate, calendar.stale, alert.opened, alert.escalated, alert.resolved, linear.todo, savepoint.ready, promise.due, weave.ready]
         relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived and draft.ready only. }
         band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived and draft.ready only. }
         direct: { type: boolean, description: inbox.arrived and draft.ready only. }

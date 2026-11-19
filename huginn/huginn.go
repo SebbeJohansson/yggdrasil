@@ -106,7 +106,7 @@ type Reaction struct {
 }
 
 // Events are the events a trigger can name.
-var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "calendar.duplicate", "calendar.stale", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo", "savepoint.ready", "promise.due"}
+var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "calendar.duplicate", "calendar.stale", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo", "savepoint.ready", "promise.due", "weave.ready"}
 
 var (
 	yes      = true
@@ -136,6 +136,7 @@ func BuiltIn() []Rule {
 			Action: Action{Kind: "notify", Text: "{key} is in {state} and no goal has it: {title}. Add it as a goal?"}, Deliver: both, Hold: true},
 		savePointRule,
 		promiseRule(both),
+		weaveRule,
 	}
 }
 
@@ -547,6 +548,8 @@ func (h *Huginn) FromNorn(event sse.Event) (Fired, bool) {
 		return Fired{Kind: event.Kind, Key: "draft:" + item.ID, At: time.UnixMilli(item.At), Title: "Reply drafted to " + item.From + relation,
 			Link: link, Urgent: item.Band == "urgent", Inbox: &item,
 			Fields: map[string]string{"from": item.From, "source": item.Source, "relation": item.Relation, "band": item.Band, "tone": draft.Tone, "link": link}}, true
+	case event.Kind == "weave.ready":
+		return h.fromWeave(event)
 	case event.Kind == "promise.due":
 		return h.fromPromise(event)
 	case strings.HasPrefix(event.Kind, "calendar."):
