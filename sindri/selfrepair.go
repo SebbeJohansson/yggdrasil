@@ -102,11 +102,19 @@ type AlertEvent struct {
 var repairableSources = []string{"ratatoskr", "gjallar", "norn", "sindri", "huginn", "dellingr", "hermodr"}
 
 // outsideKeys are alerts a Yggdrasil part raises about something outside it:
-// a sign-in to renew, the local model, a phone channel.
+// a sign-in to renew, the local model, a phone channel. A part gone silent
+// and a stream down are left out too: they are mostly a part that stopped,
+// which Ratatoskr already says, not a bug to fix.
 var outsideKeys = map[string][]string{
 	"norn":    {"signin:", "model-failing"},
 	"hermodr": {"channel:"},
+	"gjallar": {"silent:"},
+	"huginn":  {"stream:"},
 }
+
+// mergedRest is how long a merged fix blocks a new goal for the same
+// problem, so it has a day to prove itself before it is tried again.
+const mergedRest = 24 * time.Hour
 
 // Repairable is whether code in this repo could fix what the alert is about.
 // Muted alerts are left alone: you said not to bother you with them.
@@ -301,16 +309,28 @@ type repairDraft struct {
 
 var severityRank = map[string]int{"critical": 0, "warning": 1, "info": 2}
 
-// openRepairs is the self-repair goals still open (not closed, not merged)
-// by source, and when each source last became a goal.
-func openRepairs(goals []GoalView) (open map[string]bool, last map[string]int64) {
+// openRepairs is the self-repair goals that block a new one, by source: open
+// ones (not closed, not merged), and ones merged within mergedRest of now,
+// counted from their last task activity since a merge has no time of its own.
+// last is when each source last became a goal.
+func openRepairs(goals []GoalView, now time.Time) (open map[string]bool, last map[string]int64) {
 	open, last = map[string]bool{}, map[string]int64{}
 	for _, g := range goals {
 		if !strings.HasPrefix(g.Source, SelfRepairSource) {
 			continue
 		}
 		last[g.Source] = max(last[g.Source], g.At)
-		if g.State != "closed" && g.State != "merged" {
+		switch g.State {
+		case "closed":
+		case "merged":
+			latest := g.At
+			for _, t := range g.Tasks {
+				latest = max(latest, t.LastActivity)
+			}
+			if now.Sub(time.UnixMilli(latest)) < mergedRest {
+				open[g.Source] = true
+			}
+		default:
 			open[g.Source] = true
 		}
 	}
@@ -386,7 +406,7 @@ func (w *Work) DraftSelfRepair(ctx context.Context, night string) ([]int64, erro
 			w.logf("self-repair: closed goal %d, its alert resolved", g.ID)
 		}
 	}
-	open, last := openRepairs(goals)
+	open, last := openRepairs(goals, w.Store.now())
 	var groups []DispatchGroup
 	if w.Repair.Norn.On() {
 		decisions, err := w.Repair.decisions(ctx)
@@ -436,7 +456,8 @@ func SelfRepairBrief(goal *Goal) string {
 // --- the morning ------------------------------------------------------------------
 
 // RepairOutcome sorts a self-repair goal for the morning: fixed (ready to
-// review), not-sure, or left-alone.
+// review), not-sure, running (still at it when the report goes out), or
+// left-alone.
 func RepairOutcome(g GoalView) string {
 	if slices.ContainsFunc(g.Tasks, func(t GoalTask) bool {
 		return t.Result != nil && strings.HasPrefix(strings.ToUpper(strings.TrimLeft(*t.Result, " *_`#\n")), notSure)
@@ -448,6 +469,8 @@ func RepairOutcome(g GoalView) string {
 		return "fixed"
 	case g.State == "needs-you":
 		return "not-sure"
+	case g.State == "running":
+		return "running"
 	}
 	return "left-alone"
 }
@@ -457,6 +480,7 @@ func SelfRepairSection(goals []GoalView) string {
 	groups := []struct{ outcome, label string }{
 		{"fixed", "Fixed, ready to review"},
 		{"not-sure", "Not sure"},
+		{"running", "Still running"},
 		{"left-alone", "Left alone"},
 	}
 	lines := []string{"Self-repair (nothing was merged; each fix waits for your review):"}

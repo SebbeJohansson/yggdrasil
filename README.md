@@ -321,12 +321,13 @@ starting `self-repair:`:
   times". Only kinds, agent ids, projects and counts go in, never a
   message's text or a name.
 
-No goal is drafted while one for the same alert or correction is open, or for
-an alert that has resolved; a waiting draft whose alert resolved is closed. At
+No goal is drafted while one for the same alert or correction is open, within
+24 hours of its last fix being merged (counted from that goal's last
+activity), or for an alert that has resolved; a waiting draft whose alert resolved is closed. At
 most `perNight` a night, critical alerts first. Each agent is told to
 reproduce the problem, fix its cause and add a test, or, when not confident,
 change nothing and say `NOT SURE:`. The morning report sorts them into fixed
-(ready to review), not sure and left alone. Nothing merges on its own: every
+(ready to review), not sure, still running and left alone. Nothing merges on its own: every
 fix waits for you. Sindri reads Gjallar with its `GJALLAR_TOKEN` and Norn with
 its `NORN_TOKEN`.
 

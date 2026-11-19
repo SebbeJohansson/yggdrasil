@@ -3,6 +3,7 @@ package sindri
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,7 +21,8 @@ func TestRepairableKeepsOnlyWhatThisRepoCanFix(t *testing.T) {
 		{RepairAlert{Source: "ratatoskr", Key: "failing:norn:inbox", State: "open"}, true},
 		{RepairAlert{Source: "ratatoskr", Key: "stalled:sindri:feed", State: "acknowledged"}, true},
 		{RepairAlert{Source: "ratatoskr", Key: "down:huginn", State: "open"}, true},
-		{RepairAlert{Source: "huginn", Key: "stream:norn", State: "open"}, true},
+		{RepairAlert{Source: "huginn", Key: "stream:norn", State: "open"}, false},
+		{RepairAlert{Source: "gjallar", Key: "silent:ratatoskr", State: "open"}, false},
 		{RepairAlert{Source: "munin", Key: "tcgpriser:down", State: "open"}, false},
 		{RepairAlert{Source: "munin", Key: "offline", State: "open"}, false},
 		{RepairAlert{Source: "munin", Key: "incident:github", State: "open"}, false},
@@ -208,8 +210,12 @@ func TestTheMorningReportSortsSelfRepairs(t *testing.T) {
 		view("Self-repair: Norn's inbox loop fails", "self-repair:alert:ratatoskr:failing:norn:inbox", task("no-changes", false, "NOT SURE: could not reproduce it.")),
 		view("Self-repair: Sindri's feed stalled", "self-repair:alert:ratatoskr:stalled:sindri:feed", task("no-changes", false, "Already fixed on main.")),
 		view("Your own goal", "manual", task("done", true, "")),
+		view("Self-repair: Dellingr's clock fails", "self-repair:alert:ratatoskr:failing:dellingr:clock", task("running", false, "")),
 	}
-	for i, want := range []string{"fixed", "not-sure", "left-alone"} {
+	for i, want := range []string{"fixed", "not-sure", "left-alone", "", "running"} {
+		if want == "" {
+			continue
+		}
 		if got := RepairOutcome(goals[i]); got != want {
 			t.Errorf("%s: got %s, want %s", goals[i].Title, got, want)
 		}
@@ -217,11 +223,30 @@ func TestTheMorningReportSortsSelfRepairs(t *testing.T) {
 	m := NightReportWithRepairs(goals)
 	fixed := strings.Index(m.Text, "Fixed, ready to review:\n- Huginn is down")
 	unsure := strings.Index(m.Text, "Not sure:\n- Norn's inbox loop fails")
+	running := strings.Index(m.Text, "Still running:\n- Dellingr's clock fails")
 	alone := strings.Index(m.Text, "Left alone:\n- Sindri's feed stalled")
-	if fixed < 0 || unsure < fixed || alone < unsure || !strings.Contains(m.Text, "Ready to review:\n- Your own goal") || !strings.Contains(m.Text, "nothing was merged") {
+	if fixed < 0 || unsure < fixed || running < unsure || alone < running || !strings.Contains(m.Text, "Ready to review:\n- Your own goal") || !strings.Contains(m.Text, "nothing was merged") {
 		t.Fatalf("got %q", m.Text)
 	}
 	if strings.Count(m.Text, "Huginn is down") != 1 {
 		t.Fatalf("a self-repair goal is listed twice: %q", m.Text)
+	}
+}
+
+func TestAMergedFixBlocksANewGoalForADay(t *testing.T) {
+	now := time.Date(2026, 11, 19, 20, 0, 0, 0, time.UTC)
+	merged := func(source string, ago time.Duration) GoalView {
+		return GoalView{Goal: Goal{Source: source, At: now.Add(-48 * time.Hour).UnixMilli()}, State: "merged",
+			Tasks: []GoalTask{{LastActivity: now.Add(-ago).UnixMilli()}}}
+	}
+	open, _ := openRepairs([]GoalView{
+		merged("self-repair:alert:ratatoskr:down:huginn", 3*time.Hour),
+		merged("self-repair:alert:ratatoskr:down:norn", 30*time.Hour),
+		{Goal: Goal{Source: "self-repair:alert:ratatoskr:down:dellingr"}, State: "closed"},
+		{Goal: Goal{Source: "self-repair:alert:ratatoskr:down:hermodr"}, State: "running"},
+	}, now)
+	want := map[string]bool{"self-repair:alert:ratatoskr:down:huginn": true, "self-repair:alert:ratatoskr:down:hermodr": true}
+	if !maps.Equal(open, want) {
+		t.Fatalf("got %v, want %v", open, want)
 	}
 }
