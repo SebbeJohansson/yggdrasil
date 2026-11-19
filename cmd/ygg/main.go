@@ -26,6 +26,7 @@ import (
 	"yggdrasil/internal/migrate"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/where"
+	"yggdrasil/loki"
 	"yggdrasil/munin"
 	"yggdrasil/norn"
 	"yggdrasil/ratatoskr"
@@ -46,6 +47,7 @@ var parts = map[string]struct {
 	"huginn":     {"reacts to what just happened: messages, meetings, alerts", huginn.Main},
 	"dellingr":   {"runs the jobs you put on a clock", dellingr.Main},
 	"hermodr":    {"carries every message for you to the widget and your phone", hermodr.Main},
+	"loki":       {"tests the watchers: blind spots, and short tricks to see who notices", loki.Main},
 }
 
 func usage() {

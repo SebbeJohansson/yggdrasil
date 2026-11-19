@@ -62,6 +62,7 @@ check as the Go one.
 | Huginn | `YGG_HUGINN_URL` | `http://127.0.0.1:8777` |
 | Dellingr | `YGG_DELLINGR_URL` | `http://127.0.0.1:8778` |
 | Hermóðr | `YGG_HERMODR_URL` | `http://127.0.0.1:8779` |
+| Loki | `YGG_LOKI_URL` | `http://127.0.0.1:8780` |
 
 ## Changing a contract
 

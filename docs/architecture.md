@@ -67,6 +67,7 @@ hold it to its spec: the same routes, and every answer in the spec's shape.
 | Huginn: reacts to events | 8777 | container | `huginn.db`: rules, reactions | built |
 | Dellingr: scheduled jobs | 8778 | container | `dellingr.db`: jobs, runs | built |
 | Hermóðr: messages to you | 8779 | container | `hermodr.db`: the last week of messages | built |
+| Loki: tests the watchers | 8780 | container | `loki.json`: settings, strikes | built |
 
 ## Tokens
 
@@ -134,6 +135,18 @@ to-my-agent` copies them back. Both back up the target first and refuse to
 write over data unless given `--replace`. my-agent's herdr question agents
 (`data/herdr-agents.json`) become Sindri agents with the herdr engine, and
 go back the same way.
+
+## Testing the watchers
+
+Loki checks that the watching works. Every part's server (`internal/part`)
+has a trick switch, `/v1/loki/trick`, only with `LOKI=on` in its
+environment: for at most 10 minutes the part answers `/health` with 503,
+fails one loop, or answers slowly. A trick lives in the part's memory with
+its own end time, so it stops even if Loki dies, and it touches no data,
+file, process or container. Loki strikes one part, reads Ratatoskr's status
+and Gjallar's alerts to see who noticed, and raises `missed:<part>:<kind>`
+when a watcher didn't, for self-repair. It never tricks itself, Ratatoskr
+only when you allow it, and Gjallar only alone.
 
 ## Doing things without being asked
 

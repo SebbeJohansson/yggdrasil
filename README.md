@@ -15,6 +15,7 @@ Why one process per part: [docs/architecture.md](docs/architecture.md).
 | **Huginn** | reacts to what just happened: messages, meetings, alerts | 8777 | container |
 | **Dellingr** | runs the jobs you put on a clock | 8778 | container |
 | **Hermóðr** | carries every message for you to the widget and your phone | 8779 | container |
+| **Loki** | tests the watchers: finds blind spots, and tricks a part for a few minutes to see who notices | 8780 | container |
 
 None of the watching parts fixes anything. Huginn only tells you things;
 Dellingr acts only as far as you set a job up to. Everything listens on 127.0.0.1 only.
@@ -117,7 +118,7 @@ scripts/dev-mode.sh logs    # follow it
 scripts/dev-mode.sh off     # the installed parts again
 ```
 
-Norn, Gjallar, Munin, Huginn and Dellingr then run in the `dev` container (compose profile
+Norn, Gjallar, Munin, Huginn, Dellingr, Hermóðr and Loki then run in the `dev` container (compose profile
 `dev`), and Sindri, Veðrfölnir and Ratatoskr in `ygg-dev.service` on the host,
 since they need your repos and toolchain, the host's `/proc` and systemd, or
 must outlive Docker. `on` disables the installed units and stops the
@@ -504,6 +505,64 @@ read as it is. Words with no day look back 31 days and send only the matches,
 A goal job drafts the goal in Sindri, and starts it only with `autoStart`.
 Runs the machine slept through run once on wake, never once per missed tick.
 A job that fails 3 times in a row is `failing:<job id>` (warning).
+
+### Loki
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/plan` | anyone | `{ checkedAt, blindSpots, tales }`. Blind spots, rebuilt every hour: `{ id, part, kind, text, severity: low\|medium\|high, trick? }`, where `trick` is the strike that would test it. Tales: `{ id, alertId, part, title, text, openedAt, noticedAfterMs?, healedAfterMs? }`, one per real alert that opened and resolved in the last 14 days |
+| `GET /v1/targets` | anyone | `{ parts: [{ name, up, lokiOn, tricks: [{ kind, loop?, delayMs?, label, expect }] }] }`: each part's tricks, from its `/health`, and what should catch each (`ratatoskr:down:<part>`, `ratatoskr:failing:<part>:<loop>`, `gjallar:alert`…) |
+| `POST /v1/strikes` | owner | `{ part, trick: { kind: health\|loop\|slow, loop?, delayMs? }, minutes? }` (3, at most 10) → `201` Strike |
+| `GET /v1/strikes` | anyone | `?limit=` (50) → `{ strikes }`, newest first |
+| `GET /v1/strikes/{id}` | anyone | `{ id, part, trick, by: manual\|passive, startedAt, endsAt, healedAt?, state: striking\|watching\|caught\|missed\|stopped, checks: [{ watcher, expected, noticedAt?, ok? }], tale? }` |
+| `POST /v1/strikes/{id}/stop` | owner | end it now: the trick comes off, and it ends `stopped`, with no verdict |
+| `GET`, `PATCH /v1/settings` | owner changes it | `{ passive, perDay, allowWatchers }`: off, 1 and off until set; kept in `LOKI_STATE` |
+
+Loki never breaks anything itself. Every part has a trick switch
+(`internal/part`), which answers only with `LOKI=on` in that part's
+environment: set it in `parts.env` in dev mode, never on a machine you rely
+on. Without it, `/v1/loki/trick` is `404` and nothing can be tricked. Only
+the owner and Loki's token may use it. A trick is an in-process behavior
+with an `until`, at most 10 minutes ahead, and it ends then on its own,
+even if Loki dies:
+
+| Trick | What the part does | Should be caught by |
+| --- | --- | --- |
+| `health` | `/health` answers `503`, `ok: false` | `ratatoskr:down:<part>`, and Ratatoskr's alert on Gjallar (`gjallar:alert`) |
+| `loop` | the named loop's runs fail with "Loki's trick" | `ratatoskr:failing:<part>:<loop>` and `gjallar:alert`; Ratatoskr's `heartbeat` loop: `gjallar:silent:ratatoskr` |
+| `slow` | every route but `/health` and the trick switch waits `delayMs` (3000, at most 10000) | `ratatoskr:slow:<part>`, which nothing raises yet: a strike shows the blind spot |
+
+A strike reads Ratatoskr's `/v1/status` and Gjallar's alerts every 10 s and
+notes when each watcher noticed. After the trick ends it waits up to 5
+minutes for the part to be well and the alerts resolved (`healedAt`); a
+watcher noticing then still counts. `caught` is every watcher noticing;
+`missed` raises `missed:<part>:<kind>` (warning) on Gjallar, which
+self-repair picks up, and the next caught strike of that kind resolves it.
+One strike per part at a time, never Loki, never Gjallar while another strike
+runs, and never Ratatoskr unless `allowWatchers` is on. A `health` strike
+on a part raises a real critical alert, so it reaches your phone like one.
+
+With `passive` on, Loki strikes on its own at most `perDay` times, at random
+times in your working hours (`WORK_HOURS` in `parts.env`, 09:00-17:00, Monday
+to Friday), never at night, and never while Hermóðr says you are in a
+meeting, on a break or in focus: then it tries again 15 minutes later. It
+picks a blind spot that has a trick, or else a random part and trick, never
+Gjallar. Afterwards one quiet Hermóðr message (`push: false`) tells the tale.
+
+Blind spots are parts that run but aren't in Ratatoskr's watch list, no
+heartbeat from Ratatoskr in `GJALLAR_HEARTBEATS`, critical alerts with no
+phone channel on Hermóðr, loops never seen failing, parts never yet proven
+going down by a caught strike, and slowness, which nothing times. Tales
+leave out Loki's own alerts and those a strike caused; `noticedAfterMs` is
+when you acknowledged the alert.
+
+| Setting (`loki.env`) | Default | What it does |
+| --- | --- | --- |
+| `LOKI_TOKENS` | | `owner=…` |
+| `<PART>_TOKEN` | | Loki's token at each part: `NORN_TOKEN`, `GJALLAR_TOKEN`, `RATATOSKR_TOKEN`, `HERMODR_TOKEN`… (`scripts/install.sh` gives them) |
+| `LOKI_STATE` | `data/loki.json` | settings and the last 200 strikes |
+| `LOKI_PARTS` | every part but Loki | the parts it may trick |
+| `GJALLAR_HEARTBEATS` | `ratatoskr=3m` | read to find the heartbeat blind spot; set it in `parts.env` if you changed Gjallar's |
 
 ### Sindri: the night shift and self-repair
 

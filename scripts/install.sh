@@ -58,7 +58,7 @@ part_token() {
 gjallar_token() {
 	part_token gjallar "$1"
 }
-for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr; do
+for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki; do
 	gjallar_token "$part" >/dev/null
 done
 
@@ -195,6 +195,23 @@ TIME_ZONE=Europe/Stockholm
 YGG_CORS_ORIGINS=$origins
 EOF
 
+# Loki tests the watchers by tricking a part for a few minutes, through each
+# part's trick switch, which answers only with LOKI=on (parts.env, dev mode).
+# It reads Ratatoskr's status, Gjallar's alerts and Hermóðr's channels, and
+# tricks every part, each with a token of its own there. After a token is
+# added at a part, restart that part.
+loki_env="LOKI_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token loki)"
+for part in norn sindri vedrfolnir ratatoskr munin huginn dellingr hermodr; do
+	loki_env="$loki_env
+$(echo "$part" | tr a-z A-Z)_TOKEN=$(part_token "$part" loki)"
+done
+write loki.env <<EOF
+$loki_env
+TIME_ZONE=Europe/Stockholm
+YGG_CORS_ORIGINS=$origins
+EOF
+
 write parts.env <<'EOF'
 # Where every part lives, read by every part. Leave a line commented to use
 # the built-in part on its default port. To replace a part with your own
@@ -214,10 +231,17 @@ write parts.env <<'EOF'
 #WORK_HOURS=09:00-17:00
 
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
-RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr
+RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr,loki
+
+# Lets Loki trick the parts for a few minutes, to test the watchers. Dev mode
+# only, never on a machine you rely on. Unset, the trick switch is not there.
+#LOKI=on
 EOF
 if ! grep -q '^RATATOSKR_WATCH=.*hermodr' "$config/parts.env"; then
 	echo "  Note: add huginn,dellingr,hermodr to RATATOSKR_WATCH in $config/parts.env if this machine runs them"
+fi
+if ! grep -q '^RATATOSKR_WATCH=.*loki' "$config/parts.env"; then
+	echo "  Note: add loki to RATATOSKR_WATCH in $config/parts.env if this machine runs it"
 fi
 
 umask 022

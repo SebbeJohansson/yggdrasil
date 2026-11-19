@@ -1,0 +1,347 @@
+openapi: 3.1.0
+info:
+  title: Loki
+  version: "1"
+  description: |
+    Tests the watchers. Loki finds what nobody would notice if it broke (the
+    blind spots), tells short stories of the real alerts lately (the tales),
+    and tricks one part for a few minutes, when you ask or now and then on
+    its own, to see whether Ratatoskr and Gjallar catch it (a strike). Any
+    program that serves this contract and passes `ygg check loki <url>` can
+    replace the built-in one (docs/replacing-a-part.md).
+
+    The trick switch. Every part answers these with `LOKI=on` in its own
+    environment (dev mode; set it in parts.env), to the owner and to the
+    caller named `loki` only. Without `LOKI=on` they are 404 and nothing can
+    be tricked:
+    - `GET /v1/loki/trick` → `{ trick: Trick | null }`
+    - `POST /v1/loki/trick` `{ kind: health|loop|slow, loop?, delayMs?, until }`
+      (until in milliseconds since 1970, at most 10 minutes ahead; delayMs 1
+      to 10000) → `{ trick }`; 409 while another trick is on
+    - `DELETE /v1/loki/trick` → `{ trick: null }`
+    `health`: /health answers 503 with `ok: false`. `loop`: the named loop's
+    runs fail with "Loki's trick", shown as its lastError on /health until
+    the trick ends. `slow`: every route but /health and the trick switch
+    waits delayMs first.
+
+    Rules a replacement must keep:
+    - A trick is an in-process behavior only: it never touches data, files,
+      processes or containers, and it ends at its until on its own, even if
+      Loki dies.
+    - Strikes are started by the owner (`by: manual`) or by Loki itself
+      (`by: passive`). At most 10 minutes, one at a time per part. Never
+      Loki itself; never Gjallar while another strike runs (or another
+      while Gjallar's does); never Ratatoskr unless `allowWatchers` is on.
+    - A strike that a watcher missed is raised on Gjallar as
+      `missed:<part>:<kind>` (warning), and resolved by the next caught strike
+      of that kind on that part.
+    - Passive strikes: only with `passive` on, at most `perDay`, in working
+      hours (WORK_HOURS, Monday to Friday), never at night, never while
+      Hermóðr says you are in a meeting, on a break or in focus. Each ends
+      with one Hermóðr message holding the tale, with `push: false`.
+servers:
+  - url: http://127.0.0.1:8780
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when each loop last ran.
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/plan:
+    get:
+      summary: The blind spots, rebuilt every hour, and the tales of the real alerts of the last 14 days.
+      responses:
+        "200":
+          description: The plan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plan" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/targets:
+    get:
+      summary: Every part, whether it is up and its trick switch answers, and what each trick should be caught by. Ratatoskr's tricks are listed only with allowWatchers on.
+      responses:
+        "200":
+          description: The parts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [parts]
+                properties:
+                  parts: { type: array, items: { $ref: "#/components/schemas/Target" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/strikes:
+    get:
+      summary: The strikes, newest first.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: The strikes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [strikes]
+                properties:
+                  strikes: { type: array, items: { $ref: "#/components/schemas/Strike" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Trick one part for a few minutes. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [part, trick]
+              properties:
+                part: { type: string, example: norn }
+                trick: { $ref: "#/components/schemas/Trick" }
+                minutes: { type: integer, minimum: 1, maximum: 10, default: 3 }
+      responses:
+        "201":
+          description: Striking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Strike" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: The part is already tricked, Gjallar's rule stands in the way, or the part's trick switch is off (no LOKI=on).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: The part didn't answer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/strikes/{id}:
+    get:
+      summary: One strike.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: The strike.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Strike" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/strikes/{id}/stop:
+    post:
+      summary: End a running strike now. It ends as stopped, with no verdict. Owner only.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: Stopped.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Strike" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The strike is already over.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/settings:
+    get:
+      summary: Passive strikes on or off, how many a day, and whether Ratatoskr may be tricked.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Change them; any field left out stays. Owner only. Kept across restarts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                passive: { type: boolean }
+                perDay: { type: integer, minimum: 1, maximum: 5 }
+                allowWatchers: { type: boolean }
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: The request doesn't make sense.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not yours to do, or a part Loki must not trick.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such strike.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Trick:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [health, loop, slow] }
+        loop: { type: string, description: The loop a loop trick fails, as named on the part's /health. }
+        delayMs: { type: integer, minimum: 1, maximum: 10000, description: "A slow trick's delay (3000 when left out)." }
+    BlindSpot:
+      type: object
+      required: [id, part, kind, text, severity]
+      properties:
+        id: { type: string, example: "unwatched:huginn" }
+        part: { type: string }
+        kind:
+          type: string
+          description: "unwatched (Ratatoskr doesn't watch it), heartbeat (no Gjallar heartbeat), phone (critical alerts may not reach your phone), unproven (a part going down never caught by a strike), loop (a loop never seen failing), slow (nothing times a part's routes)."
+        text: { type: string, description: In plain words. }
+        severity: { type: string, enum: [low, medium, high] }
+        trick: { $ref: "#/components/schemas/Trick", description: The strike that would test it, when there is one. }
+    Tale:
+      type: object
+      required: [id, alertId, part, title, text, openedAt]
+      properties:
+        id: { type: string }
+        alertId: { type: integer, description: The alert's id on Gjallar. }
+        part: { type: string }
+        title: { type: string, description: The alert's title. }
+        text: { type: string, description: The story. }
+        openedAt: { type: string, format: date-time }
+        noticedAfterMs: { type: integer, description: From opening to your acknowledging it; left out when you didn't. }
+        healedAfterMs: { type: integer, description: From opening to resolving. }
+    Plan:
+      type: object
+      required: [checkedAt, blindSpots, tales]
+      properties:
+        checkedAt: { type: string, format: date-time }
+        blindSpots: { type: array, items: { $ref: "#/components/schemas/BlindSpot" } }
+        tales: { type: array, items: { $ref: "#/components/schemas/Tale" } }
+    TargetTrick:
+      type: object
+      required: [kind, label, expect]
+      properties:
+        kind: { type: string, enum: [health, loop, slow] }
+        loop: { type: string }
+        delayMs: { type: integer }
+        label: { type: string, example: Norn stops answering /health }
+        expect:
+          type: array
+          description: "What should catch it: ratatoskr:down:<part>, ratatoskr:failing:<part>:<loop>, gjallar:alert (Ratatoskr's alert reaching Gjallar), gjallar:silent:ratatoskr, ratatoskr:slow:<part> (nothing raises this yet)."
+          items: { type: string }
+    Target:
+      type: object
+      required: [name, up, lokiOn, tricks]
+      properties:
+        name: { type: string }
+        up: { type: boolean }
+        lokiOn: { type: boolean, description: Whether its trick switch answers Loki (LOKI=on and Loki's token there). }
+        tricks: { type: array, items: { $ref: "#/components/schemas/TargetTrick" } }
+    Check:
+      type: object
+      required: [watcher, expected]
+      properties:
+        watcher: { type: string, enum: [ratatoskr, gjallar] }
+        expected: { type: string, description: As in a target's expect. }
+        noticedAt: { type: string, format: date-time }
+        ok: { type: boolean, description: Set when the strike is over. }
+    Strike:
+      type: object
+      required: [id, part, trick, by, startedAt, endsAt, state, checks]
+      properties:
+        id: { type: string }
+        part: { type: string }
+        trick: { $ref: "#/components/schemas/Trick" }
+        by: { type: string, enum: [manual, passive] }
+        startedAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        healedAt: { type: string, format: date-time, description: When the part was well again and what the strike raised had resolved. }
+        state:
+          type: string
+          enum: [striking, watching, caught, missed, stopped]
+          description: "striking while the trick is on; watching while it waits up to 5 minutes for healing (a watcher noticing then still counts); then caught (every watcher noticed), missed (one did not) or stopped."
+        checks: { type: array, items: { $ref: "#/components/schemas/Check" } }
+        tale: { type: string, description: The story of the strike, once it is over. }
+    Settings:
+      type: object
+      required: [passive, perDay, allowWatchers]
+      properties:
+        passive: { type: boolean, description: Loki strikes on its own (off by default). }
+        perDay: { type: integer, minimum: 1, maximum: 5, description: The most passive strikes a day (1). }
+        allowWatchers: { type: boolean, description: Ratatoskr may be tricked (off by default). }
