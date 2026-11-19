@@ -305,6 +305,11 @@ Ratatoskr watches those.
 | `PATCH /v1/rules/{id}` | change it; enabling is owner only, and a built-in rule can only be switched on or off |
 | `DELETE /v1/rules/{id}` | not a built-in one |
 | `GET /v1/reactions` | `?state=held\|delivered\|failed\|skipped`: what it did in the last 7 days. The widget reads this |
+| `POST /v1/observations` | owner: `{ action, target?, at? }`, what you just did on the dashboard: `open:/dashboard/<page>`, `copy-draft`, or `ack-alert`, `snooze-alert`, `mute-alert` with target `<source>:<key>` → `204` |
+| `GET /v1/suggestions` | rules and mutes it suggests from what you do, waiting for you |
+| `POST /v1/suggestions/{id}/accept` | owner: makes the rule, enabled, or the mute on Gjallar |
+| `POST /v1/suggestions/{id}/reject` | owner: no thanks, and that pattern is never suggested again |
+| `GET`, `PATCH /v1/settings/learning` | `{ on, windowMinutes }`: on and 10 until set; off forgets what it saw |
 
 It follows Norn's `GET /v1/events/stream` (`inbox.arrived`, `calendar.added`,
 `calendar.moved`, `calendar.removed`, `calendar.ended`, `calendar.duplicate`,
@@ -325,6 +330,24 @@ goal or session; widget only and not held, so the prompt never reaches ntfy).
 Each reaction goes
 to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A
 stream down for 5 minutes is `stream:<part>` (warning).
+
+Huginn also learns your habits and offers to write the rule for you
+(`huginn/learn.go`). The dashboard reports what you do, and what you do
+within 10 minutes after an event (`windowMinutes`) is a pair: a meeting Anna
+organizes ends, and you open the meeting note. It learns from messages from
+someone with a known relation, meetings with an organizer (`calendar.soon`,
+`calendar.ended`) and opened alerts. Five pairs of the same kind of event
+and action in 30 days, done after at least 70 % of those events, become a
+suggested rule, "Sync with Anna Berg ended: open the meeting note?",
+delivered to the widget only and linking to that page (the rule's
+`action.link`, filtered on `on.organizer` or, for an alert, `on.key`). The
+same alert acknowledged, snoozed or muted five times, an hour apart, becomes
+a suggested Gjallar mute; accepting it sends `POST /v1/mutes` to Gjallar
+with your own owner token. A new suggestion is told through Hermóðr at most
+once a day, listed and never pushed (`push: false`, `hold: true`). Only kinds
+and ids are kept, for 30 days in `huginn.db`: page names, an alert's source
+and key, an event's kind with its relation, organizer and calendar. Never a
+message's text.
 
 ### Norn: keeping a break free
 

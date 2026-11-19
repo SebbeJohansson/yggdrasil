@@ -143,7 +143,9 @@ can replace them later through their contracts.
 - **Huginn** reacts to events. Norn sends what changed on
   `GET /v1/events/stream`: summaries and links only, since raw inbox text
   never leaves Norn. Gjallar's alert stream is the other source. Huginn
-  suggests and tells; it never sends, starts or changes anything. Its
+  suggests and tells; it never sends, starts or changes anything. It
+  also learns what you do after an event and suggests a rule for it, made
+  only when you accept it. Its
   questions to Norn go with `to: norn` and `/local`, so Norn answers itself
   and never hands them to an agent.
 - **Dellingr** runs jobs on a clock. my-agent's roadmap (section 2) planned

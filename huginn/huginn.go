@@ -59,12 +59,17 @@ type Trigger struct {
 	Calendar            string   `json:"calendar,omitempty"`
 	Severity            []string `json:"severity,omitempty"`
 	Source              string   `json:"source,omitempty"`
+	// Organizer (calendar.*) and Key (alert.*) are what learned rules filter on (learn.go).
+	Organizer string `json:"organizer,omitempty"`
+	Key       string `json:"key,omitempty"`
 }
 
 // Action is what a rule does: notify, ask or alert-impact.
 type Action struct {
 	Kind string `json:"kind"`
 	Text string `json:"text,omitempty"`
+	// Link is a dashboard page the message links to instead of the event's own link.
+	Link string `json:"link,omitempty"`
 }
 
 // Rule is a trigger and what to do about it.
@@ -196,6 +201,7 @@ func (h *Huginn) Mount(p *part.Part) {
 	p.Loop("streams", 30*time.Second, h.watchStreams)
 	p.Loop("forget", time.Hour, h.forget)
 	p.Loop("linear", LinearEvery, h.watchLinear)
+	h.mountLearning(p)
 }
 
 // --- routes ---
@@ -280,6 +286,9 @@ func Validate(rule Rule) error {
 		return errors.New("on.startsWithinMinutes must be 1 to 1440")
 	case len(rule.Action.Text) > 2000:
 		return errors.New("action.text must be at most 2000 characters")
+	}
+	if err := validateLink(rule.Action.Link); err != nil {
+		return err
 	}
 	switch rule.Action.Kind {
 	case "notify", "ask":
@@ -650,7 +659,7 @@ func (t Trigger) Matches(f Fired, now time.Time) bool {
 			return false
 		}
 	}
-	return true
+	return learnedFilters(t, f)
 }
 
 var placeholder = regexp.MustCompile(`\{(\w+)\}`)
@@ -665,6 +674,7 @@ func Fill(text string, fields map[string]string) string {
 // Handle runs every enabled rule the event matches. The rules' work runs in
 // the background, so a slow answer never holds up the stream.
 func (h *Huginn) Handle(ctx context.Context, f Fired) {
+	h.see(ctx, f)
 	rules, err := h.Store.Rules(ctx)
 	if err != nil {
 		h.logf("reading the rules: %v", err)
@@ -704,7 +714,7 @@ func (h *Huginn) claim(f Fired, rule Rule) (string, bool) {
 func (h *Huginn) react(ctx context.Context, rule Rule, f Fired) {
 	now := h.now()
 	reaction := Reaction{ID: newID(), RuleID: rule.ID, RuleName: rule.Name, Event: f.Kind, EventAt: f.At, Title: f.Title,
-		Link: f.Link, Deliver: rule.Deliver, Urgent: f.Urgent, At: now}
+		Link: h.linkOf(rule, f), Deliver: rule.Deliver, Urgent: f.Urgent, At: now}
 	switch first, ok := h.claim(f, rule); {
 	case now.Sub(f.At) > TooOld:
 		reaction.State, reaction.Reason = "skipped", "the event is more than an hour old"

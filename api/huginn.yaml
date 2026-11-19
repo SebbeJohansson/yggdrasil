@@ -16,8 +16,9 @@ info:
     Rules a replacement must keep:
     - Suggest and tell, never act for you: no mail, messages, goals or
       agents started. It reads from Norn, Gjallar and Sindri and writes
-      nowhere but Hermóðr (`POST /v1/messages`) and its own list of
-      reactions.
+      nowhere but Hermóðr (`POST /v1/messages`), its own rules and
+      reactions, and Gjallar's `POST /v1/mutes` when you accept a
+      suggested mute.
     - Never ask Norn for raw inbox text. Work from the events' summaries and
       from `POST /v1/ask` on Norn, which keeps its own text to itself.
     - Every reaction goes to Hermóðr with the rule's `hold`, so Hermóðr
@@ -51,6 +52,17 @@ info:
       the dashboard. Fields: title, meeting, prompt, project, branch, said.
     - A stream that stays down for 5 minutes is raised on Gjallar as
       `stream:<part>` (warning).
+    - Learning your habits (`/v1/observations`, `/v1/suggestions`): the
+      dashboard reports what you do, and what you do within
+      `windowMinutes` (10) after an event is a pair. Five pairs of the same
+      kind of event and action in 30 days, done after at least 70 % of
+      those events, become a suggested rule; the same alert acknowledged,
+      snoozed or muted five times (an hour apart) becomes a suggested
+      Gjallar mute. Only kinds and ids are kept (page names, an alert's
+      source and key, an event's kind with its relation, organizer and
+      calendar), never a message's text, and only on this machine. A new
+      suggestion is told through Hermóðr at most once a day, `push: false`
+      and `hold: true`. A suggestion said no to is never made again.
 servers:
   - url: http://127.0.0.1:8777
 security:
@@ -160,6 +172,104 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/observations:
+    post:
+      summary: What you just did on the dashboard, to learn from. Owner only. Dropped while learning is off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  description: "open:<path> (kept as /dashboard/<page>, no ids), copy-draft, ack-alert, snooze-alert or mute-alert."
+                target: { type: string, description: "The alert actions only: <source>:<key>." }
+                at: { type: string, format: date-time, description: Defaults to now; at most a day ago. }
+      responses:
+        "204": { description: Kept. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/suggestions:
+    get:
+      summary: Rules and mutes Huginn suggests from what you do, waiting for you, newest first.
+      responses:
+        "200":
+          description: The open suggestions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions]
+                properties:
+                  suggestions: { type: array, items: { $ref: "#/components/schemas/Suggestion" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/suggestions/{id}/accept:
+    post:
+      summary: >-
+        Make it: a rule, enabled, or the mute on Gjallar (`POST /v1/mutes`,
+        sent with the owner's own token). Owner only.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: Made.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestion]
+                properties:
+                  suggestion: { $ref: "#/components/schemas/Suggestion" }
+                  rule: { $ref: "#/components/schemas/Rule" }
+                  mute: { $ref: "#/components/schemas/Mute" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+  /v1/suggestions/{id}/reject:
+    post:
+      summary: No thanks. The same pattern is never suggested again. Owner only.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: Said no to.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestion]
+                properties:
+                  suggestion: { $ref: "#/components/schemas/Suggestion" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/settings/learning:
+    get:
+      summary: Whether Huginn learns from what you do, and how soon after an event it counts. On and 10 minutes until set.
+      responses:
+        "200": { $ref: "#/components/responses/LearnSetting" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Turn learning on or off, or change the window. Off forgets every observation and event it kept. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                on: { type: boolean }
+                windowMinutes: { type: integer, minimum: 1, maximum: 60 }
+      responses:
+        "200": { $ref: "#/components/responses/LearnSetting" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/reactions:
     get:
       summary: What Huginn did lately, newest first. Kept for 7 days. Hermóðr's messages are what the widget lists.
@@ -204,10 +314,30 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
-      description: No such rule.
+      description: No such rule or suggestion.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: The suggestion was already accepted or said no to.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: Gjallar did not take the mute.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    LearnSetting:
+      description: The learning setting.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on, windowMinutes]
+            properties:
+              on: { type: boolean }
+              windowMinutes: { type: integer, minimum: 1, maximum: 60 }
   schemas:
     Health:
       type: object
@@ -272,6 +402,8 @@ components:
         calendar: { type: string, enum: [work, personal], description: calendar.* only. }
         severity: { type: array, items: { type: string, enum: [info, warning, critical] }, description: alert.* only. }
         source: { type: string, description: "alert.* only: the part that raised it." }
+        organizer: { type: string, description: "calendar.* only: who organized the meeting, any case." }
+        key: { type: string, description: "alert.* only: the alert's key." }
     Action:
       type: object
       required: [kind]
@@ -286,6 +418,7 @@ components:
       properties:
         kind: { type: string, enum: [notify, ask, alert-impact] }
         text: { type: string, maxLength: 2000 }
+        link: { type: string, maxLength: 200, description: "A dashboard path (/dashboard/meeting) the message links to, instead of the event's own link." }
     Reaction:
       type: object
       required: [id, ruleId, ruleName, event, eventAt, state, deliver, at]
@@ -304,3 +437,26 @@ components:
         urgent: { type: boolean, description: Sent to Hermóðr as urgent, so never held. }
         at: { type: string, format: date-time }
         deliveredAt: { type: string, format: date-time }
+    Mute:
+      type: object
+      required: [source, key]
+      properties:
+        source: { type: string }
+        key: { type: string }
+    Suggestion:
+      type: object
+      required: [id, pattern, kind, text, times, state, createdAt]
+      properties:
+        id: { type: string }
+        pattern: { type: string, description: "The kind of event and the action, e.g. calendar.ended|organizer=anna berg -> open:/dashboard/meeting." }
+        kind: { type: string, enum: [rule, mute] }
+        text: { type: string, description: The suggestion in plain words. }
+        rule: { $ref: "#/components/schemas/RuleInput", description: "kind rule: the rule accepting makes, delivered to the widget only." }
+        mute: { $ref: "#/components/schemas/Mute", description: "kind mute: the Gjallar mute accepting makes." }
+        times: { type: integer, description: How many times you did it after such an event (rule), or quieted the alert (mute), in 30 days. }
+        of: { type: integer, description: "kind rule: how many such events there were." }
+        state: { type: string, enum: [open, accepted, rejected] }
+        createdAt: { type: string, format: date-time }
+        toldAt: { type: string, format: date-time, description: When Hermóðr was told of it. }
+        decidedAt: { type: string, format: date-time }
+        ruleId: { type: string, description: The rule accepting made. }
