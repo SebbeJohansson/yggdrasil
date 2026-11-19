@@ -181,7 +181,7 @@ nothing goes to Gjallar.
 | --- | --- |
 | `stretch` | you are inside a run of meetings with no gap of `RATATOSKR_YOU_BREAK` (15m) or more, `RATATOSKR_YOU_STRETCH` (4h) long or more. A break you kept free (Norn's `POST /v1/calendar/breaks`) ends a run like such a gap, however short |
 | `late` | it is past `RATATOSKR_YOU_LATE` (23:00, until 05:00) and one of your own Claude Code sessions changed in the last 10 minutes, or you just answered a Sindri agent that asked you something (an agent working on its own does not count) |
-| `week` | meetings fill `RATATOSKR_YOU_PACKED` (60) percent or more of the working hours (`RATATOSKR_YOU_HOURS`, 09:00-17:00, Monday to Friday) from the start of today to Friday |
+| `week` | meetings fill `RATATOSKR_YOU_PACKED` (60) percent or more of the working hours (`WORK_HOURS`, 09:00-17:00, Monday to Friday) from the start of today to Friday |
 
 When one starts, it sends one quiet message through Hermóðr: priority low,
 held through meetings, listed in the widget only, worded as a suggestion
@@ -206,7 +206,7 @@ Norn and Sindri after).
 | `RATATOSKR_YOU_BREAK` | `15m` | the shortest gap that counts as a real break |
 | `RATATOSKR_YOU_LATE` | `23:00` | when working late starts |
 | `RATATOSKR_YOU_PACKED` | `60` | the percent of working hours in meetings that makes a week packed |
-| `RATATOSKR_YOU_HOURS` | `09:00-17:00` | your working hours, Monday to Friday |
+| `WORK_HOURS` | `09:00-17:00` | your working hours, Monday to Friday. Set it in `parts.env`, so Norn's gap reads the same day; `RATATOSKR_YOU_HOURS` still wins when set |
 | `RATATOSKR_YOU_PUSH` | `off` | `on` lets Hermóðr push these to your phone too (with `NTFY_MIN=low` in `hermodr.env`, since they are low) |
 | `TIME_ZONE` | `Europe/Stockholm` | yours |
 
@@ -445,8 +445,7 @@ stays listed (`GET /v1/settings/promises` says whether it runs).
 You are free when nothing in the work calendar holds you now (a meeting not
 declined, not all day, not shown as free; a break you kept free counts as
 busy, since a break is not for work) within the working day, `WORK_HOURS` in
-`norn.env` (09:00-17:00, Monday to Friday, like Ratatoskr's
-`RATATOSKR_YOU_HOURS`). The gap lasts until the next such
+`parts.env` (09:00-17:00, Monday to Friday), the one Ratatoskr reads too. The gap lasts until the next such
 meeting or the end of the day. What waits: Sindri's goals by their next step,
 and the open promises due by tomorrow. Each kind has a rough size: answer an
 agent 3 minutes, start a draft 2, pick a race 10, a promise 10, review a

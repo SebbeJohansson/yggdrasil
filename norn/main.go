@@ -42,7 +42,8 @@ import (
 //	INBOX_JUDGE      laya, typesafe, xestrata, ollama or off (laya; when Laya doesn't answer, Ollama, or XeStrata with Ollama off); INBOX_JUDGE_MODEL, TYPESAFE_KEY
 //	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  your own Google "Desktop app" OAuth client; unset is no Google
 //	OBSIDIAN_VAULT   your Obsidian vault's folder, for meeting notes both ways (unset: off); OBSIDIAN_VAULT_NAME is what Obsidian calls it (the folder's name)
-//	WORK_HOURS       your working day, Monday to Friday, for the gap a task is offered in (09:00-17:00)
+//	WORK_HOURS       your working day, Monday to Friday, for the gap a task is offered in (09:00-17:00);
+//	                 set it in parts.env, where Ratatoskr reads the same one
 //	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Norn's token there (a sign-in that ended is raised)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("NORN_TOKENS")

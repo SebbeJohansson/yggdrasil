@@ -210,6 +210,9 @@ write parts.env <<'EOF'
 #YGG_DELLINGR_URL=http://127.0.0.1:8778
 #YGG_HERMODR_URL=http://127.0.0.1:8779
 
+# Your working day, Monday to Friday: Ratatoskr's rhythm and Norn's gap read it.
+#WORK_HOURS=09:00-17:00
+
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
 RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr
 EOF

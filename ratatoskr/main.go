@@ -41,7 +41,8 @@ const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermo
 //	RATATOSKR_YOU_BREAK    the shortest gap that counts as a real one (15m)
 //	RATATOSKR_YOU_LATE     a session of yours still active after this is working late (23:00)
 //	RATATOSKR_YOU_PACKED   percent of the week's working hours in meetings that makes it packed (60)
-//	RATATOSKR_YOU_HOURS    your working hours, Monday to Friday (09:00-17:00)
+//	WORK_HOURS             your working hours, Monday to Friday (09:00-17:00), in parts.env so
+//	                       Norn's gap reads the same; RATATOSKR_YOU_HOURS still wins when set
 //	RATATOSKR_YOU_PUSH     off (default): listed in the widget only; on: Hermóðr may push it too
 //	TIME_ZONE              yours (Europe/Stockholm)
 //	YGG_NORN_URL           Norn; NORN_TOKEN is Ratatoskr's token there (the work calendar)
@@ -108,8 +109,8 @@ func you() (*You, error) {
 	if rhythm.Late, err = ParseClock(env.String("RATATOSKR_YOU_LATE", "23:00")); err != nil {
 		return nil, fmt.Errorf("RATATOSKR_YOU_LATE: %w", err)
 	}
-	if rhythm.DayFrom, rhythm.DayTo, err = ParseHours(env.String("RATATOSKR_YOU_HOURS", "09:00-17:00")); err != nil {
-		return nil, fmt.Errorf("RATATOSKR_YOU_HOURS: %w", err)
+	if rhythm.DayFrom, rhythm.DayTo, err = ParseHours(env.String("RATATOSKR_YOU_HOURS", env.String("WORK_HOURS", "09:00-17:00"))); err != nil {
+		return nil, fmt.Errorf("WORK_HOURS: %w", err)
 	}
 	if rhythm.Packed = env.Int("RATATOSKR_YOU_PACKED", rhythm.Packed); rhythm.Packed < 1 || rhythm.Packed > 100 {
 		return nil, fmt.Errorf("RATATOSKR_YOU_PACKED is a percent, 1 to 100, not %d", rhythm.Packed)
