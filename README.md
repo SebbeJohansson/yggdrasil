@@ -526,7 +526,8 @@ mail with them (Graph's search, last 30 days), your one-to-one Teams chat, and
 a meeting you had together in the work calendar's last 14 days. A mail or chat
 gets one line on what it was about from the local model (`SUMMARY_MODEL` on
 `CHAT_URL`), never Claude or Sindri; the subject when the model says nothing
-usable. Promises are the ledger's open ones to them, by address or name. Open
+usable. Promises are the ledger's open ones to them, by address or name, any
+alias you combined on the people list counting as them. Open
 is at most 3: their messages in the inbox now, then a mail thread or chat from
 the last 14 days where they wrote last. A source hidden where you are, or not
 signed in, is left out. A recap is kept 3 minutes per person.
@@ -579,7 +580,12 @@ combine is undone with split: the alias moves out to a person of its own and
 is remembered as not the same as the rest, so the next sighting neither adds
 it back nor suggests it again.
 
-Everything here stays on this machine, in Norn's database.
+Once combined, every alias of a person counts as them: the recap of
+anna@x.se also finds the Teams chats and promises to "Anna B." (and searches
+mail for each of her addresses), a later message to any alias can keep a
+promise, and the names swapped out before anything goes to Claude give one
+placeholder per person, however they are written. Everything here stays on
+this machine, in Norn's database.
 
 ### Norn: a task sized to your gap
 

@@ -51,6 +51,10 @@ type RecapPerson struct {
 	Name    string
 	Address string
 	UserID  string
+	// Also is their other addresses and ids, and Names their other names:
+	// every alias the people list has for them (people.go).
+	Also  []string
+	Names []string
 }
 
 var guidLike = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -76,13 +80,60 @@ func (p RecapPerson) key() string {
 	return strings.ToLower(p.Address + "|" + p.UserID + "|" + p.Name)
 }
 
-// Is is whether an address, user id or name is this person.
+// Is is whether an address, user id or name is this person, by any of
+// their aliases.
 func (p RecapPerson) Is(id, name string) bool {
-	id = strings.TrimSpace(id)
-	if id != "" && ((p.Address != "" && strings.EqualFold(id, p.Address)) || (p.UserID != "" && strings.EqualFold(id, p.UserID))) {
-		return true
+	if id = strings.TrimSpace(id); id != "" {
+		for _, known := range append([]string{p.Address, p.UserID}, p.Also...) {
+			if known != "" && strings.EqualFold(id, known) {
+				return true
+			}
+		}
 	}
-	return p.Name != "" && SamePersonName(p.Name, name)
+	for _, known := range append([]string{p.Name}, p.Names...) {
+		if known != "" && SamePersonName(known, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// addresses is their email addresses, the one asked about first.
+func (p RecapPerson) addresses() []string {
+	var out []string
+	for _, a := range append([]string{p.Address}, p.Also...) {
+		if strings.Contains(a, "@") && !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// Expand is a recap's person with every alias the list has for them.
+func (b *PeopleBook) Expand(p RecapPerson) RecapPerson {
+	found := b.Find(firstOf(p.Address, p.UserID), p.Name)
+	if found == nil {
+		return p
+	}
+	p.Also, p.Names = nil, nil
+	for _, a := range found.Aliases {
+		switch {
+		case a.Kind == AliasName:
+			if !strings.EqualFold(a.Value, p.Name) {
+				p.Names = append(p.Names, a.Value)
+			}
+		case a.Kind == AliasEmail && p.Address == "":
+			p.Address = a.key
+		case a.Kind == AliasTeams && p.UserID == "":
+			p.UserID = a.key
+		case !strings.EqualFold(a.key, p.Address) && !strings.EqualFold(a.key, p.UserID):
+			p.Also = append(p.Also, a.key)
+		}
+	}
+	if p.Name == "" {
+		p.Name = found.Name
+	}
+	return p
 }
 
 var nonName = regexp.MustCompile(`[^\p{L}\p{N}]+`)
@@ -319,7 +370,8 @@ func (r *Recaps) For(ctx context.Context, person RecapPerson) (PersonRecap, erro
 		return kept.recap, nil
 	}
 	r.mu.Unlock()
-	exchanges, known := r.Exchanges(ctx, person, now)
+	// Every alias the people list has for them counts as them.
+	exchanges, known := r.Exchanges(ctx, r.n.Book(ctx).Expand(person), now)
 	if known.Name == "" {
 		known.Name = person.Name
 	}
@@ -514,16 +566,28 @@ func (n *Norn) readExchanges(ctx context.Context, person RecapPerson, now time.T
 			n.logf("person recap: no Teams chats: %v", err)
 		}
 	}
-	if person.Address != "" && !n.hidden(ctx, "outlook") {
-		var page struct {
-			Value []recapMail `json:"value"`
-		}
-		search := url.QueryEscape(`"participants:` + person.Address + `"`)
-		err := graphJSON(ctx, token.AccessToken, "/v1.0/me/messages?$search="+search+"&$top=15&$select=id,subject,conversationId,from,receivedDateTime,bodyPreview,webLink", &page)
-		if err == nil {
-			out = append(out, MailExchanges(page.Value, person, now.AddDate(0, 0, -recapDays))...)
-		} else {
-			n.logf("person recap: no mail: %v", err)
+	if !n.hidden(ctx, "outlook") {
+		// Each of their addresses, at most three, a mail found twice kept once.
+		seen := map[string]bool{}
+		for i, address := range person.addresses() {
+			if i == 3 {
+				break
+			}
+			var page struct {
+				Value []recapMail `json:"value"`
+			}
+			search := url.QueryEscape(`"participants:` + address + `"`)
+			err := graphJSON(ctx, token.AccessToken, "/v1.0/me/messages?$search="+search+"&$top=15&$select=id,subject,conversationId,from,receivedDateTime,bodyPreview,webLink", &page)
+			if err != nil {
+				n.logf("person recap: no mail: %v", err)
+				continue
+			}
+			for _, e := range MailExchanges(page.Value, person, now.AddDate(0, 0, -recapDays)) {
+				if !seen[e.ID] {
+					seen[e.ID] = true
+					out = append(out, e)
+				}
+			}
 		}
 	}
 	return out, person

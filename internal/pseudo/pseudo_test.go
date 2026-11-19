@@ -80,3 +80,20 @@ func TestLegend(t *testing.T) {
 		t.Fatal("a legend for text with no placeholders")
 	}
 }
+
+func TestAPersonsOtherNamesShareTheirPlaceholder(t *testing.T) {
+	var m Map
+	known := []Person{{Name: "Anna Berg", Aliases: []string{"Anna B."}, Emails: []string{"anna@example.com"}}}
+	out := m.Pseudonymize("Anna B. said Anna Berg (anna@example.com) has it.", known, nil)
+	if out != "Person 1 said Person 1 (Person 1) has it." || len(m.Entries) != 1 {
+		t.Fatalf("%q %+v", out, m.Entries)
+	}
+	// Only the other name in the text is enough to find them.
+	var again Map
+	if out := again.Pseudonymize("Ask Anna B. first.", known, nil); out != "Ask Person 1 first." || again.Entries[0].Name != "Anna Berg" {
+		t.Fatalf("%q %+v", out, again.Entries)
+	}
+	if leaks := again.Leaks("Anna B. still here", known); len(leaks) != 1 {
+		t.Fatalf("the other name is not a leak: %v", leaks)
+	}
+}

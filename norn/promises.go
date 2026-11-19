@@ -442,13 +442,18 @@ func ParseKept(raw string, asked []Promise) ([]Kept, error) {
 	return out, nil
 }
 
-// sameRecipient is whether a message went to the person a promise was made to.
-func sameRecipient(p Promise, to []Recipient) bool {
+// sameRecipient is whether a message went to the person a promise was made
+// to: the same address or name, or two aliases of one person on the people
+// list (book may be nil).
+func sameRecipient(p Promise, to []Recipient, book *PeopleBook) bool {
 	for _, r := range to {
 		if p.ToAddress != "" && strings.EqualFold(p.ToAddress, r.Address) {
 			return true
 		}
 		if p.To != "" && strings.EqualFold(strings.TrimSpace(p.To), strings.TrimSpace(r.Name)) {
+			return true
+		}
+		if book.Same(p.ToAddress, p.To, r.Address, r.Name) {
 			return true
 		}
 	}
@@ -563,8 +568,9 @@ func (p *Promises) Read(ctx context.Context, m SentMessage) (bool, error) {
 			return false, err
 		}
 		var candidates []Promise
+		book := p.n.Book(ctx)
 		for _, promise := range open {
-			if promise.Message != m.ID && promise.CreatedAt <= m.At+time.Minute.Milliseconds() && sameRecipient(promise, m.To) {
+			if promise.Message != m.ID && promise.CreatedAt <= m.At+time.Minute.Milliseconds() && sameRecipient(promise, m.To, book) {
 				candidates = append(candidates, promise)
 			}
 		}
