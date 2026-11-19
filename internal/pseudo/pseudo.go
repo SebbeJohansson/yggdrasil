@@ -21,8 +21,11 @@ import (
 
 // Person is someone whose name must not leave the machine.
 type Person struct {
-	Name   string
-	Emails []string
+	Name string
+	// Aliases are the other names they go by ("Anna B."), from Norn's
+	// people list: one placeholder covers them all.
+	Aliases []string
+	Emails  []string
 	// Role is what they are to you, told to the model beside their
 	// placeholder: "invited to the meeting", "your manager".
 	Role string
@@ -107,12 +110,16 @@ func (m *Map) entryFor(variant string) int {
 // add gives a person a placeholder, or the one they have, and records every
 // way they are written.
 func (m *Map) add(p Person) int {
-	whole, parts := Variants(p.Name)
 	variants := []string{}
-	if whole != "" {
-		variants = append(variants, whole)
+	var wholes []string
+	for _, written := range p.names() {
+		whole, parts := Variants(written)
+		if whole != "" {
+			variants = append(variants, whole)
+			wholes = append(wholes, whole)
+		}
+		variants = append(variants, parts...)
 	}
-	variants = append(variants, parts...)
 	for _, email := range p.Emails {
 		if email = strings.ToLower(strings.TrimSpace(email)); email != "" {
 			variants = append(variants, email)
@@ -121,14 +128,17 @@ func (m *Map) add(p Person) int {
 	at := -1
 	for _, v := range variants {
 		// A first name alone does not tie two people together.
-		if at = m.entryFor(v); at >= 0 && (v == whole || strings.Contains(v, "@")) {
+		if at = m.entryFor(v); at >= 0 && (slices.Contains(wholes, v) || strings.Contains(v, "@")) {
 			break
 		}
 		at = -1
 	}
 	if at < 0 {
 		m.Next++
-		name := whole
+		name := ""
+		if len(wholes) > 0 {
+			name = wholes[0]
+		}
 		if name == "" && len(p.Emails) > 0 {
 			name = p.Emails[0]
 		}
@@ -148,6 +158,17 @@ func (m *Map) add(p Person) int {
 		}
 	}
 	return at
+}
+
+// names is every name the person goes by, their own first.
+func (p Person) names() []string {
+	var out []string
+	for _, name := range append([]string{p.Name}, p.Aliases...) {
+		if name = strings.TrimSpace(name); name != "" && !slices.Contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // isWord is a letter or digit: what a name may not run into.
@@ -216,12 +237,12 @@ func (m *Map) Pseudonymize(text string, known []Person, found []string) string {
 		m.add(person)
 	}
 	for _, k := range known {
-		if k.Name == "" {
-			continue
-		}
-		whole, parts := Variants(k.Name)
-		if len(find(text, whole, true)) > 0 || slices.ContainsFunc(parts, func(p string) bool { return len(find(text, p, false)) > 0 }) {
-			m.add(k)
+		for _, name := range k.names() {
+			whole, parts := Variants(name)
+			if len(find(text, whole, true)) > 0 || slices.ContainsFunc(parts, func(p string) bool { return len(find(text, p, false)) > 0 }) {
+				m.add(k)
+				break
+			}
 		}
 	}
 	for _, name := range found {
@@ -314,6 +335,9 @@ func (m *Map) Leaks(text string, known []Person) []string {
 	}
 	for _, k := range known {
 		check(k.Name, k.Emails)
+		for _, alias := range k.Aliases {
+			check(alias, nil)
+		}
 	}
 	for _, e := range m.Entries {
 		check(e.Name, nil)

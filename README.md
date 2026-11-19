@@ -526,7 +526,8 @@ mail with them (Graph's search, last 30 days), your one-to-one Teams chat, and
 a meeting you had together in the work calendar's last 14 days. A mail or chat
 gets one line on what it was about from the local model (`SUMMARY_MODEL` on
 `CHAT_URL`), never Claude or Sindri; the subject when the model says nothing
-usable. Promises are the ledger's open ones to them, by address or name. Open
+usable. Promises are the ledger's open ones to them, by address or name, any
+alias you combined on the people list counting as them. Open
 is at most 3: their messages in the inbox now, then a mail thread or chat from
 the last 14 days where they wrote last. A source hidden where you are, or not
 signed in, is left out. A recap is kept 3 minutes per person.
@@ -540,6 +541,51 @@ The widget asks for it on the overview; no message is sent, so nothing reaches
 ntfy. Off (`PUT /v1/settings/person-recap` `{ on: false }`), both routes
 answer empty with `on: false` and read nothing. Everything stays on this
 machine: no text goes to a cloud model, so no names are swapped.
+
+### Norn: one list of people
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/people` | anyone | `{ people }`: `{ id, name, aliases: [{ kind: name\|email\|teams\|slack, value, source, at }] }` |
+| `GET /v1/people/suggestions` | anyone | `{ suggestions }`: `{ a, b, rule, reason, confidence }`, each side `{ id, name, alias, kind, source }` |
+| `POST /v1/people/combine` | owner | `{ keep, merge }`: one person; `keep` gets every alias of `merge` |
+| `POST /v1/people/apart` | owner | `{ a, b }`: not the same, remembered |
+| `POST /v1/people/{id}/split` | owner | `{ kind, value }`: undo a combine, the alias becomes a person of its own → `{ person, split }` |
+
+One human shows up in many shapes: "Anna Berg <anna@x.se>" in mail, a Teams
+user id and "Anna B." in a chat, "Anna" in a meeting note or a promise. Norn
+keeps one list of people, each with every alias they are known by. Every 10
+minutes it adds who it sees: the calendars' organizers and attendees, the
+inbox's senders and recipients, the members of your Teams chats (the
+Microsoft sign-in) and the open promises' people; you are left out. Each
+alias starts as a person of its own, unless it is the same account as one
+listed: an address and a Teams id Graph gives together, or a name written
+beside an address.
+
+Norn never merges people by itself. It suggests pairs that look like one
+person, each with a reason in words and a confidence, from fixed rules (no
+model, local or cloud, reads a name for it):
+
+| Rule | Confidence | Reason, for example |
+| --- | --- | --- |
+| `same-account` | 0.99 | Microsoft gives them as one account (an address and a Teams id seen together, already two people) |
+| `same-name` | 0.9 | the same name in both ("Anna Berg" and "Berg, Anna") |
+| `address-name` | 0.85 | the address anna.berg@ spells the name Anna Berg |
+| `short-name` | 0.8 | Anna B. looks like Anna Berg shortened (only one full name fits) |
+| `first-name` | 0.75 | the only Anna you know by full name is Anna Berg (0.5 for a short or ordinary word like "Max" or "Per") |
+
+Under 0.7 is never shown; better few than noisy. A pair you call not the same
+is remembered and never suggested again; a third "Anna Berg" still is. A
+combine is undone with split: the alias moves out to a person of its own and
+is remembered as not the same as the rest, so the next sighting neither adds
+it back nor suggests it again.
+
+Once combined, every alias of a person counts as them: the recap of
+anna@x.se also finds the Teams chats and promises to "Anna B." (and searches
+mail for each of her addresses), a later message to any alias can keep a
+promise, and the names swapped out before anything goes to Claude give one
+placeholder per person, however they are written. Everything here stays on
+this machine, in Norn's database.
 
 ### Norn: a task sized to your gap
 

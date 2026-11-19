@@ -111,6 +111,65 @@ func (n *Norn) knownPeople(ctx context.Context) []pseudo.Person {
 	return slices.DeleteFunc(people, func(p pseudo.Person) bool { return p.Name == "" && len(p.Emails) == 0 })
 }
 
+// Group is known people with everyone the people list says is one person
+// made one: their names and addresses together, and their other full names
+// and addresses from the list added, so one person gets one placeholder
+// however they are written ("Anna Berg", "Anna B.", anna@x). A first name
+// alone is not added: the person's full name already covers it, and a word
+// like "Will" would be swapped wherever it is written.
+func (b *PeopleBook) Group(known []pseudo.Person) []pseudo.Person {
+	var out []pseudo.Person
+	at := map[int64]int{}
+	for _, k := range known {
+		var listed *Listed
+		for _, email := range k.Emails {
+			if listed = b.Find(email, ""); listed != nil {
+				break
+			}
+		}
+		if listed == nil && k.Name != "" {
+			listed = b.Find("", k.Name)
+		}
+		if listed == nil {
+			out = append(out, k)
+			continue
+		}
+		i, ok := at[listed.ID]
+		if !ok {
+			at[listed.ID] = len(out)
+			out = append(out, pseudo.Person{Name: k.Name, Role: k.Role, Source: k.Source})
+			i = len(out) - 1
+			for _, a := range listed.Aliases {
+				switch {
+				case a.Kind == AliasEmail:
+					out[i].Emails = append(out[i].Emails, a.Value)
+				case a.Kind == AliasName && len(strings.Fields(a.Value)) > 1:
+					out[i].Aliases = append(out[i].Aliases, a.Value)
+				}
+			}
+		}
+		g := &out[i]
+		if g.Name == "" {
+			g.Name = k.Name
+		} else if k.Name != "" && !strings.EqualFold(k.Name, g.Name) && !slices.ContainsFunc(g.Aliases, func(a string) bool { return strings.EqualFold(a, k.Name) }) {
+			g.Aliases = append(g.Aliases, k.Name)
+		}
+		g.Aliases = slices.DeleteFunc(g.Aliases, func(a string) bool { return strings.EqualFold(a, g.Name) })
+		for _, email := range k.Emails {
+			if !slices.ContainsFunc(g.Emails, func(e string) bool { return strings.EqualFold(e, email) }) {
+				g.Emails = append(g.Emails, email)
+			}
+		}
+		if g.Role == "" {
+			g.Role = k.Role
+		}
+		if g.Source == "" {
+			g.Source = k.Source
+		}
+	}
+	return out
+}
+
 // namesChunk is how much text the local model reads for names at a time.
 const namesChunk = 4000
 
@@ -220,7 +279,7 @@ func (n *Norn) pseudonymize(ctx context.Context, session string, extra []pseudo.
 			return nil, nil, err
 		}
 	}
-	known := slices.Concat(extra, n.knownPeople(ctx))
+	known := n.Book(ctx).Group(slices.Concat(extra, n.knownPeople(ctx)))
 	out := make([]string, len(texts))
 	for i, text := range texts {
 		if strings.TrimSpace(text) == "" {
