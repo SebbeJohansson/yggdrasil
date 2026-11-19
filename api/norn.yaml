@@ -1278,6 +1278,29 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/people/recap:
+    get:
+      summary: >-
+        Last time with this person: the last exchange (the newest of your
+        Outlook mail with them, your one-to-one Teams chat, and a meeting you
+        had together in the last 14 days), with the local model's one line on
+        it (CHAT_URL, never Claude; the subject when it says nothing usable);
+        the open promises you made them; and what is open between you, at most
+        3: their messages in the inbox now, then a mail thread or chat from
+        the last 14 days where they wrote last. Kept 3 minutes per person.
+        Everything stays on this machine. A source hidden where you are, or
+        not signed in, is left out; an unknown person gets empty lists.
+      parameters:
+        - { name: who, in: query, required: true, example: anna.berg@example.com, schema: { type: string, maxLength: 320 }, description: "An email address, a Teams user id, or a name when neither is known." }
+        - { name: name, in: query, required: false, example: Anna Berg, schema: { type: string, maxLength: 200 }, description: "Their name, to match promises and meetings kept by name." }
+      responses:
+        "200":
+          description: The recap.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PersonRecap" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/gap:
     get:
       summary: >-
@@ -2101,6 +2124,49 @@ components:
         words: { type: string }
         madeAt: { type: integer }
         link: { type: string, description: "The plan on the dashboard, /dashboard/plan." }
+    PersonRecap:
+      type: object
+      required: [on, who, name, promises, open]
+      properties:
+        on: { type: boolean }
+        who: { type: string }
+        name: { type: string }
+        last:
+          type: object
+          required: [kind, source, at, title, words, fromThem]
+          properties:
+            kind: { type: string, enum: [mail, chat, meeting] }
+            source: { type: string, enum: [outlook, teams, calendar] }
+            at: { type: integer, description: Epoch ms; a meeting's start. }
+            title: { type: string, description: "The mail's subject, the chat's name or the meeting's subject." }
+            words: { type: string, description: "The local model's one line on it; the title when it gave none." }
+            link: { type: string }
+            fromThem: { type: boolean }
+        promises:
+          type: array
+          items:
+            type: object
+            required: [id, what, source, createdAt]
+            properties:
+              id: { type: integer }
+              what: { type: string }
+              due: { type: string, description: YYYY-MM-DD in TIME_ZONE. }
+              source: { type: string }
+              link: { type: string }
+              createdAt: { type: integer }
+        open:
+          type: array
+          items:
+            type: object
+            required: [id, kind, source, subject, at, inInbox]
+            properties:
+              id: { type: string }
+              kind: { type: string, enum: [mail, chat] }
+              source: { type: string }
+              subject: { type: string }
+              at: { type: integer }
+              link: { type: string }
+              inInbox: { type: boolean, description: In the inbox now, unread. }
     Gap:
       type: object
       required: [free]

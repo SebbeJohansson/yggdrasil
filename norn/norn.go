@@ -107,6 +107,8 @@ type Norn struct {
 	Weave *WeaveState
 	// Rewind is the timeline's state (rewind.go).
 	Rewind rewindState
+	// Recaps is the last time with a person (recap.go).
+	Recaps *Recaps
 	// suggestions remembers what the improve check said about each sentence.
 	suggestions *SuggestionCache
 	logf        func(format string, args ...any)
@@ -124,6 +126,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 		Accounts:    NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Inbox = NewInbox(n, config.DataDir)
 	n.Promises = NewPromises(n)
+	n.Recaps = NewRecaps(n)
 	n.Events = NewEvents(time.Now())
 	n.Events.PrepFor = n.prepFor
 	n.Brain = &Brain{
@@ -169,6 +172,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountGap(p)
 	n.mountWeave(p)
 	n.mountRewind(p)
+	n.mountRecap(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 
