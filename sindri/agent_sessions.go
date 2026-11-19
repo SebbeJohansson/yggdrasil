@@ -21,7 +21,7 @@ import (
 // SourceView is one source's part of the view: its sessions, or why there are none.
 type SourceView[T any] struct {
 	// Sessions is null when the source is off or not answering.
-	Sessions []T   `json:"sessions"`
+	Sessions []T    `json:"sessions"`
 	Error    string `json:"error,omitempty"`
 	// From is where it reads from, or "off".
 	From string `json:"from"`
@@ -45,6 +45,8 @@ type AgentSessions struct {
 	// Opencode and Herdr are nil when off.
 	Opencode *OpencodeClient
 	Herdr    *Herdr
+	// Agents, when set, has its OpenCode agents brought up to date on each read.
+	Agents *Manager
 
 	cache    *LiveClaudeCache
 	mu       sync.Mutex
@@ -83,6 +85,9 @@ func (s *AgentSessions) ReadOpencode(ctx context.Context) error {
 	s.mu.Lock()
 	s.opencode = view
 	s.mu.Unlock()
+	if s.Agents != nil {
+		s.Agents.applyOpencode(ctx, s.Opencode, sessions, err)
+	}
 	return nil
 }
 

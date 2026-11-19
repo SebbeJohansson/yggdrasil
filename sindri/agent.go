@@ -143,6 +143,8 @@ type Agent struct {
 	Session string `json:"session,omitempty"`
 	// Herdr is set for an agent running in a herdr pane (Engine "herdr").
 	Herdr *HerdrPlace `json:"herdr,omitempty"`
+	// Opencode is set for an agent running as an OpenCode session (Engine "opencode").
+	Opencode *OpencodePlace `json:"opencode,omitempty"`
 }
 
 // Limits on what an agent keeps.

@@ -60,6 +60,7 @@ type GoalView struct {
 	State  string      `json:"state"` // draft, running, needs-you, done, merged, closed
 	Tasks  []GoalTask  `json:"tasks"`
 	Next   GoalNext    `json:"next"`
+	GoalRaceFields
 }
 
 // GoalState is read from the tasks: draft without any, needs-you when one
@@ -194,6 +195,7 @@ func (w *Work) GoalViews() ([]GoalView, error) {
 		if goal.Night && view.State == "draft" {
 			view.Next.Text = "Starts tonight"
 		}
+		w.raceFields(&view)
 		views = append(views, view)
 	}
 	return views, nil
@@ -311,6 +313,11 @@ func (w *Work) StartGoal(id int64, only []string) ([]Started, []string, error) {
 // startParts starts one coding agent per repo for the goal, all on one branch
 // name, with the goal's pictures where they may read them.
 func (w *Work) startParts(goal *Goal, repos []string) ([]Started, []string) {
+	return w.startPartsOn(goal, repos, "")
+}
+
+// startPartsOn starts the parts on a race lane's conduit; "" is the goal's own.
+func (w *Work) startPartsOn(goal *Goal, repos []string, lane string) ([]Started, []string) {
 	id := goal.ID
 	parts := []string{goal.Title}
 	if goal.Context != "" {
@@ -340,8 +347,9 @@ func (w *Work) startParts(goal *Goal, repos []string) ([]Started, []string) {
 	}
 	parts = append(parts, fmt.Sprintf("(From goal %d, source: %s.)", goal.ID, goal.Source))
 	request := CodeRequest{Session: goal.Session, Prompt: strings.Join(parts, "\n\n"), Name: ShortTask(goal.Title, 50), Projects: repos, GoalID: &goal.ID, Goal: goal.Title}
+	w.laneRequest(goal, lane, &request)
 	handed := w.Code(request, nil)
-	w.record(goal.Session, goal.Title, &handed)
+	w.record(goal.Session, request.Goal, &handed)
 	var failed []string
 	for _, repo := range repos {
 		if !slices.ContainsFunc(handed.Parts, func(s Started) bool { return s.Project == repo }) {

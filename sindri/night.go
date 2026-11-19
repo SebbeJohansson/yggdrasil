@@ -109,7 +109,7 @@ func (w *Work) RunNight(ctx context.Context) error {
 		if goal.State != "draft" || len(goal.Repos) == 0 {
 			continue
 		}
-		_, failed, err := w.StartGoal(goal.ID, nil)
+		failed, err := w.startTonight(goal.ID)
 		if err != nil {
 			w.logf("night shift: could not start goal %d: %v", goal.ID, err)
 			continue
@@ -132,6 +132,7 @@ func (w *Work) RunNight(ctx context.Context) error {
 
 // NightReport is the morning message for the goals a night started.
 func NightReport(goals []GoalView) tell.Message {
+	raced, racesReady, goals := raceLines(goals)
 	groups := []struct {
 		label  string
 		states []string
@@ -157,8 +158,9 @@ func NightReport(goals []GoalView) tell.Message {
 			lines = append(lines, group.label+":\n"+strings.Join(in, "\n"))
 		}
 	}
+	lines = append(raced, lines...)
 	title := "Night shift is done"
-	if slices.ContainsFunc(goals, func(g GoalView) bool { return g.State == "done" }) {
+	if racesReady || slices.ContainsFunc(goals, func(g GoalView) bool { return g.State == "done" }) {
 		title = "Night shift: work is ready to review"
 	}
 	if slices.ContainsFunc(goals, func(g GoalView) bool { return g.State == "needs-you" }) {

@@ -10,6 +10,7 @@ import (
 	"time"
 	"yggdrasil/internal/linear"
 
+	"yggdrasil/internal/call"
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/tell"
@@ -78,6 +79,7 @@ func Main(ctx context.Context) error {
 		Model:            env.String("DELEGATE_MODEL", "sonnet"),
 		AskCwd:           env.String("SINDRI_ASK_CWD", filepath.Join(roots[0], "yggdrasil", "workspace")),
 		AutoAllowDefault: env.String("AUTO_ALLOW", "true") == "true",
+		Kinds:            NornKinds{Norn: call.New("norn", where.URL("norn"), env.String("NORN_TOKEN", ""), 3*time.Minute)},
 	}
 	claudeDir := env.String("CLAUDE_DIR", filepath.Join(home, ".claude"))
 	socketDir := env.String("CLAUDE_SOCKET_DIR", fmt.Sprintf("/run/user/%d/cc-socks", os.Getuid()))
@@ -88,6 +90,8 @@ func Main(ctx context.Context) error {
 	if u := env.String("OPENCODE_URL", "http://127.0.0.1:4096"); u != "off" {
 		opencode = &OpencodeClient{BaseURL: u, Authorization: env.String("OPENCODE_AUTHORIZATION", ""), HTTP: &http.Client{Timeout: 10 * time.Second}}
 	}
+	// Coding agents may run in OpenCode too: the "opencode" conduit of a race.
+	agents.UseOpencode(opencode)
 	var herdr *Herdr
 	if socket := env.String("HERDR_SOCKET", DefaultHerdrSocket()); socket != "off" {
 		herdr = &Herdr{Socket: socket}
@@ -101,6 +105,7 @@ func Main(ctx context.Context) error {
 	s := &Sindri{Agents: agents, Root: agents.roots[0], Work: work,
 		ClaudeProjects: env.String("CLAUDE_PROJECTS", filepath.Join(claudeDir, "projects")),
 		Sessions:       NewAgentSessions(ClaudeRoot{ClaudeDir: claudeDir, SocketDir: socketDir}, opencode, herdr)}
+	s.Sessions.Agents = agents
 	s.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }

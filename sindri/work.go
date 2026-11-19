@@ -92,7 +92,9 @@ type Work struct {
 	// Hermodr reaches you through Hermóðr: the night shift's morning report.
 	Hermodr tell.Teller
 	// Zone is the time zone the night shift's times are in.
-	Zone    *time.Location
+	Zone *time.Location
+	// Kinds judges a goal's kind for races; nil guesses from keywords alone.
+	Kinds   KindJudge
 	feeding sync.Mutex
 }
 
@@ -139,6 +141,8 @@ type CodeRequest struct {
 	GoalID        *int64   `json:"goalId,omitempty"`
 	// Goal is what the ledger calls the task, in your words; Name when empty.
 	Goal string `json:"goal,omitempty"`
+	// Engine is the agent engine to run on (claude, copilot, opencode); empty is the coding-agent setting.
+	Engine string `json:"engine,omitempty"`
 }
 
 // Started is one agent a request started.
@@ -179,7 +183,7 @@ func (w *Work) codeRequest(request CodeRequest, project string, slug string, oth
 	return StartRequest{
 		Cwd: project, Prompt: request.Prompt, Label: project + ": " + request.Name, Model: w.Model, Worktree: true,
 		PermissionMode: "auto", AllowedTools: append(append([]string{}, CodingAllowed...), PlanRules(slug)...),
-		DisallowedTools: CodingDenied, AppendSystemPrompt: system, Slug: slug, Session: request.Session,
+		DisallowedTools: CodingDenied, AppendSystemPrompt: system, Slug: slug, Session: request.Session, Engine: request.Engine,
 	}
 }
 
