@@ -53,6 +53,9 @@ type Vault struct {
 
 	scanned time.Time
 	notes   []VaultNote
+
+	resourcesScanned time.Time
+	resources        []resource
 }
 
 // VaultNote is one note, by its path in the vault.
@@ -317,6 +320,8 @@ type Meeting struct {
 	Subject   string   `json:"subject"`
 	Start     int64    `json:"start"`
 	Attendees []string `json:"attendees,omitempty"`
+	// Me is your own names, left out when picking a new note's resources.
+	Me []string `json:"-"`
 }
 
 // AddMeetingNote writes `text` under "Efter mötet" in the meeting's note for
@@ -339,23 +344,7 @@ func (v *Vault) addUnder(meeting Meeting, heading, lines string, zone *time.Loca
 	day := time.UnixMilli(meeting.Start).In(zone).Format("2006-01-02")
 	note := v.MeetingNote(meeting.Subject, day, now)
 	if note.Path == "" {
-		note = v.note(NoteName(meeting.Subject, day))
-		var b strings.Builder
-		if len(meeting.Attendees) > 0 {
-			fmt.Fprintf(&b, "Deltagare: %s\n\n", strings.Join(meeting.Attendees, ", "))
-		}
-		b.WriteString(heading + "\n\n" + lines + "\n")
-		full := filepath.Join(v.Dir, filepath.FromSlash(note.Path))
-		file, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-		if err != nil {
-			return VaultNote{}, false, err
-		}
-		_, err = file.WriteString(b.String())
-		if closeErr := file.Close(); err == nil {
-			err = closeErr
-		}
-		v.scanned = time.Time{}
-		return note, true, err
+		return v.newMeetingNote(meeting, day, heading+"\n\n"+lines+"\n", now)
 	}
 	full := filepath.Join(v.Dir, filepath.FromSlash(note.Path))
 	before, err := os.ReadFile(full)
@@ -364,6 +353,31 @@ func (v *Vault) addUnder(meeting Meeting, heading, lines string, zone *time.Loca
 	}
 	after := appendUnder(string(before), heading, lines)
 	return note, false, os.WriteFile(full, []byte(after), 0o644)
+}
+
+// newMeetingNote makes the meeting's note for its day: its resource links,
+// who was invited, then body.
+func (v *Vault) newMeetingNote(meeting Meeting, day, body string, now time.Time) (VaultNote, bool, error) {
+	note := v.note(NoteName(meeting.Subject, day))
+	var b strings.Builder
+	if resources := v.MeetingResources(meeting, meeting.Me, now); len(resources) > 0 {
+		b.WriteString(resourceLinks(resources) + "\n\n")
+	}
+	if len(meeting.Attendees) > 0 {
+		fmt.Fprintf(&b, "Deltagare: %s\n\n", strings.Join(meeting.Attendees, ", "))
+	}
+	b.WriteString(body)
+	full := filepath.Join(v.Dir, filepath.FromSlash(note.Path))
+	file, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return VaultNote{}, false, err
+	}
+	_, err = file.WriteString(b.String())
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	v.scanned = time.Time{}
+	return note, true, err
 }
 
 // liveMarks are the Markdown comments around one sitting's notes, hidden in
@@ -385,23 +399,7 @@ func (v *Vault) WriteLiveNote(meeting Meeting, id, text string, zone *time.Locat
 	block := open + "\n" + strings.TrimRight(text, " \t\n") + "\n" + end
 	note := v.MeetingNote(meeting.Subject, day, now)
 	if note.Path == "" {
-		note = v.note(NoteName(meeting.Subject, day))
-		var b strings.Builder
-		if len(meeting.Attendees) > 0 {
-			fmt.Fprintf(&b, "Deltagare: %s\n\n", strings.Join(meeting.Attendees, ", "))
-		}
-		b.WriteString(duringHeading + "\n\n" + block + "\n")
-		full := filepath.Join(v.Dir, filepath.FromSlash(note.Path))
-		file, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-		if err != nil {
-			return VaultNote{}, false, err
-		}
-		_, err = file.WriteString(b.String())
-		if closeErr := file.Close(); err == nil {
-			err = closeErr
-		}
-		v.scanned = time.Time{}
-		return note, true, err
+		return v.newMeetingNote(meeting, day, duringHeading+"\n\n"+block+"\n", now)
 	}
 	full := filepath.Join(v.Dir, filepath.FromSlash(note.Path))
 	before, err := os.ReadFile(full)
@@ -555,6 +553,20 @@ func (n *Norn) selfNames(ctx context.Context) []string {
 	return []string{me.DisplayName, me.Address}
 }
 
+// selfForNewNote is your names when the meeting has no note for its day yet,
+// to pick the new note's resources by; nil when it has one, so typing in a
+// note that exists never asks the work account.
+func (n *Norn) selfForNewNote(ctx context.Context, meeting Meeting, now time.Time) []string {
+	day := time.UnixMilli(meeting.Start).In(n.Zone).Format("2006-01-02")
+	n.vaultMu.Lock()
+	exists := n.Vault.MeetingNote(meeting.Subject, day, now).Path != ""
+	n.vaultMu.Unlock()
+	if exists {
+		return nil
+	}
+	return n.selfNames(ctx)
+}
+
 // othersThan is people without anyone in me, by name or address.
 func othersThan(people, me []string) []string {
 	return slices.DeleteFunc(slices.Clone(people), func(person string) bool {
@@ -666,6 +678,7 @@ func (n *Norn) addMeetingNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
+	body.Me = n.selfForNewNote(r.Context(), body.Meeting, now)
 	n.vaultMu.Lock()
 	defer n.vaultMu.Unlock()
 	if len(body.Attendees) == 0 {
@@ -704,6 +717,7 @@ func (n *Norn) writeLiveNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
+	body.Me = n.selfForNewNote(r.Context(), body.Meeting, now)
 	n.vaultMu.Lock()
 	defer n.vaultMu.Unlock()
 	if len(body.Attendees) == 0 {

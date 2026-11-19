@@ -847,7 +847,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
     post:
-      summary: Add lines to the meeting's Obsidian note for its day, under "## Efter mötet", or make "<subject> - <YYYY-MM-DD>.md" at the vault's root when you have not written one. Your own text in the note is never changed.
+      summary: Add lines to the meeting's Obsidian note for its day, under "## Efter mötet", or make "<subject> - <YYYY-MM-DD>.md" at the vault's root when you have not written one. Your own text in the note is never changed. A new note starts with [[links]] to the notes in the vault's Resources folder it belongs to, picked from the subject, the attendees and your earlier notes' first lines.
       requestBody:
         required: true
         content:
@@ -876,7 +876,7 @@ paths:
         "503": { $ref: "#/components/responses/Unavailable" }
   /v1/notes/meeting/live:
     put:
-      summary: Keep the notes you are taking during a meeting in its Obsidian note for the day, under "## Under mötet", making "<subject> - <YYYY-MM-DD>.md" when there is none. Each sitting (`id`) has a block of its own between two Markdown comments, rewritten with the whole text on every call; the rest of the note is never changed. Answers the note's title and link, never its text.
+      summary: Keep the notes you are taking during a meeting in its Obsidian note for the day, under "## Under mötet", making "<subject> - <YYYY-MM-DD>.md" when there is none (with its Resources links first, as above). Each sitting (`id`) has a block of its own between two Markdown comments, rewritten with the whole text on every call; the rest of the note is never changed. Answers the note's title and link, never its text.
       requestBody:
         required: true
         content:

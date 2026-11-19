@@ -263,3 +263,45 @@ func TestTitleWordsSkipsChatVerbs(t *testing.T) {
 		t.Fatalf("want no words, got %v", got)
 	}
 }
+
+func TestANewMeetingNoteStartsWithItsResourceLinks(t *testing.T) {
+	zone, _ := time.LoadLocation("Europe/Stockholm")
+	start := time.Date(2026, 11, 19, 10, 0, 0, 0, zone).UnixMilli()
+	v := testVault(t, nil)
+	for _, sub := range []string{"Resources/Business", "Resources/Technology"} {
+		os.MkdirAll(filepath.Join(v.Dir, sub), 0o755)
+	}
+	for path, text := range map[string]string{
+		"Resources/Business/Northwind.md":                   "",
+		"Resources/Business/Acme.md":            "",
+		"Resources/Technology/AI.md":                      "",
+		"Partnermöte AC - 2026-08-25.md":               "[[Northwind]], [[Acme]]\n\nNotes:\n",
+		"Partnermöte Northwind och Acme - 2026-10-14.md": "---\ntags: x\n---\n[[Acme]],[[Northwind]]\n",
+		"AI snack med supply - 2026-10-13.md":             "[[Acme]], [[AI]]\n",
+		"Retro - 2026-10-01.md":                           "[[Acme]]\n",
+		"Retro - 2026-09-01.md":                           "Inga länkar här [[AI]]\n",
+	} {
+		os.WriteFile(filepath.Join(v.Dir, path), []byte(text), 0o644)
+	}
+	read := func(note VaultNote) string {
+		raw, _ := os.ReadFile(filepath.Join(v.Dir, note.Path))
+		return string(raw)
+	}
+	now := time.UnixMilli(start)
+	me := []string{"Alex Morgan Svensson"}
+
+	// Earlier notes on the same subject give Northwind and Acme.
+	note, _, _ := v.AddMeetingNote(Meeting{Subject: "Partnermöte (månadsvis)", Start: start, Attendees: []string{"Maria Holm", "Alex Morgan Svensson"}, Me: me}, "a", zone, now)
+	if got := read(note); !strings.HasPrefix(got, "[[Northwind]], [[Acme]]\n\nDeltagare: ") && !strings.HasPrefix(got, "[[Acme]], [[Northwind]]\n\nDeltagare: ") {
+		t.Fatalf("got:\n%s", got)
+	}
+	// An attendee naming a resource links it, with what recent notes carry.
+	note, _, _ = v.WriteLiveNote(Meeting{Subject: "Kvartalsgenomgång", Start: start, Attendees: []string{"Northwind Team"}, Me: me}, "abc123", "- x", zone, now)
+	if got := read(note); !strings.HasPrefix(got, "[[Northwind]], [[Acme]]\n\nDeltagare: Northwind Team\n") {
+		t.Fatalf("got:\n%s", got)
+	}
+	// "Rare" in a subject is not the resource "Rare Finds", and AI is a whole word only.
+	if namesResource("Brainstorm", "AI") || !namesResource("Snack om AI-policy", "AI") {
+		t.Fatal("whole words only")
+	}
+}
