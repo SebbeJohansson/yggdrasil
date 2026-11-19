@@ -227,6 +227,11 @@ YGG_CORS_ORIGINS=$origins
 EOF
 ensure loki.env HEIMDALL_TOKEN "$(part_token heimdall loki)"
 
+# Ratatoskr's gossip in Huginn reads Loki's strikes and Dellingr's runs, with
+# tokens of its own there (README, Huginn). Restart Loki and Dellingr after.
+ensure huginn.env LOKI_TOKEN "$(part_token loki huginn)"
+ensure huginn.env DELLINGR_TOKEN "$(part_token dellingr huginn)"
+
 write parts.env <<'EOF'
 # Where every part lives, read by every part. Leave a line commented to use
 # the built-in part on its default port. To replace a part with your own

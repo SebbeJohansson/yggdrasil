@@ -351,6 +351,8 @@ Ratatoskr watches those.
 | `POST /v1/suggestions/{id}/accept` | owner: makes the rule, enabled, or the mute on Gjallar |
 | `POST /v1/suggestions/{id}/reject` | owner: no thanks, and that pattern is never suggested again |
 | `GET`, `PATCH /v1/settings/learning` | `{ on, windowMinutes }`: on and 10 until set; off forgets what it saw |
+| `GET /v1/gossip` | `?since=<id>` → `{ on, lines }`: Ratatoskr's gossip, oldest first, the lines after that id (the last 200 without it): `{ id, exchange, at, speaker, name, text, about, canned? }` |
+| `GET`, `PUT /v1/settings/gossip` | `{ on }`: on until turned off; changing it is owner only |
 
 It follows Norn's `GET /v1/events/stream` (`inbox.arrived`, `calendar.added`,
 `calendar.moved`, `calendar.removed`, `calendar.ended`, `calendar.duplicate`,
@@ -391,6 +393,39 @@ once a day, listed and never pushed (`push: false`, `hold: true`). Only kinds
 and ids are kept, for 30 days in `huginn.db`: page names, an alert's source
 and key, an event's kind with its relation, organizer and calendar. Never a
 message's text.
+
+### Huginn: Ratatoskr's gossip
+
+Just for fun: a small group chat on the dashboard (System, Gossip) where the
+parts talk about what just happened to the system, in character. Loki brags
+about his tricks, Heimdall worries about ports and keys, Sindri grumbles
+about the night shift, Gjallar is dramatic, Munin frets about the outside
+world, and Ratatoskr carries the rumours. Each part's voice is written once,
+in `huginn/gossip_voices.go`.
+
+It talks about system events only, each turned into a fact from fixed words:
+Gjallar's alerts read by source and key (a part down or back, a loop
+failing, Heimdall's findings by check, Munin's outside trouble, a disk
+filling up), never their title, detail or link; Loki's finished strikes,
+caught or missed; goals merged and self-repair fixes, never a goal's title;
+Dellingr's runs, never a job's name. Never inbox, mail, Teams, meeting or
+calendar content, and no person's name. The lines are written by the local
+model only (`CHAT_URL`, used only when it is on 127.0.0.1 or localhost;
+`GOSSIP_MODEL`, else `LOCAL_MODEL`, else `qwen2.5:7b`), never Claude. A line
+is kept only when a real part says it, in 140 characters or fewer, with no
+link, address or anything that looks like a key; when the model is down or
+answers junk, a canned exchange for that kind of event is used instead.
+
+It is calm: at most 3 exchanges an hour, 15 minutes apart, only in your
+working hours (`WORK_HOURS`, Monday to Friday), and a burst of events folds
+into one exchange about the best 3, two minutes after the last. Events from
+the night wait for the morning. Nothing is sent to Hermóðr, ntfy or a toast:
+it is a page you visit. The last 500 lines are kept in `huginn.db`.
+
+Loki's strikes and Dellingr's runs are read every 3 minutes with
+`LOKI_TOKEN` and `DELLINGR_TOKEN` in `huginn.env` (`scripts/install.sh` adds
+them; restart Loki and Dellingr after). Without them, the gossip hears of
+Loki through its `missed:` alerts and of Dellingr through its `failing:` ones.
 
 ### Norn: keeping a break free
 

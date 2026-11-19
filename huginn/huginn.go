@@ -10,6 +10,7 @@
 //	PATCH  /v1/rules/{id}   change it; enabling is owner only
 //	DELETE /v1/rules/{id}   not a built-in one
 //	GET    /v1/reactions    what Huginn did lately
+//	GET    /v1/gossip       the parts' gossip about the system (gossip.go)
 package huginn
 
 import (
@@ -153,6 +154,15 @@ type Huginn struct {
 	DashboardURL string
 	// Streams are Norn's and Gjallar's; nil in tests.
 	Streams []*sse.Stream
+	// Model is the local model the gossip is written with; nil for canned lines only.
+	Model       Chatter
+	GossipModel string
+	// Loki and Dellingr are read for the gossip only, when Huginn has a token there.
+	Loki     *call.Part
+	Dellingr *call.Part
+	// WorkFrom and WorkTo are your working hours, Monday to Friday, in minutes
+	// since midnight: the gossip is quiet outside them.
+	WorkFrom, WorkTo int
 
 	now     func() time.Time
 	logf    func(string, ...any)
@@ -163,6 +173,7 @@ type Huginn struct {
 	raised  map[string]bool
 	// linearFails is how many times in a row Norn could not judge each Linear ticket.
 	linearFails map[string]int
+	gossip      gossip
 }
 
 type alertSeen struct {
@@ -173,7 +184,7 @@ type alertSeen struct {
 // New makes Huginn and writes the built-in rules into the store.
 func New(ctx context.Context, store *Store, norn, sindri *call.Part, gjallar *alert.Client, teller tell.Teller, zone *time.Location, logf func(string, ...any)) (*Huginn, error) {
 	h := &Huginn{Store: store, Norn: norn, Sindri: sindri, Gjallar: gjallar, Tell: teller, Zone: zone, now: time.Now, logf: logf,
-		alerts: map[int64]alertSeen{}, told: map[string]string{}, raised: map[string]bool{}}
+		alerts: map[int64]alertSeen{}, told: map[string]string{}, raised: map[string]bool{}, WorkFrom: 9 * 60, WorkTo: 17 * 60}
 	kept, err := store.Rules(ctx)
 	if err != nil {
 		return nil, err
@@ -205,6 +216,7 @@ func (h *Huginn) Mount(p *part.Part) {
 	p.Loop("linear", LinearEvery, h.watchLinear)
 	h.mountLearning(p)
 	p.Loop("promises", LinearEvery, h.watchPromises)
+	h.mountGossip(p)
 }
 
 // --- routes ---
@@ -682,6 +694,7 @@ func Fill(text string, fields map[string]string) string {
 // the background, so a slow answer never holds up the stream.
 func (h *Huginn) Handle(ctx context.Context, f Fired) {
 	h.see(ctx, f)
+	h.gossipAlert(ctx, f)
 	rules, err := h.Store.Rules(ctx)
 	if err != nil {
 		h.logf("reading the rules: %v", err)

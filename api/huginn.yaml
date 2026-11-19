@@ -76,6 +76,21 @@ info:
       calendar), never a message's text, and only on this machine. A new
       suggestion is told through Hermóðr at most once a day, `push: false`
       and `hold: true`. A suggestion said no to is never made again.
+    - Ratatoskr's gossip (`/v1/gossip`): a small chat where the parts talk
+      about what happened to the system itself, in character, for fun. Only
+      system events: Gjallar's alerts read by source and key (never their
+      title, detail or link), Loki's finished strikes, merged goals and
+      self-repair (never a goal's title), Dellingr's runs (never a job's
+      name), Heimdall's findings by check. Never inbox, mail, Teams,
+      meeting or calendar content, and no person's name. Written by the
+      local model only, on this machine (`CHAT_URL` on loopback), never
+      Claude; a line must be by a real part, at most 140 characters, with
+      no link, address or key-like text, else a canned exchange is used. At
+      most 3 exchanges an hour, 15 minutes apart, in working hours only; a
+      burst folds into one exchange about at most 3 events. Nothing is sent
+      to Hermóðr or anywhere else: it is a place you visit. The last 500
+      lines are kept. On until turned off; off, it reads and writes nothing
+      for it and `/v1/gossip` answers no lines.
 servers:
   - url: http://127.0.0.1:8777
 security:
@@ -283,6 +298,46 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/gossip:
+    get:
+      summary: The parts' gossip about the system, oldest first. With since, the lines after that id (at most 200); without, the last 200. No lines while it is off.
+      parameters:
+        - { name: since, in: query, required: false, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: The lines.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [on, lines]
+                properties:
+                  on: { type: boolean }
+                  lines: { type: array, items: { $ref: "#/components/schemas/GossipLine" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/gossip:
+    get:
+      summary: Whether the parts gossip. On until turned off.
+      responses:
+        "200": { $ref: "#/components/responses/GossipSetting" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Turn the gossip on or off. Off reads nothing for it, writes nothing and drops what was waiting; the lines kept stay for when it is on again. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/GossipSetting" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/reactions:
     get:
       summary: What Huginn did lately, newest first. Kept for 7 days. Hermóðr's messages are what the widget lists.
@@ -346,7 +401,28 @@ components:
             properties:
               on: { type: boolean }
               windowMinutes: { type: integer, minimum: 1, maximum: 60 }
+    GossipSetting:
+      description: The gossip setting.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on]
+            properties:
+              on: { type: boolean }
   schemas:
+    GossipLine:
+      type: object
+      required: [id, exchange, at, speaker, name, text, about]
+      properties:
+        id: { type: integer, description: Rising; read on with since. }
+        exchange: { type: string, description: The lines said together about the same events share it. }
+        at: { type: string, format: date-time }
+        speaker: { type: string, enum: [ratatoskr, loki, heimdall, sindri, gjallar, munin, huginn, norn, dellingr, hermodr, vedrfolnir] }
+        name: { type: string, description: "The part's name as written: Veðrfölnir, Hermóðr…" }
+        text: { type: string, maxLength: 140 }
+        about: { type: array, items: { type: string }, description: The real events the exchange was about, in fixed words. }
+        canned: { type: boolean, description: A canned line, used when the local model was down or answered junk. }
     Health:
       type: object
       required: [ok, part, version, startedAt, loops]
