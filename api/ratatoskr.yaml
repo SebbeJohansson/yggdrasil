@@ -80,8 +80,10 @@ paths:
         Your own rhythm as last seen, for a widget to show on hover: a long run
         of meetings with no real gap (stretch), a session of yours still active
         late (late), most of the week's working hours in meetings (week). Each
-        pattern is active or not, since when, and the next free time. on is
-        false when RATATOSKR_YOU is off.
+        pattern is active or not, since when, and the next free time. A
+        break you kept free (Norn's events with break true) is never a
+        meeting, and ends a stretch like a real gap. on is false when
+        RATATOSKR_YOU is off.
       responses:
         "200":
           description: What it sees.

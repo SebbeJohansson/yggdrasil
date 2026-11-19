@@ -178,7 +178,7 @@ nothing goes to Gjallar.
 
 | Pattern | Active when |
 | --- | --- |
-| `stretch` | you are inside a run of meetings with no gap of `RATATOSKR_YOU_BREAK` (15m) or more, `RATATOSKR_YOU_STRETCH` (4h) long or more |
+| `stretch` | you are inside a run of meetings with no gap of `RATATOSKR_YOU_BREAK` (15m) or more, `RATATOSKR_YOU_STRETCH` (4h) long or more. A break you kept free (Norn's `POST /v1/calendar/breaks`) ends a run like such a gap, however short |
 | `late` | it is past `RATATOSKR_YOU_LATE` (23:00, until 05:00) and one of your own Claude Code sessions changed in the last 10 minutes, or you just answered a Sindri agent that asked you something (an agent working on its own does not count) |
 | `week` | meetings fill `RATATOSKR_YOU_PACKED` (60) percent or more of the working hours (`RATATOSKR_YOU_HOURS`, 09:00-17:00, Monday to Friday) from the start of today to Friday |
 
@@ -190,7 +190,8 @@ Hermóðr's history after a restart, and none while Hermóðr says it is quiet
 hours (a late evening inside `QUIET_HOURS` is seen on `GET /v1/you` but never
 sent). No counts, no scores. Messages carry times only: meeting subjects and
 people never leave Norn. It reads Norn's `GET /v1/calendar` (the work
-calendar; declined, free, out-of-office and all-day events left out) and
+calendar; declined, free, out-of-office and all-day events and breaks you
+kept free left out) and
 Sindri's `GET /v1/sessions/recent` and `GET /v1/agents`, with `NORN_TOKEN` and
 `SINDRI_TOKEN` in `ratatoskr.env` (`scripts/install.sh` adds them; restart
 Norn and Sindri after).
@@ -293,7 +294,8 @@ nobody books over it, with nobody invited and the Outlook category
 `GET /v1/calendar` it has `break: true`. Norn reads the calendar first and
 answers `409` when something you did not decline overlaps the slot. It needs
 the Microsoft sign-in with `Calendars.ReadWrite`. A break is not a meeting:
-Norn sends no `calendar.*` events for it.
+Norn sends no `calendar.*` events for it, and Ratatoskr ends a stretch at it
+and does not count it toward a packed week.
 
 ### Dellingr
 
