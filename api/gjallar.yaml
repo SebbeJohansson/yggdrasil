@@ -116,6 +116,29 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/alerts/healed:
+    get:
+      summary: Every time an alert healed (its resolved event), oldest first, a page at a time. An alert that comes back and heals again is listed again. Never pruned, so it goes back to the first alert; the widget's tree draws its scars from it.
+      parameters:
+        - name: after
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+          description: The last healing id of the page before.
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 1000 }
+      responses:
+        "200":
+          description: The healings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [healed]
+                properties:
+                  healed: { type: array, items: { $ref: "#/components/schemas/Healing" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/alerts/mine:
     get:
       summary: The caller's own open and acknowledged alerts, by key. A part reads this on start, to resolve what it raised before a restart. The owner has none.
@@ -353,6 +376,18 @@ components:
         kind: { type: string, description: "opened, reopened, escalated, resolved, acknowledged, snoozed" }
         by: { type: string }
         note: { type: string }
+    Healing:
+      type: object
+      required: [id, alertId, source, key, title, by, openedAt, healedAt]
+      properties:
+        id: { type: integer, description: The resolved event's id. }
+        alertId: { type: integer }
+        source: { type: string }
+        key: { type: string }
+        title: { type: string, description: The alert's latest title. }
+        by: { type: string, description: Who resolved it. }
+        openedAt: { type: string, format: date-time, description: When this spell of the alert opened. }
+        healedAt: { type: string, format: date-time }
     Mute:
       type: object
       required: [source, key, at]

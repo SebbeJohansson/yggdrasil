@@ -19,6 +19,7 @@
 //	POST /v1/alerts                  sender: raise or update { key, severity, title, detail?, link?, traceId?, expiresAt? }
 //	POST /v1/alerts/resolve          sender: { key }, the condition is gone
 //	GET  /v1/alerts                  ?state=active|open|acknowledged|resolved|all &limit=
+//	GET  /v1/alerts/healed           every time an alert healed, oldest first: ?after=<id> &limit=
 //	GET  /v1/alerts/mine             sender: its own open and acknowledged alerts (owner: none)
 //	GET  /v1/alerts/stream           server-sent events: every change, as `alert`
 //	GET  /v1/alerts/{id}             the alert and its history
@@ -63,7 +64,7 @@ const (
 type Gjallar struct {
 	Store *Store
 	// Push tells you of a critical alert: Hermóðr, then ntfy straight.
-	Push  tell.Teller
+	Push tell.Teller
 	// Heartbeats names the senders expected to beat every minute (Ratatoskr),
 	// and how long a silence may last before Gjallar raises it.
 	Heartbeats map[string]time.Duration
@@ -89,6 +90,7 @@ func (g *Gjallar) Mount(p *part.Part) {
 	p.Handle("GET /v1/alerts", g.list)
 	p.Handle("GET /v1/alerts/stream", g.stream)
 	p.Handle("GET /v1/alerts/mine", g.mine)
+	p.Handle("GET /v1/alerts/healed", g.healed)
 	p.Handle("GET /v1/alerts/{id}", g.get)
 	p.Handle("POST /v1/alerts/{id}/ack", g.owner(g.ack))
 	p.Handle("POST /v1/alerts/{id}/snooze", g.owner(g.snooze))
@@ -245,6 +247,32 @@ func (g *Gjallar) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	part.JSON(w, http.StatusOK, map[string]any{"alerts": alerts})
+}
+
+// healed is every time an alert healed, oldest first, a page at a time:
+// the history the widget's tree draws its scars from.
+func (g *Gjallar) healed(w http.ResponseWriter, r *http.Request) {
+	var after int64
+	limit := 1000
+	var err error
+	if text := r.URL.Query().Get("after"); text != "" {
+		if after, err = strconv.ParseInt(text, 10, 64); err != nil || after < 0 {
+			part.Error(w, http.StatusBadRequest, "after must be an event id")
+			return
+		}
+	}
+	if text := r.URL.Query().Get("limit"); text != "" {
+		if limit, err = strconv.Atoi(text); err != nil || limit < 1 || limit > 5000 {
+			part.Error(w, http.StatusBadRequest, "limit must be 1 to 5000")
+			return
+		}
+	}
+	healed, err := g.Store.Healed(r.Context(), after, limit)
+	if err != nil {
+		part.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	part.JSON(w, http.StatusOK, map[string]any{"healed": healed})
 }
 
 // mine is the caller's own active alerts: what a part raised before it

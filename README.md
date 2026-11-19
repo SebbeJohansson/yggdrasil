@@ -150,6 +150,7 @@ Ratatoskr reads it. Everything else needs `Authorization: Bearer <token>`.
 | `POST /v1/alerts` | a part | `{ key, severity: info\|warning\|critical, title, detail?, link?, traceId?, expiresAt? }` → `201` opened, or `200` updated. The source is the caller's token name. The same source and key updates the open alert; a resolved one opens again, and an acknowledged one opens again when its severity goes up |
 | `POST /v1/alerts/resolve` | a part | `{ key }` → `{ resolved }`. Only the part's own alerts |
 | `GET /v1/alerts` | anyone | `?state=active` (default: open and acknowledged), `open`, `acknowledged`, `resolved`, `all`; `?limit=` (200) → `{ alerts }`, most recently seen first |
+| `GET /v1/alerts/healed` | anyone | `?after=<id>&limit=` (1000, at most 5000) → `{ healed: [{ id, alertId, source, key, title, by, openedAt, healedAt }] }`: every time an alert healed (its resolved event), oldest first. An alert that comes back and heals again is listed again. Events are never removed, so it goes back to the first alert; the widget's tree draws a scar for each |
 | `GET /v1/alerts/mine` | a part | `{ alerts }`: the caller's own open and acknowledged alerts. A part reads it on start, so it resolves what it raised before a restart. The owner has none |
 | `GET /v1/alerts/stream` | anyone | server-sent events, one `alert` per change. It needs the token, so read it with `fetch`, not `EventSource` |
 | `GET /v1/alerts/{id}` | anyone | `{ alert, events }`: the alert and its history |
