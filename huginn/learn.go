@@ -36,7 +36,6 @@ import (
 	"strings"
 	"time"
 
-	"yggdrasil/internal/call"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/tell"
 )
@@ -609,13 +608,6 @@ func (h *Huginn) openSuggestion(w http.ResponseWriter, r *http.Request) (Suggest
 	return s, true
 }
 
-// bearer is the caller's own token, which accepting a mute hands to Gjallar:
-// a mute is the owner's to make, and only the owner accepts.
-func bearer(r *http.Request) string {
-	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return token
-}
-
 func (h *Huginn) acceptSuggestion(w http.ResponseWriter, r *http.Request) {
 	if !ownerOnly(w, r, "accept a suggestion") {
 		return
@@ -639,16 +631,8 @@ func (h *Huginn) acceptSuggestion(w http.ResponseWriter, r *http.Request) {
 		}
 		s.RuleID, answer["rule"] = rule.ID, rule
 	case s.Kind == "mute" && s.Mute != nil:
-		var gjallarURL string
-		if h.Gjallar != nil {
-			gjallarURL = h.Gjallar.URL
-		}
-		gjallar := call.New("gjallar", gjallarURL, bearer(r), 5*time.Second)
-		body := map[string]any{"source": s.Mute.Source, "key": s.Mute.Key, "muted": true}
-		if err := gjallar.Do(r.Context(), http.MethodPost, "/v1/mutes", body, nil); err != nil {
-			part.Error(w, http.StatusBadGateway, err.Error())
-			return
-		}
+		// The dashboard mutes it on Gjallar itself, with the owner's token,
+		// before it accepts: Huginn never holds or passes on that token.
 		answer["mute"] = s.Mute
 	default:
 		part.Error(w, http.StatusInternalServerError, "a suggestion with nothing to make")

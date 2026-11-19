@@ -274,7 +274,7 @@ func TestNoThanksIsForever(t *testing.T) {
 	}
 }
 
-func TestAnAlertYouKeepQuietingIsSuggestedAsAMuteAndAcceptingMutesItOnGjallar(t *testing.T) {
+func TestAnAlertYouKeepQuietingIsSuggestedAsAMuteAndHuginnNeverCallsGjallarWithYourToken(t *testing.T) {
 	h, _ := newTest(t, learnStart)
 	var mu sync.Mutex
 	var asked []string
@@ -305,9 +305,8 @@ func TestAnAlertYouKeepQuietingIsSuggestedAsAMuteAndAcceptingMutesItOnGjallar(t 
 	if status := s.do(contracttest.Owner, "POST", "/v1/suggestions/"+got[0].ID+"/accept", "", nil); status != 200 {
 		t.Fatalf("accepting: %d", status)
 	}
-	want := "POST /v1/mutes Bearer " + contracttest.Owner + " munin down:laya true"
-	if len(asked) != 1 || asked[0] != want {
-		t.Fatalf("asked Gjallar %q", asked)
+	if len(asked) != 0 {
+		t.Fatalf("Huginn called Gjallar itself: %q", asked)
 	}
 }
 

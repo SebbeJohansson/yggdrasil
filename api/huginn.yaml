@@ -17,8 +17,8 @@ info:
     - Suggest and tell, never act for you: no mail, messages, goals or
       agents started. It reads from Norn, Gjallar and Sindri and writes
       nowhere but Hermóðr (`POST /v1/messages`), its own rules and
-      reactions, and Gjallar's `POST /v1/mutes` when you accept a
-      suggested mute.
+      reactions. A suggested mute is made by the dashboard on Gjallar
+      itself, never by Huginn.
     - Never ask Norn for raw inbox text. Work from the events' summaries and
       from `POST /v1/ask` on Norn, which keeps its own text to itself.
     - Every reaction goes to Hermóðr with the rule's `hold`, so Hermóðr
@@ -210,8 +210,9 @@ paths:
   /v1/suggestions/{id}/accept:
     post:
       summary: >-
-        Make it: a rule, enabled, or the mute on Gjallar (`POST /v1/mutes`,
-        sent with the owner's own token). Owner only.
+        Make it: a rule, enabled. For a mute, the caller mutes it on Gjallar
+        itself (`POST /v1/mutes`) first, and accepting records it: Huginn
+        never calls Gjallar with the owner's token. Owner only.
       parameters: [{ $ref: "#/components/parameters/ID" }]
       responses:
         "200":
@@ -229,7 +230,6 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
-        "502": { $ref: "#/components/responses/BadGateway" }
   /v1/suggestions/{id}/reject:
     post:
       summary: No thanks. The same pattern is never suggested again. Owner only.
@@ -320,11 +320,6 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
       description: The suggestion was already accepted or said no to.
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/Error" }
-    BadGateway:
-      description: Gjallar did not take the mute.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -452,7 +447,7 @@ components:
         kind: { type: string, enum: [rule, mute] }
         text: { type: string, description: The suggestion in plain words. }
         rule: { $ref: "#/components/schemas/RuleInput", description: "kind rule: the rule accepting makes, delivered to the widget only." }
-        mute: { $ref: "#/components/schemas/Mute", description: "kind mute: the Gjallar mute accepting makes." }
+        mute: { $ref: "#/components/schemas/Mute", description: "kind mute: the Gjallar mute to make; the dashboard makes it, then accepts." }
         times: { type: integer, description: How many times you did it after such an event (rule), or quieted the alert (mute), in 30 days. }
         of: { type: integer, description: "kind rule: how many such events there were." }
         state: { type: string, enum: [open, accepted, rejected] }

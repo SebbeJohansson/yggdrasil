@@ -342,8 +342,8 @@ suggested rule, "Sync with Anna Berg ended: open the meeting note?",
 delivered to the widget only and linking to that page (the rule's
 `action.link`, filtered on `on.organizer` or, for an alert, `on.key`). The
 same alert acknowledged, snoozed or muted five times, an hour apart, becomes
-a suggested Gjallar mute; accepting it sends `POST /v1/mutes` to Gjallar
-with your own owner token. A new suggestion is told through Hermóðr at most
+a suggested Gjallar mute; the dashboard mutes it on Gjallar itself and then
+accepts it, so Huginn never holds your owner token. A new suggestion is told through Hermóðr at most
 once a day, listed and never pushed (`push: false`, `hold: true`). Only kinds
 and ids are kept, for 30 days in `huginn.db`: page names, an alert's source
 and key, an event's kind with its relation, organizer and calendar. Never a
