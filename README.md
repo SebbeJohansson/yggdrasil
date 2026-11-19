@@ -414,7 +414,10 @@ writes one whenever you ask). Huginn's built-in `promise-due` rule
 then says "You promised Anna: Send the Q3 deck, by tomorrow", held through
 meetings, with a link to the dashboard. When a later message of yours to the
 same person keeps an open promise (the local model judges, strictly), it is
-marked done by `norn` with why; you can open it again.
+marked done by `norn` with why; you can open it again. `PUT /v1/settings/promises`
+`{ on: false }` (owner) turns the ledger off: nothing you send or save is read
+for promises, no follow-ups are written and no reminders sent; what it kept
+stays listed (`GET /v1/settings/promises` says whether it runs).
 
 ### Dellingr
 

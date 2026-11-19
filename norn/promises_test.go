@@ -475,3 +475,45 @@ func TestAFollowUpCanBeDraftedOnlyForAnOpenPromiseMadeInAThread(t *testing.T) {
 		}
 	}
 }
+
+func TestThePromiseLedgerTurnedOffReadsAndRemindsNothing(t *testing.T) {
+	now := time.Date(2026, 11, 19, 15, 0, 0, 0, stockholm(t))
+	n, p := newNorn(t)
+	model := &fakeModel{promises: `{"promises":[{"what":"Skicka offerten","to":"Peter","when":"på fredag"}]}`, kept: `{"done":[]}`}
+	n.Promises.Model = model.chat
+	n.Promises.now = func() time.Time { return now }
+	ctx := context.Background()
+	meeting := Meeting{Subject: "Budget", Start: now.Add(-2 * time.Hour).UnixMilli(), Attendees: []string{"Peter Lund"}}
+
+	if code, body := call(t, p, "GET", "/v1/settings/promises", nil); code != http.StatusOK || body.(map[string]any)["on"] != true {
+		t.Fatalf("on until turned off: %d %v", code, body)
+	}
+	n.OfferNotes(meeting, "- Jag skickar offerten till Peter på fredag", "")
+	if code, body := call(t, p, "PUT", "/v1/settings/promises", map[string]any{"on": false}); code != http.StatusOK || body.(map[string]any)["on"] != false {
+		t.Fatalf("turning off: %d %v", code, body)
+	}
+	n.OfferNotes(meeting, "- Jag skickar offerten till Peter på fredag", "")
+	if err := n.Promises.pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.asked) != 0 {
+		t.Fatalf("read while off: %q", model.asked)
+	}
+	// Notes offered before it was turned off are not read once it is on again.
+	if code, _ := call(t, p, "PUT", "/v1/settings/promises", map[string]any{"on": true}); code != http.StatusOK {
+		t.Fatalf("turning on: %d", code)
+	}
+	if err := n.Promises.pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.asked) != 0 {
+		t.Fatalf("read what was offered before it was off: %q", model.asked)
+	}
+	request := httptest.NewRequest("PUT", "/v1/settings/promises", strings.NewReader(`{"on":false}`))
+	request.Header.Set("Authorization", "Bearer "+contracttest.Sender)
+	recorder := httptest.NewRecorder()
+	p.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("a part turned it off: %d", recorder.Code)
+	}
+}

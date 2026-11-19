@@ -158,6 +158,31 @@ paths:
         "200": { $ref: "#/components/responses/WidgetSettings" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/promises:
+    get:
+      summary: Whether the promise ledger runs (on until you turn it off).
+      responses:
+        "200": { $ref: "#/components/responses/PromiseSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: >-
+        Turn the promise ledger on or off. Off, Norn reads nothing you send or
+        save for promises, writes no follow-ups and sends no reminders; kept
+        promises stay listed and can still be changed. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/PromiseSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/settings/send-names:
     get:
       summary: Until when names go to Claude as they are, without placeholders (Unix ms; 0 means they are swapped).
@@ -1477,6 +1502,15 @@ components:
       scheme: bearer
       description: A named token. `owner` is you; any other name is a part.
   responses:
+    PromiseSettings:
+      description: Whether the promise ledger runs.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on]
+            properties:
+              on: { type: boolean }
     Microsoft:
       description: The sign-in.
       content:

@@ -147,7 +147,7 @@ func NewPromises(n *Norn) *Promises {
 // Offer hands over messages the inbox read (Teams, Slack) or notes you saved;
 // the next pass reads them. Safe on a nil ledger.
 func (p *Promises) Offer(messages ...SentMessage) {
-	if p == nil || len(messages) == 0 {
+	if p == nil || len(messages) == 0 || !p.On(context.Background()) {
 		return
 	}
 	p.mu.Lock()
@@ -502,6 +502,9 @@ func (p *Promises) gather(ctx context.Context, since time.Time) ([]SentMessage, 
 
 // pass reads what you sent since the horizon, oldest first, a few at a time.
 func (p *Promises) pass(ctx context.Context) error {
+	if !p.On(ctx) {
+		return nil
+	}
 	if err := p.init(ctx); err != nil {
 		return err
 	}
@@ -724,6 +727,9 @@ func (p *Promises) FollowUp(ctx context.Context, item string) (Item, bool) {
 // remind publishes promise.due once for each promise whose time has come,
 // with a follow-up draft first when it was made in a thread.
 func (p *Promises) remind(ctx context.Context) error {
+	if !p.On(ctx) {
+		return nil
+	}
 	open, err := p.List(ctx, "open")
 	if err != nil {
 		return err
@@ -758,6 +764,8 @@ func (n *Norn) mountPromises(p *part.Part) {
 	p.Handle("GET /v1/promises", n.listPromises)
 	p.Handle("PATCH /v1/promises/{id}", n.changePromise)
 	p.Handle("PUT /v1/promises/{id}/dev", n.markPromiseDev)
+	p.Handle("GET /v1/settings/promises", n.promiseSettings)
+	p.Handle("PUT /v1/settings/promises", n.setPromiseSettings)
 	p.Loop("promises", promisesEvery, n.Promises.pass)
 	p.Loop("promise-reminders", remindEvery, n.Promises.remind)
 }
