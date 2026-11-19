@@ -658,7 +658,8 @@ A finding not found again is resolved and kept 30 days. A check that fails
 or is skipped leaves its findings as they were. Each high finding raises
 `<check>:<id>` on Gjallar as a warning, critical for a secret in a pushed
 commit or a part listening beyond loopback, and resolves it when it is
-gone.
+gone. Self-repair takes `deps:` and `listening:` alerts; a secret is never
+handed to a coding agent.
 
 It runs as a host unit, `ygg-heimdall.service`, like Veðrfölnir: it needs the
 host's sockets and processes (a container sees only its own network), your
@@ -690,9 +691,11 @@ what is wrong with Yggdrasil itself, marked to run tonight, with a source
 starting `self-repair:`:
 
 - Gjallar's active alerts from its own parts (Ratatoskr's `down:`,
-  `stalled:` and `failing:`, Loki's `missed:`, and the parts' own), with the key, title, error
-  and history. Munin, Veðrfölnir, sign-ins, the local model, ntfy and muted
-  alerts are left out: nothing in this repo fixes them.
+  `stalled:` and `failing:`, Loki's `missed:`, Heimdall's `deps:` and
+  `listening:`, and the parts' own), with the key, title, error and history.
+  Munin, Veðrfölnir, sign-ins, the local model, ntfy and muted alerts are left
+  out: nothing in this repo fixes them. So are Heimdall's `secrets:`,
+  `files:` and `scopes:`: a secret never goes to a coding agent.
 - Norn's dispatch picks you corrected the same way at least 3 times in a week
   (`GET /v1/decisions`), as "picked answer, you said code:yggdrasil, 4
   times". Only kinds, agent ids, projects and counts go in, never a
