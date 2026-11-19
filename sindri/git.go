@@ -676,7 +676,8 @@ func (w *Worktree) ReviewOf(commitHash string) (*Review, error) {
 			c.Merged = !pending[c.Hash]
 			review.Commits = append(review.Commits, c)
 		}
-		review.Merged = w.isMerged()
+		// A branch with no commits of its own is an ancestor of base too: that is nothing committed yet, not a merge.
+		review.Merged = len(review.Commits) > 0 && w.isMerged()
 		rangeSpec := w.Base + "..." + w.Branch
 		if review.Merged {
 			rangeSpec = from + "..." + w.Branch
@@ -747,6 +748,8 @@ func (w *Worktree) Merge() (string, error) {
 	switch {
 	case !w.branchExists():
 		return "", reviewErr("branch %s is gone", w.Branch)
+	case count(w.Repo, "rev-list", "--count", w.BaseCommit+".."+w.Branch) == 0:
+		return "", reviewErr("%s has no commits yet", w.Branch)
 	case w.isMerged():
 		return "", reviewErr("%s is already merged into %s", w.Branch, w.Base)
 	}
