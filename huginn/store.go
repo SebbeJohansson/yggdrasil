@@ -49,7 +49,7 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + learnSchema); err != nil {
+	if _, err := db.Exec(schema + learnSchema + gossipTables); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("huginn schema: %w", err)
 	}

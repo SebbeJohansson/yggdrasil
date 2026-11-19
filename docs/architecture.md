@@ -64,7 +64,7 @@ hold it to its spec: the same routes, and every answer in the spec's shape.
 | Gjallar: alerts | 8774 | container | `gjallar.db` | built |
 | Ratatoskr: watchdog | 8775 | host unit, outside compose | none | built |
 | Munin: external checks | 8776 | container | none | built |
-| Huginn: reacts to events | 8777 | container | `huginn.db`: rules, reactions | built |
+| Huginn: reacts to events | 8777 | container | `huginn.db`: rules, reactions, gossip | built |
 | Dellingr: scheduled jobs | 8778 | container | `dellingr.db`: jobs, runs | built |
 | Hermóðr: messages to you | 8779 | container | `hermodr.db`: the last week of messages | built |
 | Loki: tests the watchers | 8780 | container | `loki.json`: settings, strikes | built |
@@ -168,7 +168,9 @@ can replace them later through their contracts.
   also learns what you do after an event and suggests a rule for it, made
   only when you accept it. Its
   questions to Norn go with `to: norn` and `/local`, so Norn answers itself
-  and never hands them to an agent.
+  and never hands them to an agent. For fun it also keeps Ratatoskr's
+  gossip, the parts talking in character about system events only, written
+  by the local model on this machine and sent nowhere.
 - **Dellingr** runs jobs on a clock. my-agent's roadmap (section 2) planned
   one scheduler per part; one part replaced that, since a job's work lives in
   Norn or Sindri anyway, and Ratatoskr reports Dellingr down like any other

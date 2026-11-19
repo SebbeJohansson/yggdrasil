@@ -10,6 +10,7 @@ import (
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/call"
 	"yggdrasil/internal/env"
+	"yggdrasil/internal/llm"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/sse"
 	"yggdrasil/internal/tell"
@@ -27,6 +28,12 @@ import (
 //	YGG_HERMODR_URL  Hermóðr, which holds and carries reactions to you; HERMODR_TOKEN is Huginn's token there
 //	TIME_ZONE        yours (Europe/Stockholm)
 //	DASHBOARD_URL    where a Linear suggestion links to (http://localhost:17420); off for no link
+//	CHAT_URL         the local model the gossip is written with (XeStrata, http://127.0.0.1:8095/v1); only on
+//	                 this machine (127.0.0.1, localhost): anything else, or off, is canned lines only
+//	GOSSIP_MODEL     the model named to it (LOCAL_MODEL, else qwen2.5:7b)
+//	YGG_LOKI_URL     Loki; LOKI_TOKEN is Huginn's token there, to gossip about its strikes (unset: Gjallar's missed: alerts only)
+//	YGG_DELLINGR_URL Dellingr; DELLINGR_TOKEN is Huginn's token there, to gossip about its runs (unset: its failing: alerts only)
+//	WORK_HOURS       your working day, Monday to Friday (09:00-17:00): the gossip is quiet outside it
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("HUGINN_TOKENS")
 	if err != nil {
@@ -61,6 +68,17 @@ func Main(ctx context.Context) error {
 	}
 	now := time.Now()
 	h.DashboardURL = env.String("DASHBOARD_URL", "http://localhost:17420")
+	if chatURL := LocalChatURL(env.String("CHAT_URL", "http://127.0.0.1:8095/v1")); chatURL != "" {
+		h.Model = &llm.Client{PrimaryURL: chatURL, NoFallback: true, Warn: p.Logf}
+	}
+	h.GossipModel = env.String("GOSSIP_MODEL", env.String("LOCAL_MODEL", "qwen2.5:7b"))
+	h.Loki = call.New("loki", where.URL("loki"), env.String("LOKI_TOKEN", ""), 10*time.Second)
+	h.Dellingr = call.New("dellingr", where.URL("dellingr"), env.String("DELLINGR_TOKEN", ""), 10*time.Second)
+	if from, to, err := ParseWorkHours(env.String("WORK_HOURS", "09:00-17:00")); err == nil {
+		h.WorkFrom, h.WorkTo = from, to
+	} else {
+		p.Logf("WORK_HOURS: %v; the gossip keeps 09:00-17:00", err)
+	}
 	h.Streams = []*sse.Stream{
 		sse.New("norn", where.URL("norn")+"/v1/events/stream", nornToken, now),
 		sse.New("gjallar", where.URL("gjallar")+"/v1/alerts/stream", gjallarToken, now),
