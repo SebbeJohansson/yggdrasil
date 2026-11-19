@@ -36,6 +36,9 @@ const BriefFormat = `Write the brief in Markdown, in exactly this shape and noth
 
 <One sentence: what this meeting is for and what should come out of it.>
 
+**About <Company>**
+- <only if someone invited is from a company other than mine, one sentence of at most 25 words on what that company does>
+
 **Open**
 - <a question, decision or promise still open; at most 3 bullets>
 
@@ -47,6 +50,7 @@ Rules:
 - Never name me: I am the reader. Name someone else only inside a sentence, by first name, and only when more than one other person is invited.
 - Leave out who is invited, the time and the room: I already see them.
 - Use only what is about these people or this meeting's subject. Leave out everything else, however urgent.
+- The **About** section is for a meeting with an external company only. Write it from what you know about the company, never guess: if you do not know it, say only "Not known to me." Do it even when the sources hold nothing about the company; that is when it matters most. Leave it out when everyone invited is from my own company.
 - Leave out a section that would be empty. If nothing bears on this meeting at all, write only one line saying so.
 - Write in the language of the sources, and translate the two headings into it (Swedish: **Öppet**, **Ta med**).
 
@@ -87,6 +91,7 @@ type BriefMail struct {
 	At            time.Time
 	From, Subject string
 	To            []string
+	Addresses     []string // everyone on the mail, lower-case
 	Preview       string
 }
 
@@ -200,8 +205,15 @@ func searchMail(ctx context.Context, get graphGet, invitees []invitee, since tim
 					from = m.From.EmailAddress.Address
 				}
 			}
+			var addresses []string
+			if m.From != nil {
+				addresses = append(addresses, strings.ToLower(m.From.EmailAddress.Address))
+			}
+			for _, r := range append(slices.Clone(m.ToRecipients), m.CcRecipients...) {
+				addresses = append(addresses, strings.ToLower(r.EmailAddress.Address))
+			}
 			mails = append(mails, BriefMail{At: time.UnixMilli(at), From: from, Subject: m.Subject,
-				To: recipientNames(append(m.ToRecipients, m.CcRecipients...)), Preview: OneLine(m.BodyPreview, 300)})
+				To: recipientNames(append(slices.Clone(m.ToRecipients), m.CcRecipients...)), Addresses: addresses, Preview: OneLine(m.BodyPreview, 300)})
 		}
 	}
 	sort.Slice(mails, func(a, b int) bool { return mails[a].At.After(mails[b].At) })
@@ -304,9 +316,70 @@ func readChats(ctx context.Context, get graphGet, invitees []invitee, me Me, sin
 	return chats, nil
 }
 
+// freeMail are domains that say nothing about a company.
+var freeMail = map[string]bool{"gmail.com": true, "googlemail.com": true, "outlook.com": true, "hotmail.com": true,
+	"live.com": true, "icloud.com": true, "me.com": true, "yahoo.com": true, "proton.me": true, "protonmail.com": true}
+
+// ExternalCompany is a company other than yours that has someone in the
+// meeting, with how much of your email and chat from the last briefDays
+// days involves it.
+type ExternalCompany struct {
+	Domain string
+	People []string
+	Mails  int
+	Chats  int
+}
+
+func domainOf(address string) string {
+	_, domain, ok := strings.Cut(strings.ToLower(strings.TrimSpace(address)), "@")
+	if !ok {
+		return ""
+	}
+	return domain
+}
+
+// externalCompanies are the companies of the invitees whose address is not
+// at yours, in the order they are first invited.
+func externalCompanies(invitees []invitee, me Me, mails []BriefMail, chats []BriefChat) []ExternalCompany {
+	mine := domainOf(me.Address)
+	var found []ExternalCompany
+	for _, person := range invitees {
+		domain := domainOf(person.Address)
+		if domain == "" || domain == mine || freeMail[domain] {
+			continue
+		}
+		name := person.Name
+		if name == "" {
+			name = person.Address
+		}
+		i := slices.IndexFunc(found, func(c ExternalCompany) bool { return c.Domain == domain })
+		if i < 0 {
+			found = append(found, ExternalCompany{Domain: domain})
+			i = len(found) - 1
+		}
+		found[i].People = append(found[i].People, name)
+	}
+	for i := range found {
+		for _, m := range mails {
+			if slices.ContainsFunc(m.Addresses, func(a string) bool { return domainOf(a) == found[i].Domain }) {
+				found[i].Mails++
+			}
+		}
+		for _, c := range chats {
+			for _, person := range invitees {
+				if domainOf(person.Address) == found[i].Domain && strings.Contains(c.Name, person.Name) && person.Name != "" {
+					found[i].Chats++
+					break
+				}
+			}
+		}
+	}
+	return found
+}
+
 // BriefDigest is what Claude writes the brief from, in words, at most
 // briefChars long.
-func BriefDigest(subject string, start time.Time, organizer string, invited []string, body string, mails []BriefMail, chats []BriefChat, zone *time.Location) string {
+func BriefDigest(subject string, start time.Time, organizer string, invited []string, body string, external []ExternalCompany, mails []BriefMail, chats []BriefChat, zone *time.Location) string {
 	day := func(t time.Time) string { return t.In(zone).Format("2006-01-02") }
 	lines := []string{"The meeting: " + subject}
 	if !start.IsZero() {
@@ -317,6 +390,16 @@ func BriefDigest(subject string, start time.Time, organizer string, invited []st
 	}
 	if len(invited) > 0 {
 		lines = append(lines, "Invited: "+strings.Join(invited, ", "))
+	}
+	if len(external) == 0 {
+		lines = append(lines, "External: no, everyone invited is from my own company or a private address.")
+	}
+	for _, c := range external {
+		record := "no earlier email or Teams chat with this company in the last 30 days, so say what it does under About"
+		if c.Mails+c.Chats > 0 {
+			record = fmt.Sprintf("%d emails and %d Teams chats with it in the last %d days", c.Mails, c.Chats, briefDays)
+		}
+		lines = append(lines, fmt.Sprintf("External: yes, company %s (%s); %s.", c.Domain, strings.Join(c.People, ", "), record))
 	}
 	if body != "" {
 		lines = append(lines, "", "The invitation's text:", clipRunes(body, 2000))
@@ -401,5 +484,5 @@ func (n *Norn) briefDigest(ctx context.Context, question string, now time.Time) 
 	if subject == "" {
 		subject = event.Subject
 	}
-	return BriefDigest(subject, time.UnixMilli(event.Start), organizer, invited, invitation.Body, mails, chats, n.Zone), people, nil
+	return BriefDigest(subject, time.UnixMilli(event.Start), organizer, invited, invitation.Body, externalCompanies(invitation.Invitees, me, mails, chats), mails, chats, n.Zone), people, nil
 }

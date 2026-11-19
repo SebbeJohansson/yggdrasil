@@ -164,11 +164,26 @@ func TestBriefParts(t *testing.T) {
 	if err != nil || len(chats) != 1 || chats[0].Lines[0].Text != "Can we move it?" {
 		t.Fatalf("chats %+v, %v", chats, err)
 	}
-	digest := BriefDigest("Sync", now, "Anna Svensson", []string{"Kalle Ek"}, invitation.Body, mails, chats, time.UTC)
+	digest := BriefDigest("Sync", now, "Anna Svensson", []string{"Kalle Ek"}, invitation.Body, nil, mails, chats, time.UTC)
 	for _, want := range []string{"The meeting: Sync, Wed 2026-11-18 09:00", "Organizer: Anna Svensson", "Agenda: the Q4 deck",
 		"- 2026-11-10, from Kalle Ek: Deck — Slides are late", `Chat "Kalle Ek":`, "- 2026-11-17 Kalle Ek: Can we move it?"} {
 		if !strings.Contains(digest, want) {
 			t.Fatalf("digest lacks %q:\n%s", want, digest)
 		}
+	}
+}
+
+func TestExternalCompaniesInDigest(t *testing.T) {
+	invitees := []invitee{{Name: "Anna", Address: "anna@acme.se"}, {Name: "Markus", Address: "markus@partnerco.net"}, {Name: "Pia", Address: "pia@gmail.com"}}
+	external := externalCompanies(invitees, Me{Address: "me@acme.se"}, nil, nil)
+	if len(external) != 1 || external[0].Domain != "partnerco.net" || external[0].Mails != 0 {
+		t.Fatalf("external = %+v", external)
+	}
+	digest := BriefDigest("Sync", time.Time{}, "", nil, "", external, nil, nil, time.UTC)
+	if !strings.Contains(digest, "External: yes, company partnerco.net") || !strings.Contains(digest, "no earlier") {
+		t.Fatalf("digest = %q", digest)
+	}
+	if internal := externalCompanies(invitees[:1], Me{Address: "me@acme.se"}, nil, nil); len(internal) != 0 {
+		t.Fatalf("internal = %+v", internal)
 	}
 }
