@@ -408,6 +408,8 @@ type Slack struct {
 	emails  map[string]string
 	history map[string]rememberedHistory
 	HTTP    *http.Client
+	// sent is your own messages the last sweep saw, for the promise ledger (TakeSent).
+	sent []SentMessage
 }
 
 // NewSlack makes a sweeper.
@@ -653,6 +655,13 @@ func (s *Slack) Sweep(ctx context.Context, token string, progress func(SweepProg
 	for _, r := range replies {
 		items = append(items, SlackItems(r.channel, r.messages, me, names, emails, true)...)
 	}
+	var sent []SentMessage
+	for _, h := range histories {
+		sent = append(sent, OwnSlackMessages(h.channel, h.messages, me, names, emails)...)
+	}
+	s.mu.Lock()
+	s.sent = sent
+	s.mu.Unlock()
 	return items, nil
 }
 

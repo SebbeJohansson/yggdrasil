@@ -95,6 +95,8 @@ type Norn struct {
 	Lookup *Lookup
 	// Linear answers "is AI-141 done?"; off without LINEAR_KEY.
 	Linear *linear.Client
+	// Promises is the promise ledger (promises.go).
+	Promises *Promises
 	// suggestions remembers what the improve check said about each sentence.
 	suggestions *SuggestionCache
 	logf        func(format string, args ...any)
@@ -111,6 +113,7 @@ func New(config Config, store *Store, client *llm.Client, logf func(string, ...a
 		suggestions: NewSuggestionCache(1000),
 		Accounts:    NewAccounts(config.DataDir, config.GoogleClientID, config.GoogleClientSecret)}
 	n.Inbox = NewInbox(n, config.DataDir)
+	n.Promises = NewPromises(n)
 	n.Events = NewEvents(time.Now())
 	n.Events.PrepFor = n.prepFor
 	n.Brain = &Brain{
@@ -151,6 +154,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountVault(p)
 	n.mountMeetingActions(p)
 	n.mountMeetingPrep(p)
+	n.mountPromises(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

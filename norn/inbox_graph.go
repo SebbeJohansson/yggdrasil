@@ -600,6 +600,8 @@ func (g *Graph) Org(ctx context.Context, token string) (*OrgChart, error) {
 type GraphRead struct {
 	Outlook, Teams       []Item
 	MailError, ChatError error
+	// Sent is your own last message in each chat, for the promise ledger.
+	Sent []SentMessage
 }
 
 // Read polls the unread mail (when mail is on) and the chats (when chats are).
@@ -627,6 +629,7 @@ func (g *Graph) Read(ctx context.Context, token string, mail, chats bool) (Graph
 			var raw json.RawMessage
 			if read.ChatError = graphJSON(ctx, token, chatsPath(25), &raw); read.ChatError == nil {
 				read.Teams = ChatItems(raw, me, time.Now())
+				read.Sent = OwnChatMessages(raw, me)
 			}
 		}()
 	}

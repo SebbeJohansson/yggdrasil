@@ -214,6 +214,7 @@ func (in *Inbox) pollOnce(ctx context.Context) (err error) {
 			sources = append(sources, failedStatus("outlook", err), failedStatus("teams", err))
 		default:
 			items = append(append(items, read.Outlook...), read.Teams...)
+			n.Promises.Offer(read.Sent...)
 			switch {
 			case !mail:
 				sources = append(sources, notConfigured("outlook"))
@@ -386,6 +387,7 @@ func (in *Inbox) SweepSlack(ctx context.Context) error {
 			result = slackSweep{state: "failed", err: err, at: time.Now().UnixMilli()}
 		} else {
 			result = slackSweep{state: "done", items: items, at: time.Now().UnixMilli()}
+			in.n.Promises.Offer(in.Slack.TakeSent()...)
 		}
 	}
 	in.mu.Lock()

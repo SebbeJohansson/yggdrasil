@@ -642,6 +642,9 @@ paths:
           invite (GET /v1/calendar/suggestions).
         - `event: calendar.stale`, data CalendarChange with invite: the
           invite your copy matches was cancelled.
+        - `event: promise.due`, data PromiseDue: an open promise's day is
+          the next working day (`by` tomorrow, or the weekday), or today
+          when it was made too late for that. Once per promise and day.
       parameters:
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
       responses:
@@ -854,6 +857,79 @@ paths:
                 properties:
                   replies: { type: array, items: { $ref: "#/components/schemas/CopiedReply" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/promises:
+    get:
+      summary: >-
+        The promise ledger: what you said you would do for someone, found by
+        the local model in what you sent (Outlook Sent Items, Gmail Sent,
+        your own last message in each Teams chat, your Slack messages the
+        inbox sweep sees) and in the meeting notes you save on the dashboard.
+        Only your own words; the text never leaves Norn, and is not kept:
+        a promise is the model's short words for it. Messages from the last 3
+        days are read, every 2 minutes. Once per message (or meeting) and
+        text. Open ones by day, without a day last; done and dropped ones
+        newest first, kept 60 days.
+      parameters:
+        - { name: state, in: query, required: false, schema: { type: string, enum: [open, done, dropped], default: open } }
+      responses:
+        "200":
+          description: The promises.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [promises]
+                properties:
+                  promises: { type: array, items: { $ref: "#/components/schemas/Promise" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/promises/{id}:
+    patch:
+      summary: Done, Drop, open again (a promise Norn marked done too) or change its day; a new day is reminded again. Owner only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                state: { type: string, enum: [open, done, dropped] }
+                due: { type: string, description: "YYYY-MM-DD, or empty for no day." }
+      responses:
+        "200":
+          description: The promise.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Promise" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/promises/{id}/dev:
+    put:
+      summary: Keep whether a promise is development work, as Huginn judges it (asking Norn with /local); the dashboard then offers to make it a goal. Never makes one.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dev]
+              properties:
+                dev: { type: boolean }
+      responses:
+        "200":
+          description: The promise.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Promise" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/notes/meeting:
     get:
       summary: For a meeting, your Obsidian note for its day (when you wrote one) and the earlier meeting notes sharing a first name (yours left out) or a subject word with it, newest first. Titles and obsidian:// links only, never note text. The vault's root and Notes/Meetings are read. `on` is false without a vault (OBSIDIAN_VAULT).
@@ -934,7 +1010,7 @@ paths:
         "503": { $ref: "#/components/responses/Unavailable" }
   /v1/notes/meeting/actions:
     post:
-      summary: Suggest the actions in the notes taken during a meeting, for you to approve before any goes to Linear. The local model reads the notes; they never leave the machine. Empty notes have no actions. `team` is the Linear team key an action goes to unless you pick another.
+      summary: Suggest the actions in the notes taken during a meeting, for you to approve before any goes to Linear. The local model reads the notes; they never leave the machine. Empty notes have no actions. `team` is the Linear team key an action goes to unless you pick another. The notes are also read for promises you made (GET /v1/promises), once per meeting (`start`) and promise.
       requestBody:
         required: true
         content:
@@ -944,6 +1020,7 @@ paths:
               required: [subject, text]
               properties:
                 subject: { type: string }
+                start: { type: integer, description: "The meeting's start, epoch ms: the promise ledger keeps a promise once per meeting." }
                 attendees: { type: array, items: { type: string } }
                 text: { type: string, maxLength: 20000 }
             example: { subject: "Budget", text: "" }
@@ -1480,7 +1557,7 @@ components:
       type: object
       required: [item, source, text, auto, at, checked]
       properties:
-        item: { type: string, description: The inbox item it answers. }
+        item: { type: string, description: "The inbox item it answers, or promise:<id> for a follow-up on a promise whose day has come." }
         source: { type: string, enum: [outlook, teams, slack, gmail] }
         text: { type: string }
         tone: { type: string, description: How it reads, by Laya; unset when Laya did not answer. }
@@ -1589,6 +1666,43 @@ components:
         relation: { type: string }
         draft: { type: string, description: Norn's draft. }
         sent: { type: string, description: What you copied. }
+    Promise:
+      type: object
+      required: [id, what, to, state, source, message, thread, createdAt, changedAt]
+      properties:
+        id: { type: integer }
+        what: { type: string, description: "What you will do, in the local model's short words (\"Send the Q3 deck\")." }
+        to: { type: string, description: Who it was promised to, as Norn knows them; empty when unclear. }
+        toAddress: { type: string, description: Their email address, or Teams or Slack user id, when known. }
+        due: { type: string, description: "The day, YYYY-MM-DD in TIME_ZONE, from the words you used (\"Friday\", \"i morgon\"); unset when none was said or it was vague." }
+        state: { type: string, enum: [open, done, dropped] }
+        source: { type: string, enum: [outlook, gmail, teams, slack, meeting] }
+        message: { type: string, description: "The message's id (outlook:…, gmail:…, teams:<chat>:<message>, slack:<channel>:<ts>), or meeting:<start>:<hash>." }
+        link: { type: string, description: Where the message opens. }
+        subject: { type: string }
+        thread: { type: boolean, description: Made in a message thread; only then is a follow-up drafted. }
+        createdAt: { type: integer }
+        changedAt: { type: integer }
+        doneBy: { type: string, enum: [you, norn], description: "norn when a later message of yours to the same person kept it, as the local model judged (strictly)." }
+        doneWhy: { type: string, description: What in that message kept it. }
+        doneLink: { type: string, description: Where that message opens. }
+        remindedAt: { type: integer, description: When promise.due went out for it. }
+        dev: { type: boolean, description: Huginn's judgement that it is development work; unset until judged. }
+    PromiseDue:
+      type: object
+      required: [id, what, to, due, by, source, draft, dev, at]
+      description: A promise whose day has come, without the message it was made in.
+      properties:
+        id: { type: integer }
+        what: { type: string }
+        to: { type: string }
+        due: { type: string, description: YYYY-MM-DD. }
+        by: { type: string, description: "How the day reads: tomorrow, today, or a weekday (Monday) when the next working day is further." }
+        source: { type: string, enum: [outlook, gmail, teams, slack, meeting] }
+        draft: { type: boolean, description: "A follow-up draft waits on the dashboard (GET /v1/drafts, item promise:<id>)." }
+        dev: { type: boolean }
+        link: { type: string, description: The dashboard's promises. }
+        at: { type: integer }
     DraftReady:
       type: object
       required: [id, source, from, band, direct, mentionsMe, at]

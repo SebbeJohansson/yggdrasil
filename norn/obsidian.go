@@ -689,6 +689,7 @@ func (n *Norn) addMeetingNote(w http.ResponseWriter, r *http.Request) {
 		n.fail(w, err)
 		return
 	}
+	n.OfferNotes(body.Meeting, text, note.Link)
 	part.JSON(w, http.StatusCreated, map[string]any{"note": note, "made": made})
 }
 

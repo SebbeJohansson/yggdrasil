@@ -339,6 +339,37 @@ Norn sends no `calendar.*` events for it, Ratatoskr ends a stretch at it
 and does not count it toward a packed week, and Hermóðr holds messages
 through it and says `inBreak` rather than `inMeeting`.
 
+### Norn: promises you made
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/promises` | anyone | `?state=open\|done\|dropped` (open) → `{ promises }`: `{ id, what, to, toAddress?, due?, state, source, message, link?, subject?, thread, createdAt, changedAt, doneBy?, doneWhy?, doneLink?, remindedAt?, dev? }` |
+| `PATCH /v1/promises/{id}` | owner | `{ state?, due? }`: Done, Drop, open again, or a new day (`YYYY-MM-DD`, `""` for none), which is reminded again |
+| `PUT /v1/promises/{id}/dev` | a part | `{ dev }`: Huginn's judgement that it is development work |
+
+Every 2 minutes Norn reads what you sent in the last 3 days: Outlook's Sent
+Items (the Microsoft sign-in with mail), Gmail's Sent (the Google sign-in with
+Gmail), your own last message in each Teams chat, your Slack messages the
+inbox's sweep sees, and the meeting notes you save on the dashboard (After the
+meeting, and Done with the notes taken during it). A message with no promise
+words ("I'll", "jag ska", "återkommer"…) is skipped. The rest go to the local
+model only (`CHAT_URL`), never to Claude or Sindri, four a pass, and it
+answers with each promise: what, to whom (matched to the message's
+recipients), and the words for when, which Norn turns into a day in
+`TIME_ZONE` ("Friday" is the next Friday, "i morgon" tomorrow, "24/11";
+"soon" and "next week" give none). Only your own words: a reply's quoted
+thread is cut off. A promise is kept once per message (or meeting) and text;
+the message itself is not kept.
+
+On the working day before its day, from 08:00, or on the day when it was made
+too late for that, Norn publishes `promise.due` once. Before that, for a
+promise made in a thread, it writes a follow-up with the reply drafter (on
+`GET /v1/drafts` as item `promise:<id>`). Huginn's built-in `promise-due` rule
+then says "You promised Anna: Send the Q3 deck, by tomorrow", held through
+meetings, with a link to the dashboard. When a later message of yours to the
+same person keeps an open promise (the local model judges, strictly), it is
+marked done by `norn` with why; you can open it again.
+
 ### Dellingr
 
 | Route | What it does |
