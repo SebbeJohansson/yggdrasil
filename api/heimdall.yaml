@@ -1,0 +1,216 @@
+openapi: 3.1.0
+info:
+  title: Heimdall
+  version: "1"
+  description: |
+    The security watchman. Once a night (at `at`, in TIME_ZONE; a machine
+    that was off then runs it when it wakes) and when you ask, Heimdall runs
+    each of its checks and keeps what they find. Any program that serves
+    this contract and passes `ygg check heimdall <url>` can replace the
+    built-in one (docs/replacing-a-part.md).
+
+    The checks:
+    - `deps`: the packages each repo pins (go.mod, yarn.lock,
+      package-lock.json, or exact versions in a package.json without a
+      lockfile), asked of osv.dev → each vulnerable package with the
+      vulnerability's id, summary, severity and fixed version.
+    - `listening`: every TCP listener on the host not bound to 127.0.0.1 or
+      ::1, with its process when visible. Yggdrasil's own ports (each part's,
+      and Loki's proxy at port + 100) beyond loopback are high.
+    - `secrets`: the lines added by each repo's new commits since the last
+      run (the first run: the last 200), on every branch and tag, read for
+      GitHub, Slack, OpenAI, Anthropic and AWS keys, private key blocks and
+      high-entropy values assigned to a *TOKEN, *KEY or *SECRET; and files
+      named like .env that are untracked and not ignored. A secret in a
+      commit stays a finding until the commit is gone from every branch and
+      tag.
+    - `files`: ~/.config/yggdrasil and each repo's .env files that the group
+      or others may read, and token files unchanged for longer than
+      `tokenAgeDays`.
+    - `scopes`: access Norn's sign-ins hold for a feature the widget hides
+      both at home and away.
+
+    Rules a replacement must keep:
+    - Only package names, versions and ecosystems leave the machine (to
+      osv.dev's querybatch), then the ids it named (to read them), with a
+      generic User-Agent: no user name, email, repo name or path.
+    - No finding, alert or log holds a secret's value: the file, line, kind
+      and a masked preview such as `ghp_…4f2a`.
+    - Findings persist with `firstSeen` and `lastSeen`. One no longer found
+      is resolved (`resolvedAt`), kept 30 days, and listed with
+      `?state=resolved`. A check that fails or is skipped leaves its
+      findings as they were.
+    - A high finding raises `<check>:<id>` on Gjallar, a warning; critical
+      only for a secret in a pushed commit or a part listening beyond
+      loopback. It is resolved when the finding is.
+servers:
+  - url: http://127.0.0.1:8781
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: "Alive, and when each loop last ran: nightly, which looks every minute whether the night's run is due."
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/report:
+    get:
+      summary: The findings, high first, and how each check last went.
+      parameters:
+        - name: state
+          in: query
+          schema: { type: string, enum: [active, resolved], default: active }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Report" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/report/run:
+    post:
+      summary: Run every check now, in the background; a run already going on is left to finish. Owner only.
+      responses:
+        "202":
+          description: Running.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [running]
+                properties:
+                  running: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/settings:
+    get:
+      summary: When the nightly run starts, the repos, and how old a token file may get.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Change them; any field left out stays. Owner only. Kept across restarts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                at: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+                repos: { type: array, maxItems: 50, items: { type: string, description: An absolute path. } }
+                tokenAgeDays: { type: integer, minimum: 1, maximum: 3650 }
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    BadRequest:
+      description: The request doesn't make sense.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not yours to do.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Finding:
+      type: object
+      required: [id, check, severity, title, detail, firstSeen, lastSeen]
+      properties:
+        id: { type: string, description: "Stable across runs, unique within its check; the alert on Gjallar is <check>:<id>." }
+        check: { type: string, enum: [deps, listening, secrets, files, scopes] }
+        severity: { type: string, enum: [low, medium, high] }
+        title: { type: string }
+        detail: { type: string }
+        where: { type: string, description: "A file and line, an address such as 0.0.0.0:8080, or a path." }
+        fix: { type: string, description: How to make it go away. }
+        repo: { type: string, description: "The repo's name, for findings in a repo." }
+        firstSeen: { type: string, format: date-time }
+        lastSeen: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time }
+        critical: { type: boolean, description: "Its alert is critical: a secret in a pushed commit, or a part listening beyond loopback." }
+        commit: { type: string, description: The commit a secret was added in. }
+    CheckStatus:
+      type: object
+      required: [name, ok, lastRun]
+      properties:
+        name: { type: string }
+        ok: { type: boolean }
+        lastRun: { type: [string, "null"], format: date-time }
+        error: { type: string }
+        skipped: { type: string, description: Why it did not run (scopes without Heimdall's token at Norn). }
+    Report:
+      type: object
+      required: [checkedAt, running, findings, checks]
+      properties:
+        checkedAt: { type: [string, "null"], format: date-time }
+        running: { type: boolean }
+        findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
+        checks: { type: array, items: { $ref: "#/components/schemas/CheckStatus" } }
+    Settings:
+      type: object
+      required: [at, repos, tokenAgeDays]
+      properties:
+        at: { type: string, description: "When the nightly run starts, HH:MM in TIME_ZONE (03:00)." }
+        repos: { type: array, items: { type: string }, description: "The repos' paths (HEIMDALL_REPOS, else the yggdrasil and my-widget checkouts). Sindri's projects are checked too." }
+        tokenAgeDays: { type: integer, description: How old a token file may get before rotating it is suggested (180). }

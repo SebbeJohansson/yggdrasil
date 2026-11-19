@@ -44,7 +44,7 @@ check as the Go one.
      `YGG_MUNIN_URL=http://127.0.0.1:8786`, or run yours on the part's
      default port and change nothing.
    - Restart the parts that read it: the host units
-     (`systemctl --user restart ygg-ratatoskr ygg-vedrfolnir`) and
+     (`systemctl --user restart ygg-ratatoskr ygg-vedrfolnir ygg-heimdall`) and
      `docker compose up -d`.
 5. **Watch it.** Ratatoskr now checks your part's `/health` like any other.
    `ygg check <part>` with no URL checks whatever `YGG_<PART>_URL` points at.
@@ -63,6 +63,7 @@ check as the Go one.
 | Dellingr | `YGG_DELLINGR_URL` | `http://127.0.0.1:8778` |
 | Hermóðr | `YGG_HERMODR_URL` | `http://127.0.0.1:8779` |
 | Loki | `YGG_LOKI_URL` | `http://127.0.0.1:8780` |
+| Heimdall | `YGG_HEIMDALL_URL` | `http://127.0.0.1:8781` |
 
 In dev mode Loki's proxy can stand at one of these addresses (`LOKI_PROXY`,
 the part's port + 100), passing calls on to the real part; see Loki in the

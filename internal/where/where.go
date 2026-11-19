@@ -23,6 +23,7 @@ var Ports = map[string]int{
 	"dellingr":   8778,
 	"hermodr":    8779,
 	"loki":       8780,
+	"heimdall":   8781,
 }
 
 // URL is where the other parts reach this one: YGG_<PART>_URL, or its

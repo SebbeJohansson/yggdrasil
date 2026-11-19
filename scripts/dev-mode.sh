@@ -8,10 +8,10 @@
 #
 # Dev mode is two halves: the dev container (Norn, Gjallar, Munin, Huginn,
 # Dellingr, Hermóðr, Loki) and
-# ygg-dev.service (Sindri, Veðrfölnir, Ratatoskr, which need the host).
+# ygg-dev.service (Sindri, Veðrfölnir, Ratatoskr, Heimdall, which need the host).
 set -eu
 cd "$(dirname "$0")/.."
-host_units="ygg-sindri.service ygg-vedrfolnir.service ygg-ratatoskr.service"
+host_units="ygg-sindri.service ygg-vedrfolnir.service ygg-ratatoskr.service ygg-heimdall.service"
 
 case "${1:-}" in
 on)

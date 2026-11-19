@@ -20,6 +20,7 @@ import (
 	"yggdrasil/api"
 	"yggdrasil/dellingr"
 	"yggdrasil/gjallar"
+	"yggdrasil/heimdall"
 	"yggdrasil/hermodr"
 	"yggdrasil/huginn"
 	"yggdrasil/internal/contract"
@@ -48,6 +49,7 @@ var parts = map[string]struct {
 	"dellingr":   {"runs the jobs you put on a clock", dellingr.Main},
 	"hermodr":    {"carries every message for you to the widget and your phone", hermodr.Main},
 	"loki":       {"tests the watchers: blind spots, and short tricks to see who notices", loki.Main},
+	"heimdall":   {"the security watchman: vulnerable packages, open ports, leaked keys, loose files", heimdall.Main},
 }
 
 func usage() {

@@ -1,0 +1,14 @@
+[Unit]
+Description=Heimdall: the security watchman (Yggdrasil)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/ygg heimdall
+# Where every part lives; a replaced part is pointed at here.
+EnvironmentFile=-%h/.config/yggdrasil/parts.env
+EnvironmentFile=%h/.config/yggdrasil/heimdall.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
