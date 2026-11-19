@@ -300,6 +300,9 @@ func (s *Secrets) scanLog(ctx context.Context, dir string, args []string) ([]hit
 		return nil, err
 	}
 	hits := ParseLog(out)
+	// Read git's output to the end whatever ParseLog did, or git blocks
+	// writing into a full pipe and Wait never returns.
+	_, _ = io.Copy(io.Discard, out)
 	if err := cmd.Wait(); err != nil {
 		return nil, fmt.Errorf("git log: %v %s", err, strings.TrimSpace(stderr.String()))
 	}
@@ -310,12 +313,20 @@ func (s *Secrets) scanLog(ctx context.Context, dir string, args []string) ([]hit
 // the secrets on added lines.
 func ParseLog(r io.Reader) []hit {
 	var hits []hit
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	reader := bufio.NewReaderSize(r, 64*1024)
 	commit, file := "", ""
 	line, inHunk := 0, false
-	for scanner.Scan() {
-		text := scanner.Text()
+	for {
+		chunk, more, err := reader.ReadLine()
+		if err != nil {
+			break
+		}
+		// A line longer than the buffer (a minified file, a lockfile) is
+		// read past and only its first 64 KB scanned: it never ends the read.
+		text := string(chunk)
+		for more && err == nil {
+			_, more, err = reader.ReadLine()
+		}
 		switch {
 		case strings.HasPrefix(text, commitMark):
 			commit, file, inHunk = strings.TrimPrefix(text, commitMark), "", false
@@ -340,7 +351,6 @@ func ParseLog(r io.Reader) []hit {
 			line++
 		}
 	}
-	// A line too long for the scanner ends the read; what came before counts.
 	return hits
 }
 

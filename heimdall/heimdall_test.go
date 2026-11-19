@@ -629,3 +629,24 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestALineLongerThanTheBufferNeitherEndsTheReadNorBlocksGit(t *testing.T) {
+	long := "+" + strings.Repeat("a", 2<<20) // a 2 MB minified line
+	log := strings.Join([]string{
+		commitMark + "c1",
+		"diff --git a/app.min.js b/app.min.js",
+		"+++ b/app.min.js",
+		"@@ -0,0 +1,2 @@",
+		long,
+		"+GITHUB_TOKEN=" + fakeKey(),
+		commitMark + "c2",
+		"diff --git a/b.txt b/b.txt",
+		"+++ b/b.txt",
+		"@@ -0,0 +1 @@",
+		"+SLACK=" + "xox" + "b-1234567890-abcdefghijkl",
+	}, "\n") + "\n"
+	hits := ParseLog(strings.NewReader(log))
+	if len(hits) != 2 || hits[0].commit != "c1" || hits[0].line != 2 || hits[1].commit != "c2" {
+		t.Fatalf("hits after a long line: %+v", hits)
+	}
+}
