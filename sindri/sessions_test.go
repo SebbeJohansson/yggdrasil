@@ -15,7 +15,7 @@ func TestSessionsAndActivity(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(folder, id+".jsonl"), []byte(text), 0o644)
 	}
 	write("mine", `{"type":"user","timestamp":"2026-11-14T08:00:00Z","cwd":"/home/me/projects/demo","message":{"content":[{"type":"text","text":"<ide_selection>x</ide_selection>"},{"type":"text","text":"Fix   the login"}]}}
-{"type":"assistant","cwd":"/home/me/projects/demo","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"Fixed it."}]}}
+{"type":"assistant","cwd":"/home/me/projects/demo","gitBranch":"feature/login","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"Fixed it."}]}}
 `)
 	write("agent-1", `{"type":"user","timestamp":"2026-11-14T09:00:00Z","message":{"content":"hand-over"}}`)
 	write("empty", `{"type":"summary"}`)
@@ -25,7 +25,7 @@ func TestSessionsAndActivity(t *testing.T) {
 		t.Fatalf("got %+v", sessions)
 	}
 	s := sessions[0]
-	if s.ID != "mine" || s.Title != "Fix the login" || s.Project != "demo" || s.LastText != "Fixed it." || s.Working {
+	if s.ID != "mine" || s.Title != "Fix the login" || s.Project != "demo" || s.LastText != "Fixed it." || s.Branch != "feature/login" || s.Working {
 		t.Errorf("got %+v", s)
 	}
 

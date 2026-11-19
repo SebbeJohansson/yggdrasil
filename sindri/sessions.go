@@ -31,6 +31,7 @@ type Session struct {
 	Title        string `json:"title"`
 	Cwd          string `json:"cwd,omitempty"`
 	Project      string `json:"project,omitempty"`
+	Branch       string `json:"branch,omitempty"` // the git branch Claude Code last saw
 	LastActivity int64  `json:"lastActivity"`
 	LastPrompt   string `json:"lastPrompt,omitempty"`
 	LastText     string `json:"lastText,omitempty"`
@@ -100,8 +101,8 @@ func textParts(content any) []string {
 }
 
 var (
-	wrapped = regexp.MustCompile(`^\s*<[\w-]+>`)
-	runsOfSpace  = regexp.MustCompile(`\s+`)
+	wrapped     = regexp.MustCompile(`^\s*<[\w-]+>`)
+	runsOfSpace = regexp.MustCompile(`\s+`)
 )
 
 // typed is what you typed, without the editor and harness context Claude Code wraps it in.
@@ -138,7 +139,7 @@ func ReadSession(path string, now time.Time) *Session {
 	if size > sessionTail {
 		head = events(readSlice(path, 0, sessionHead))
 	}
-	var title, cwd, lastPrompt, lastText string
+	var title, cwd, branch, lastPrompt, lastText string
 	var lastTurn event
 	for _, e := range tail {
 		if e["type"] == "ai-title" && e.str("aiTitle") != "" {
@@ -149,6 +150,9 @@ func ReadSession(path string, now time.Time) *Session {
 		}
 		if e.str("cwd") != "" {
 			cwd = e.str("cwd")
+		}
+		if b := e.str("gitBranch"); b != "" && b != "HEAD" {
+			branch = b
 		}
 		sidechain := e["isSidechain"] == true
 		if (e["type"] == "user" || e["type"] == "assistant") && !sidechain {
@@ -186,6 +190,7 @@ func ReadSession(path string, now time.Time) *Session {
 	if cwd != "" {
 		s.Cwd, s.Project = cwd, filepath.Base(cwd)
 	}
+	s.Branch = branch
 	if lastPrompt != "" {
 		s.LastPrompt = clipText(lastPrompt, 300)
 	}

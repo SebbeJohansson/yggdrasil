@@ -979,6 +979,7 @@ paths:
                     title: { type: string }
                     cwd: { type: string }
                     project: { type: string }
+                    branch: { type: string, description: The git branch the session last worked on, when the transcript says. }
                     lastActivity: { type: integer }
                     lastPrompt: { type: string }
                     lastText: { type: string }
