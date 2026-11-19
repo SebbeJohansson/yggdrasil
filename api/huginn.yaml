@@ -43,6 +43,15 @@ info:
       unstarted), no goal has it (Sindri's `GET /v1/goals/candidates`), and
       Norn, asked with `/local`, says it is development work. Each ticket is
       judged once. Huginn only suggests: the goal is added by you.
+    - promise.due: Norn's promise ledger says a promise you made is due
+      the next working day (or today). The built-in promise-due rule says
+      "You promised <who>: <what>, by <tomorrow>", links to the dashboard's
+      promises, holds through meetings, priority normal, and says when a
+      follow-up reply is drafted there. Every 5 minutes Huginn also asks
+      Norn (with `/local`) whether each open promise not yet judged is
+      development work, and keeps the answer on it with Norn's
+      `PUT /v1/promises/{id}/dev`; the dashboard then offers to make it a
+      goal. No goal is made for you.
     - A stream that stays down for 5 minutes is raised on Gjallar as
       `stream:<part>` (warning).
 servers:
@@ -246,7 +255,7 @@ components:
       properties:
         id: { type: string }
         enabled: { type: boolean }
-        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact, linear-todo." }
+        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact, linear-todo, promise-due." }
         createdBy: { type: string, description: owner, or the name of the part or agent that made it. }
         lastFiredAt: { type: string, format: date-time }
         lastResult: { type: string, enum: [delivered, failed, skipped] }
@@ -257,7 +266,7 @@ components:
       properties:
         event:
           type: string
-          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, calendar.duplicate, calendar.stale, alert.opened, alert.escalated, alert.resolved, linear.todo]
+          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, calendar.duplicate, calendar.stale, alert.opened, alert.escalated, alert.resolved, linear.todo, promise.due]
         relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived and draft.ready only. }
         band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived and draft.ready only. }
         direct: { type: boolean, description: inbox.arrived and draft.ready only. }
