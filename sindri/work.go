@@ -167,6 +167,9 @@ type joining struct {
 
 func (w *Work) codeRequest(request CodeRequest, project string, slug string, others []string, lead string) StartRequest {
 	system := CodingPrompt
+	if names := projectNames(FindProjects(w.Agents.roots[0])); len(names) > 0 {
+		system += "\n\nTheir repositories, by the name to use in \"Needs a part in <repo>\": " + strings.Join(names, ", ") + "."
+	}
 	if len(others) > 0 {
 		system += "\n\n" + PartsPrompt(slug, project, others, lead)
 	}
