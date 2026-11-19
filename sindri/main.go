@@ -25,7 +25,7 @@ import (
 //	SINDRI_STATE        where the agents are kept (~/.local/state/yggdrasil/sindri-agents.json)
 //	SINDRI_MAX_RUNNING  how many agent processes at once (4)
 //	SINDRI_IDLE         how long an idle agent's process is kept (30m)
-//	CLAUDE_BIN          Claude Code (~/.local/bin/claude)
+//	CLAUDE_BIN          Claude Code (~/.local/bin/claude); off turns it off
 //	CLAUDE_DIR          Claude Code's state (~/.claude); CLAUDE_SOCKET_DIR its live sockets
 //	OPENCODE_URL        a running `opencode serve` (http://127.0.0.1:4096); off turns it off
 //	HERDR_SOCKET        herdr's socket (herdr's own default); off turns herdr off

@@ -35,7 +35,7 @@ const scheduledRetry = 30 * time.Minute
 type CodingAgentSettings struct {
 	Primary string `json:"primary"` // claude or copilot
 	// Engines is the CLIs turned on here (COPILOT_BIN=off leaves Copilot
-	// out). Read only: it is never saved.
+	// out, CLAUDE_BIN=off Claude). Read only: it is never saved.
 	Engines []string `json:"engines,omitempty"`
 }
 
@@ -109,7 +109,11 @@ func (w *Work) CodingAgent() CodingAgentSettings {
 	w.Store.Setting("coding-agent", &settings)
 	settings.Engines = w.Agents.EnginesOn()
 	if !slices.Contains(settings.Engines, settings.Primary) {
+		// The saved one is turned off: the first that is on, else Claude (which then refuses).
 		settings.Primary = "claude"
+		if len(settings.Engines) > 0 {
+			settings.Primary = settings.Engines[0]
+		}
 	}
 	return settings
 }
@@ -122,8 +126,8 @@ func (w *Work) Automation() AutomationSettings {
 }
 
 func (w *Work) start(request StartRequest, communication, mode string) (*Agent, error) {
-	if request.Engine == "" && !request.NoTools && w.CodingAgent().Primary == "copilot" {
-		request.Engine = "copilot"
+	if primary := w.CodingAgent().Primary; request.Engine == "" && !request.NoTools && primary != "claude" {
+		request.Engine = primary
 	}
 	a, err := w.Agents.Start(request)
 	if err != nil {

@@ -93,7 +93,7 @@ func binUp(bin string) bool {
 // Conduits are the coding agents a race picks from. Another one is one more
 // entry, with an engine the manager starts.
 var Conduits = []Conduit{
-	{Name: "claude", Label: "Claude Code", Engine: "claude", Up: func(m *Manager) bool { return binUp(m.options.ClaudeBin) }},
+	{Name: "claude", Label: "Claude Code", Engine: "claude", Up: func(m *Manager) bool { return m.ClaudeOn() && binUp(m.options.ClaudeBin) }, Off: func(m *Manager) bool { return m == nil || !m.ClaudeOn() }},
 	{Name: "opencode", Label: "OpenCode", Engine: "opencode", Up: func(m *Manager) bool { return m.OpencodeOn() }, Off: func(m *Manager) bool { return m == nil || !m.OpencodeSetUp() }},
 	{Name: "copilot", Label: "Copilot CLI", Engine: "copilot", Up: func(m *Manager) bool { return m.CopilotOn() && binUp(m.options.CopilotBin) }, Off: func(m *Manager) bool { return m == nil || !m.CopilotOn() }},
 }

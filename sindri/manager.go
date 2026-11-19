@@ -267,6 +267,9 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	if engine == "copilot" && !m.CopilotOn() {
 		return nil, httpErr(400, "Copilot is off here (COPILOT_BIN=off)")
 	}
+	if engine == "claude" && !m.ClaudeOn() {
+		return nil, httpErr(400, "Claude is off here (CLAUDE_BIN=off)")
+	}
 	if engine != "claude" && request.NoTools {
 		return nil, httpErr(400, "`noTools` is for Claude only: Copilot and OpenCode have no way to start without their built-in tools and MCP servers")
 	}
@@ -343,6 +346,9 @@ func (m *Manager) beginLocked(a *Agent, text string, resume bool, images []any, 
 		return m.launchCopilotLocked(a, text)
 	}
 	if _, running := m.live[a.ID]; !running {
+		if !m.ClaudeOn() {
+			return httpErr(409, "Claude is off here (CLAUDE_BIN=off)")
+		}
 		if err := m.launchClaudeLocked(a, resume); err != nil {
 			return err
 		}
@@ -727,6 +733,8 @@ func (m *Manager) Handoff(id, note, to string) (*Agent, error) {
 		return nil, httpErr(400, "`to` must be one of %s", strings.Join(Engines, ", "))
 	case to == "copilot" && !m.CopilotOn():
 		return nil, httpErr(409, "Copilot is off here (COPILOT_BIN=off)")
+	case to == "claude" && !m.ClaudeOn():
+		return nil, httpErr(409, "Claude is off here (CLAUDE_BIN=off)")
 	case to == from:
 		return nil, httpErr(409, "this agent already runs on %s", engineNames[from])
 	case a.NoTools:
@@ -1365,6 +1373,12 @@ func Summarise(a *Agent) map[string]any {
 	return fields
 }
 
+// ClaudeOn is whether Claude Code is turned on here: CLAUDE_BIN=off turns it
+// off, so no agent starts, resumes or carries on in it, herdr's included.
+func (m *Manager) ClaudeOn() bool {
+	return m.options.ClaudeBin != "off"
+}
+
 // CopilotOn is whether GitHub Copilot CLI is turned on here: COPILOT_BIN=off
 // turns it off, so no agent starts or carries on in it.
 func (m *Manager) CopilotOn() bool {
@@ -1375,7 +1389,7 @@ func (m *Manager) CopilotOn() bool {
 func (m *Manager) EnginesOn() []string {
 	var on []string
 	for _, engine := range Engines {
-		if engine != "copilot" || m.CopilotOn() {
+		if (engine != "copilot" || m.CopilotOn()) && (engine != "claude" || m.ClaudeOn()) {
 			on = append(on, engine)
 		}
 	}

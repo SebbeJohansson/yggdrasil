@@ -192,6 +192,10 @@ func (s *Sindri) mountSessions(p *part.Part) {
 			part.Error(w, http.StatusBadRequest, "`kind` must name an agent, e.g. \"claude\"")
 			return
 		}
+		if body.Kind == "claude" && s.Agents != nil && !s.Agents.ClaudeOn() {
+			part.Error(w, http.StatusConflict, "Claude is off here (CLAUDE_BIN=off)")
+			return
+		}
 		if !strings.HasPrefix(body.Cwd, "/") {
 			part.Error(w, http.StatusBadRequest, "`cwd` must be an absolute path")
 			return

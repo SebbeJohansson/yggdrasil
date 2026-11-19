@@ -1555,7 +1555,7 @@ components:
         primary: { type: string, enum: [claude, copilot] }
         engines:
           type: array
-          description: The CLIs turned on here; COPILOT_BIN=off leaves copilot out. Read only.
+          description: The CLIs turned on here; COPILOT_BIN=off leaves copilot out, CLAUDE_BIN=off claude. Read only.
           items: { type: string, enum: [claude, copilot] }
     TaskView:
       type: object

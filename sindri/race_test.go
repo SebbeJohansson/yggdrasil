@@ -406,3 +406,24 @@ func TestCopilotTurnedOffIsNotOfferedStartedOrRaced(t *testing.T) {
 		t.Fatalf("started Copilot while it is off: %v", err)
 	}
 }
+
+func TestClaudeTurnedOffIsNotOfferedStartedOrRaced(t *testing.T) {
+	w, _ := newWork(t)
+	w.Agents.options.ClaudeBin = "off"
+	if got := w.CodingAgent(); got.Primary != "copilot" || slices.Contains(got.Engines, "claude") {
+		t.Fatalf("coding agent %+v", got)
+	}
+	for _, c := range w.conduitInfos() {
+		if c.Name == "claude" {
+			t.Fatalf("listed Claude while it is off: %+v", w.conduitInfos())
+		}
+	}
+	if pair := w.Races().Pair; slices.Contains(pair, "claude") {
+		t.Fatalf("pair %v", pair)
+	}
+	for _, request := range []StartRequest{{Cwd: "demo", Prompt: "x"}, {Cwd: "demo", Prompt: "x", Engine: "claude"}, {Cwd: "demo", Prompt: "x", NoTools: true}} {
+		if _, err := w.Agents.Start(request); err == nil || !strings.Contains(err.Error(), "Claude is off") {
+			t.Fatalf("started Claude while it is off (%+v): %v", request, err)
+		}
+	}
+}

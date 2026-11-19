@@ -261,7 +261,10 @@ offered for a goal (a race pair naming it becomes the first two conduits
 that are on). `COPILOT_BIN=off` does the same for GitHub Copilot CLI: no
 agent starts or carries on in it, it is not a choice for the coding agent
 (`GET /v1/settings/coding-agent` lists the `engines` that are on, and a
-saved `copilot` reads as `claude`), and it is not raced. When only one conduit
+saved `copilot` reads as `claude`), and it is not raced. `CLAUDE_BIN=off` turns
+Claude Code off the same way, herdr starts included: then every Claude task,
+Norn's question agents and Claude meeting briefs among them, is refused with
+"Claude is off here" (your own Claude Code sessions are still read). When only one conduit
 of the pair is up, the goal runs once on it, and the goal (`raceNote`) and
 the morning report say so. The morning report lists the races ready to pick,
 and picks nothing itself.
