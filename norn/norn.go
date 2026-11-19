@@ -63,6 +63,8 @@ type Config struct {
 	DashboardURL string
 	// Write is where Pennvass's writing checks run.
 	Write WriteConfig
+	// WorkHours is your working day, Monday to Friday, for the gap (gap.go): "09:00-17:00".
+	WorkHours string
 }
 
 // Norn is the running assistant.
@@ -99,6 +101,8 @@ type Norn struct {
 	Linear *linear.Client
 	// Promises is the promise ledger (promises.go).
 	Promises *Promises
+	// Gap is where the gap's waiting things come from (gap.go).
+	Gap *GapSources
 	// suggestions remembers what the improve check said about each sentence.
 	suggestions *SuggestionCache
 	logf        func(format string, args ...any)
@@ -158,6 +162,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountMeetingPrep(p)
 	n.mountSavePoints(p)
 	n.mountPromises(p)
+	n.mountGap(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

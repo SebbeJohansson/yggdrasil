@@ -1203,6 +1203,28 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/gap:
+    get:
+      summary: >-
+        The gap you are in, and the one waiting thing that fits it. Free is
+        nothing in the work calendar holding you now (a meeting not declined,
+        not all day, not shown as free; a break you kept free counts as busy),
+        within the working day (WORK_HOURS, 09:00-17:00, Monday to Friday).
+        freeUntil is the next such meeting's start or the end of the working
+        day. item is one of Sindri's goals by its next step (answer an agent,
+        pick a race, review a branch, start a draft) or an open promise due by
+        tomorrow, each with a rough size (answer 3, pick 10, review 20, start 2,
+        promise 10 minutes) that fits the gap with 5 minutes to spare: what
+        blocks an agent first, then the oldest waiting. No item when the gap is
+        under 10 minutes, nothing fits, or a save point still waits to be
+        picked up. Kept on this machine only; nothing here goes to Claude.
+      responses:
+        "200":
+          description: The gap.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Gap" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/inbox/summary:
     post:
       summary: Phrase a sentence for ranked items the caller collected. Never fails because of the model; falls back to the plain count, as it does when the model names someone the items don't hold.
@@ -1829,6 +1851,24 @@ components:
         kind: { type: string, enum: [duplicate, stale] }
         copy: { $ref: "#/components/schemas/CalendarEvent" }
         invite: { $ref: "#/components/schemas/CalendarEvent" }
+    Gap:
+      type: object
+      required: [free]
+      properties:
+        free: { type: boolean }
+        freeUntil: { type: integer, description: When the gap ends (epoch ms); only while free. }
+        item: { $ref: "#/components/schemas/GapItem" }
+    GapItem:
+      type: object
+      required: [kind, title, text, minutes, link]
+      properties:
+        kind: { type: string, enum: [answer, pick, review, start, promise] }
+        title: { type: string, description: The goal's title, or what you promised. }
+        text: { type: string, description: "The goal's next step, or who it was promised to." }
+        minutes: { type: integer, description: The rough size. }
+        link: { type: string, description: "The dashboard path that does it: the goal with its part open (on its review for review), the race, or /dashboard/inbox#promises." }
+        goalId: { type: integer }
+        promiseId: { type: integer }
     SavePoint:
       type: object
       required: [id, at, meeting, meetingId, meetingStart, meetingEnd, title, link, goal, session, readyAt, doneAt]

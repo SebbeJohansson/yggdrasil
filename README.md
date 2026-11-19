@@ -419,6 +419,27 @@ marked done by `norn` with why; you can open it again. `PUT /v1/settings/promise
 for promises, no follow-ups are written and no reminders sent; what it kept
 stays listed (`GET /v1/settings/promises` says whether it runs).
 
+### Norn: a task sized to your gap
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/gap` | anyone | `{ free, freeUntil?, item? }`: `item` is `{ kind, title, text, minutes, link, goalId?, promiseId? }` |
+
+You are free when nothing in the work calendar holds you now (a meeting not
+declined, not all day, not shown as free; a break you kept free counts as
+busy, since a break is not for work) within the working day, `WORK_HOURS` in
+`norn.env` (09:00-17:00, Monday to Friday, like Ratatoskr's
+`RATATOSKR_YOU_HOURS`). The gap lasts until the next such
+meeting or the end of the day. What waits: Sindri's goals by their next step,
+and the open promises due by tomorrow. Each kind has a rough size: answer an
+agent 3 minutes, start a draft 2, pick a race 10, a promise 10, review a
+branch 20. The item is the one that fits with 5 minutes to spare, what blocks
+an agent first, then what has waited longest; none when the gap is under 10
+minutes, nothing fits, or a save point still waits to be picked up. `link` is
+the dashboard path that does it: the goal with its agent open (on its review
+for a review), `/dashboard/races/<goal>`, or `/dashboard/inbox#promises`. It
+all stays on this machine: nothing here goes to Claude.
+
 ### Dellingr
 
 | Route | What it does |

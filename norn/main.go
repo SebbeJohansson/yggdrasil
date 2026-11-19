@@ -42,6 +42,7 @@ import (
 //	INBOX_JUDGE      laya, typesafe, xestrata, ollama or off (laya; when Laya doesn't answer, Ollama, or XeStrata with Ollama off); INBOX_JUDGE_MODEL, TYPESAFE_KEY
 //	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  your own Google "Desktop app" OAuth client; unset is no Google
 //	OBSIDIAN_VAULT   your Obsidian vault's folder, for meeting notes both ways (unset: off); OBSIDIAN_VAULT_NAME is what Obsidian calls it (the folder's name)
+//	WORK_HOURS       your working day, Monday to Friday, for the gap a task is offered in (09:00-17:00)
 //	YGG_GJALLAR_URL  Gjallar; GJALLAR_TOKEN is Norn's token there (a sign-in that ended is raised)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("NORN_TOKENS")
@@ -121,6 +122,7 @@ func Main(ctx context.Context) error {
 		LayaShadowURL:      env.String("LAYA_SHADOW_URL", "http://127.0.0.1:8000"),
 		LayaShadowKey:      env.String("LAYA_SHADOW_KEY", ""),
 		DashboardURL:       env.String("DASHBOARD_URL", "http://localhost:17420"),
+		WorkHours:          env.String("WORK_HOURS", DefaultWorkHours),
 		Write: WriteConfig{
 			LanguageToolURL: env.String("LANGUAGETOOL_URL", "http://127.0.0.1:8010"),
 			Model:           model("WRITE_MODEL", "qwen2.5:7b"),
