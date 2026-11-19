@@ -166,6 +166,7 @@ to ntfy when Hermóðr can't take it), at most once per alert every 15 minutes.
 | --- | --- |
 | `GET /v1/status` | `{ parts, checks, gjallarUp }`: every part as last seen, and every check. The widget reads this directly, so it can show "Gjallar is down" without Gjallar |
 | `GET /v1/you` | `{ on, patterns, checkedAt?, errors? }`: each of `stretch`, `late` and `week` with `active`, `since`, `nextGap` (and `nextGapEnds`) and `toldAt`, for a widget to show on hover |
+| `GET`, `PATCH /v1/settings/you` | `{ on }`: watching you on or off, from the dashboard. Changing it is owner only, and it outlives a restart (`RATATOSKR_STATE`); `RATATOSKR_YOU` is the default until you set it |
 
 It checks the parts in `RATATOSKR_WATCH` every 30 s, at their `YGG_<PART>_URL`. Down is `down:<part>`
 (critical). A loop that hasn't run within three of its intervals plus a
@@ -198,7 +199,8 @@ Norn and Sindri after).
 
 | Setting (`ratatoskr.env`) | Default | What it does |
 | --- | --- | --- |
-| `RATATOSKR_YOU` | `on` | `off`: reads nothing, sends nothing, and `GET /v1/you` says `on: false` |
+| `RATATOSKR_YOU` | `on` | `off`: reads nothing, sends nothing, and `GET /v1/you` says `on: false`. Only the default: what you set with `PATCH /v1/settings/you` wins |
+| `RATATOSKR_STATE` | `~/.local/state/yggdrasil/ratatoskr.json` | where that is kept |
 | `RATATOSKR_YOU_EVERY` | `5m` | how often it looks; the `you` loop on `/health` |
 | `RATATOSKR_YOU_STRETCH` | `4h` | how long a run of meetings is a stretch |
 | `RATATOSKR_YOU_BREAK` | `15m` | the shortest gap that counts as a real break |

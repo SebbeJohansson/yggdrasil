@@ -190,11 +190,13 @@ type fakeParts struct {
 	sent     []map[string]any
 	earlier  []map[string]any
 	sessions []map[string]any
+	calls    int
 }
 
 func (f *fakeParts) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls++
 	answer := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 	switch r.Method + " " + r.URL.Path {
 	case "GET /v1/calendar":

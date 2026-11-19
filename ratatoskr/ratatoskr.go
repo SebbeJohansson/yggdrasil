@@ -23,6 +23,7 @@
 //	GET /health
 //	GET /v1/status   every part as last seen, and every check
 //	GET /v1/you      your own rhythm as last seen (you.go)
+//	GET, PATCH /v1/settings/you  watching you on or off (settings.go)
 package ratatoskr
 
 import (
@@ -128,6 +129,8 @@ func Allowance(every time.Duration) time.Duration {
 func (r *Ratatoskr) Mount(p *part.Part, every time.Duration) {
 	p.Handle("GET /v1/status", r.status)
 	p.Handle("GET /v1/you", r.You.serve)
+	p.Handle("GET /v1/settings/you", r.getYouSetting)
+	p.Handle("PATCH /v1/settings/you", r.patchYouSetting)
 	p.Loop("check", every, r.check)
 	if r.You != nil {
 		p.Loop("you", r.You.Every, r.You.Round)

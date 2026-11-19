@@ -3,6 +3,8 @@ package ratatoskr
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -31,7 +33,9 @@ const DefaultWatch = "norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermo
 //
 // Watching you (you.go):
 //
-//	RATATOSKR_YOU          on (default) or off: off sends nothing and reads nothing
+//	RATATOSKR_YOU          on (default) or off: off sends nothing and reads nothing;
+//	                       the default until PATCH /v1/settings/you sets it
+//	RATATOSKR_STATE        where that is kept (~/.local/state/yggdrasil/ratatoskr.json)
 //	RATATOSKR_YOU_EVERY    how often to look (5m)
 //	RATATOSKR_YOU_STRETCH  a run of meetings this long with no real gap (4h)
 //	RATATOSKR_YOU_BREAK    the shortest gap that counts as a real one (15m)
@@ -72,14 +76,26 @@ func Main(ctx context.Context) error {
 	return p.Run(ctx, where.Addr(Name))
 }
 
-// you reads the settings for watching you; nil when RATATOSKR_YOU is off.
+// you reads the settings for watching you. RATATOSKR_YOU is whether it is on
+// until you turn it on or off from the dashboard, which is kept in
+// RATATOSKR_STATE.
 func you() (*You, error) {
+	on := true
 	switch mode := env.String("RATATOSKR_YOU", "on"); mode {
 	case "off":
-		return nil, nil
+		on = false
 	case "on":
 	default:
 		return nil, fmt.Errorf("RATATOSKR_YOU is on or off, not %q", mode)
+	}
+	home, _ := os.UserHomeDir()
+	statePath := env.String("RATATOSKR_STATE", filepath.Join(home, ".local/state/yggdrasil/ratatoskr.json"))
+	state, err := LoadState(statePath)
+	if err != nil {
+		return nil, fmt.Errorf("RATATOSKR_STATE: %w", err)
+	}
+	if state.You != nil {
+		on = state.You.On
 	}
 	rhythm := DefaultRhythm()
 	zone, err := time.LoadLocation(env.String("TIME_ZONE", "Europe/Stockholm"))
@@ -104,5 +120,9 @@ func you() (*You, error) {
 		call.New("sindri", where.URL("sindri"), env.String("SINDRI_TOKEN", ""), 10*time.Second),
 		call.New("hermodr", where.URL("hermodr"), env.String("HERMODR_TOKEN", ""), 30*time.Second))
 	y.Every = env.Duration("RATATOSKR_YOU_EVERY", y.Every)
+	y.StatePath, y.on = statePath, on
+	if !on {
+		y.status = YouStatus{On: false, Patterns: []Pattern{}}
+	}
 	return y, nil
 }
