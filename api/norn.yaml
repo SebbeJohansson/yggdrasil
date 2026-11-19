@@ -1395,6 +1395,135 @@ paths:
                       start: { type: integer, description: Epoch ms. }
                   people: { type: array, items: { $ref: "#/components/schemas/PersonRecap" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/people:
+    get:
+      summary: >-
+        One list of people: each person once, with every alias they are known
+        by (names, email addresses, Teams user ids, Slack ids). Filled every 10
+        minutes from what Norn sees: the calendars' organizers and attendees,
+        the inbox's senders and recipients, your Teams chats' members and the
+        open promises. Each alias starts as a person of its own unless it is
+        the same account as one listed (Graph gives an address and a Teams id
+        together, or a name is written beside an address). Never merged by
+        Norn; kept on this machine only.
+      responses:
+        "200":
+          description: Everyone, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [people]
+                properties:
+                  people: { type: array, items: { $ref: "#/components/schemas/ListedPerson" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/people/suggestions:
+    get:
+      summary: >-
+        Pairs of people who look like one, best first, each with a reason in
+        words and a confidence, from fixed rules only (no model reads a name):
+        one Microsoft account (0.99), the same full name (0.9), an address that
+        spells the name (0.85), a shortened name only one full name fits
+        (0.8), a first name alone only one full name has (0.75; 0.5 for a short
+        or ordinary word). Under 0.7 is left out, and so is a pair you said is
+        not the same. At most 50. Nothing is merged until you combine them.
+      responses:
+        "200":
+          description: The open suggestions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions]
+                properties:
+                  suggestions: { type: array, items: { $ref: "#/components/schemas/MergeSuggestion" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/people/combine:
+    post:
+      summary: Combine two people into one; `keep` stays and gets every alias of `merge`, which is gone. Recaps, promises and the name swap treat them as one from then on. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keep, merge]
+              properties:
+                keep: { type: integer }
+                merge: { type: integer }
+      responses:
+        "200":
+          description: The person they are now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListedPerson" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/people/apart:
+    post:
+      summary: Not the same person. Remembered, so the pair is never suggested again. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [a, b]
+              properties:
+                a: { type: integer }
+                b: { type: integer }
+      responses:
+        "200":
+          description: Kept apart.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [a, b, apart]
+                properties:
+                  a: { type: integer }
+                  b: { type: integer }
+                  apart: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/people/{id}/split:
+    post:
+      summary: >-
+        Undo a combine: move one alias out of a person into a person of its
+        own. It is remembered as not the same as the rest, so it is neither
+        added back nor suggested again. A person's only alias cannot be split.
+        Owner only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, value]
+              properties:
+                kind: { type: string, enum: [name, email, teams, slack] }
+                value: { type: string }
+      responses:
+        "200":
+          description: The person, and the new one the alias is now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [person, split]
+                properties:
+                  person: { $ref: "#/components/schemas/ListedPerson" }
+                  split: { $ref: "#/components/schemas/ListedPerson" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/gap:
     get:
       summary: >-
@@ -2227,6 +2356,40 @@ components:
         words: { type: string }
         madeAt: { type: integer }
         link: { type: string, description: "The plan on the dashboard, /dashboard/plan." }
+    ListedPerson:
+      type: object
+      required: [id, name, aliases]
+      properties:
+        id: { type: integer }
+        name: { type: string, description: "Their first full name, else a name, an address or an id." }
+        aliases:
+          type: array
+          items:
+            type: object
+            required: [kind, value, source, at]
+            properties:
+              kind: { type: string, enum: [name, email, teams, slack] }
+              value: { type: string }
+              source: { type: string, description: "Where it was first seen: calendar, mail, teams, slack or promise." }
+              at: { type: integer, description: Epoch ms. }
+    MergeSide:
+      type: object
+      required: [id, name, alias, kind, source]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        alias: { type: string, description: The alias the reason is about. }
+        kind: { type: string, enum: [name, email, teams, slack] }
+        source: { type: string }
+    MergeSuggestion:
+      type: object
+      required: [a, b, rule, reason, confidence]
+      properties:
+        a: { $ref: "#/components/schemas/MergeSide" }
+        b: { $ref: "#/components/schemas/MergeSide" }
+        rule: { type: string, enum: [same-account, same-name, address-name, short-name, first-name] }
+        reason: { type: string }
+        confidence: { type: number, minimum: 0.7, maximum: 1 }
     PersonRecap:
       type: object
       required: [on, who, name, promises, open]

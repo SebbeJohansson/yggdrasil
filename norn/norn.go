@@ -173,6 +173,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountWeave(p)
 	n.mountRewind(p)
 	n.mountRecap(p)
+	n.mountPeople(p)
 	n.mountRecapNext(p)
 	n.mountRecapSettings(p)
 	n.mountWhy(p)
