@@ -431,6 +431,9 @@ func (n *Norn) makeDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	shown, _, _ := n.Inbox.Current(time.Now())
 	var found *Item
+	if item, ok := n.Promises.FollowUp(r.Context(), body.Item); ok {
+		found = &item
+	}
 	for _, entry := range shown {
 		if entry.Item.ID == body.Item {
 			item := n.Inbox.fuller(entry.Item)

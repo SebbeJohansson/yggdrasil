@@ -790,7 +790,7 @@ paths:
                   drafts: { type: array, items: { $ref: "#/components/schemas/Draft" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
     post:
-      summary: Write a reply draft for an item in the inbox now, by the local model, replacing any draft it had. Takes a few seconds.
+      summary: Write a reply draft for an item in the inbox now, by the local model, replacing any draft it had. Takes a few seconds. `promise:<id>` drafts a follow-up on an open promise made in a message thread (GET /v1/promises).
       requestBody:
         required: true
         content:

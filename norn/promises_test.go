@@ -456,3 +456,22 @@ func TestMatchRecipient(t *testing.T) {
 		t.Fatal("the only one")
 	}
 }
+
+func TestAFollowUpCanBeDraftedOnlyForAnOpenPromiseMadeInAThread(t *testing.T) {
+	n, _ := newNorn(t)
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	if err := n.Promises.init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	n.Promises.keep(ctx, Promise{What: "Send the deck", To: "Anna", Source: "teams", Thread: true, Message: "teams:c:1", CreatedAt: now, ChangedAt: now, Key: "teams:c:1", Norm: "send the deck"})
+	n.Promises.keep(ctx, Promise{What: "Ring Peter", To: "Peter", Source: "meeting", Message: "meeting:1:x", CreatedAt: now, ChangedAt: now, Key: "meeting:1", Norm: "ring peter"})
+	if item, ok := n.Promises.FollowUp(ctx, "promise:1"); !ok || item.ID != "promise:1" || item.From != "Anna" {
+		t.Fatalf("%+v %v", item, ok)
+	}
+	for _, id := range []string{"promise:2", "promise:9", "promise:x", "teams:c:1"} {
+		if _, ok := n.Promises.FollowUp(ctx, id); ok {
+			t.Fatalf("%s drafted", id)
+		}
+	}
+}

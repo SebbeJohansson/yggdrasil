@@ -365,7 +365,8 @@ the message itself is not kept.
 On the working day before its day, from 08:00, or on the day when it was made
 too late for that, Norn publishes `promise.due` once. Before that, for a
 promise made in a thread, it writes a follow-up with the reply drafter (on
-`GET /v1/drafts` as item `promise:<id>`). Huginn's built-in `promise-due` rule
+`GET /v1/drafts` as item `promise:<id>`; `POST /v1/drafts` with that item
+writes one whenever you ask). Huginn's built-in `promise-due` rule
 then says "You promised Anna: Send the Q3 deck, by tomorrow", held through
 meetings, with a link to the dashboard. When a later message of yours to the
 same person keeps an open promise (the local model judges, strictly), it is

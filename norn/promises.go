@@ -703,6 +703,24 @@ func FollowUpItem(promise Promise) Item {
 		Link: promise.Link, At: promise.CreatedAt}
 }
 
+// FollowUp is the item a follow-up on promise:<id> is drafted from, for
+// "Draft a reply" on the dashboard; only for an open promise made in a thread.
+func (p *Promises) FollowUp(ctx context.Context, item string) (Item, bool) {
+	raw, ok := strings.CutPrefix(item, "promise:")
+	if p == nil || !ok {
+		return Item{}, false
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return Item{}, false
+	}
+	promise, err := p.Get(ctx, id)
+	if err != nil || promise.State != "open" || !promise.Thread || promise.To == "" || draftWords[promise.Source] == 0 {
+		return Item{}, false
+	}
+	return FollowUpItem(promise), true
+}
+
 // remind publishes promise.due once for each promise whose time has come,
 // with a follow-up draft first when it was made in a thread.
 func (p *Promises) remind(ctx context.Context) error {
