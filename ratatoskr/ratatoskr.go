@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,12 @@ const Name = "ratatoskr"
 type Target struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+	// Behind is the part whose proxy stands in front of this one ("loki"),
+	// and Direct the part's own address past it. While that proxy is down
+	// the part is asked directly: if it answers, it is cut off, not down,
+	// and the proxy's alert says so instead of one alert per part.
+	Behind string `json:"behind,omitempty"`
+	Direct string `json:"-"`
 }
 
 // Seen is a part as Ratatoskr last saw it.
@@ -210,6 +217,14 @@ func Results(target Target, health *part.Health, err error, now time.Time) []wat
 	return results
 }
 
+// joinWords is "Dellingr, Huginn and Munin".
+func joinWords(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
+}
+
 func errorText(err error) string {
 	if err == nil {
 		return ""
@@ -225,25 +240,64 @@ func (r *Ratatoskr) check(ctx context.Context) error {
 		results []watch.Result
 		keys    = map[string]bool{}
 	)
-	for _, target := range r.Targets {
+	type read struct {
+		health    *part.Health
+		err       error
+		direct    *part.Health
+		directErr error
+		at        time.Time
+	}
+	reads := make([]read, len(r.Targets))
+	for i, target := range r.Targets {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			health, err := r.fetch(ctx, target)
-			now := r.now()
-			found := Results(target, health, err, now)
-			mu.Lock()
-			defer mu.Unlock()
-			results = append(results, found...)
-			for _, result := range found {
-				keys[result.Key] = true
+			got := read{health: health, err: err}
+			if err != nil && target.Behind != "" && target.Direct != "" {
+				// Maybe only the proxy in front of it is down: ask past it.
+				got.direct, got.directErr = r.fetch(ctx, Target{Name: target.Name, URL: target.Direct})
 			}
-			r.mu.Lock()
-			r.seen[target.Name] = Seen{Target: target, Up: err == nil, Error: errorText(err), Health: health, CheckedAt: now}
-			r.mu.Unlock()
+			got.at = r.now()
+			reads[i] = got
 		}()
 	}
 	wg.Wait()
+	down := map[string]bool{}
+	for i, target := range r.Targets {
+		down[target.Name] = reads[i].err != nil
+	}
+	cutOff := map[string][]string{}
+	for i, target := range r.Targets {
+		got := reads[i]
+		health, err := got.health, got.err
+		seenErr := errorText(err)
+		if err != nil && down[target.Behind] && got.direct != nil && got.directErr == nil {
+			// Cut off, not down: one alert, the proxy's, and its own loops still read.
+			cutOff[target.Behind] = append(cutOff[target.Behind], Title(target.Name))
+			health, err = got.direct, nil
+			seenErr = "cut off: " + Title(target.Behind) + " is down, and the part answers on its own port"
+		}
+		found := Results(target, health, err, got.at)
+		mu.Lock()
+		results = append(results, found...)
+		for _, result := range found {
+			keys[result.Key] = true
+		}
+		mu.Unlock()
+		r.mu.Lock()
+		r.seen[target.Name] = Seen{Target: target, Up: reads[i].err == nil, Error: seenErr, Health: health, CheckedAt: got.at}
+		r.mu.Unlock()
+	}
+	for i, result := range results {
+		for proxy, parts := range cutOff {
+			if result.Key == downKey(proxy) && !result.OK {
+				slices.Sort(parts)
+				results[i].Title = fmt.Sprintf("%s is down: %s %s cut off", Title(proxy), joinWords(parts), map[bool]string{true: "is", false: "are"}[len(parts) == 1])
+				results[i].Detail = strings.TrimSpace(result.Detail + "\n" + joinWords(parts) + " answer on their own ports; only the way through " + Title(proxy) + " is gone.")
+			}
+		}
+	}
 	r.watch.Observe(results)
 	// A loop that is no longer on a part's /health (renamed, removed) is dropped.
 	r.watch.Forget(func(key string) bool { return keys[key] })

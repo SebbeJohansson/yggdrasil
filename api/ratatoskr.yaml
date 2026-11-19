@@ -67,6 +67,7 @@ paths:
                       properties:
                         name: { type: string }
                         url: { type: string }
+                        behind: { type: string, description: "The part whose proxy stands in front of this one (loki, from LOKI_PROXY). While it is down, this part is asked on its own port: answering, it is cut off, not down, and only the proxy is raised." }
                         up: { type: boolean }
                         error: { type: string }
                         health: { $ref: "#/components/schemas/Health" }

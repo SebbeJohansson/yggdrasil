@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,6 +63,16 @@ func Main(ctx context.Context) error {
 			return fmt.Errorf("RATATOSKR_WATCH: %q is not another part", name)
 		}
 		targets = append(targets, Target{Name: name, URL: where.URL(name)})
+	}
+	// The parts Loki's proxy stands in front of (LOKI_PROXY), when Loki is
+	// watched too: asked past it while Loki is down, so one alert says so.
+	if slices.ContainsFunc(targets, func(t Target) bool { return t.Name == "loki" }) {
+		for i, target := range targets {
+			if slices.Contains(env.List("LOKI_PROXY"), target.Name) {
+				targets[i].Behind = "loki"
+				targets[i].Direct = env.String("LOKI_UPSTREAM_"+strings.ToUpper(target.Name), fmt.Sprintf("http://127.0.0.1:%d", where.Ports[target.Name]))
+			}
+		}
 	}
 	r := New(targets,
 		alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", "")),

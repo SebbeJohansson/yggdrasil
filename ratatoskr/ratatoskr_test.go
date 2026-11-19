@@ -179,3 +179,46 @@ func TestAnAlertGjallarDidNotTakeIsSentAgain(t *testing.T) {
 		t.Fatalf("raised %v once Gjallar was back", gjallar.raised)
 	}
 }
+
+func TestPartsCutOffByLokiBeingDownAreOneAlertNotOnePerPart(t *testing.T) {
+	var mu sync.Mutex
+	titles := map[string]string{}
+	gjallarServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Key, Title string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if r.URL.Path == "/v1/alerts" {
+			mu.Lock()
+			titles[body.Key] = body.Title
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer gjallarServer.Close()
+	gone := httptest.NewServer(http.NotFoundHandler())
+	goneURL := gone.URL
+	gone.Close() // Loki and its proxy ports: nothing answers
+	ok := http.StatusOK
+	dellingr := healthServer(t, &part.Health{OK: true, Part: "dellingr", StartedAt: time.Now()}, &ok)
+	r := New([]Target{
+		{Name: "loki", URL: goneURL},
+		{Name: "dellingr", URL: goneURL, Behind: "loki", Direct: dellingr.URL},
+		{Name: "huginn", URL: goneURL, Behind: "loki", Direct: goneURL}, // really down too
+	}, alert.NewClient(gjallarServer.URL, "t"), nil)
+	ctx := context.Background()
+	_ = r.check(ctx)
+	_ = r.check(ctx)
+	mu.Lock()
+	defer mu.Unlock()
+	if _, raised := titles["down:dellingr"]; raised {
+		t.Fatalf("a part only cut off by Loki was raised as down: %v", titles)
+	}
+	if _, raised := titles["down:huginn"]; !raised {
+		t.Fatalf("a part down on its own port too was not raised: %v", titles)
+	}
+	if got := titles["down:loki"]; got != "Loki is down: Dellingr is cut off" {
+		t.Fatalf("Loki's alert: %q", got)
+	}
+	if seen := r.Snapshot(); seen.Parts == nil {
+		t.Fatal("no snapshot")
+	}
+}

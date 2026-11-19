@@ -169,7 +169,7 @@ to ntfy when Hermóðr can't take it), at most once per alert every 15 minutes.
 | `GET /v1/you` | `{ on, patterns, checkedAt?, errors? }`: each of `stretch`, `late` and `week` with `active`, `since`, `nextGap` (and `nextGapEnds`) and `toldAt`, for a widget to show on hover |
 | `GET`, `PATCH /v1/settings/you` | `{ on }`: watching you on or off, from the dashboard. Changing it is owner only, and it outlives a restart (`RATATOSKR_STATE`); `RATATOSKR_YOU` is the default until you set it |
 
-It checks the parts in `RATATOSKR_WATCH` every 30 s, at their `YGG_<PART>_URL`. Down is `down:<part>`
+A part Loki's proxy stands in front of (`LOKI_PROXY`, with Loki watched too) is asked on its own port (`LOKI_UPSTREAM_<PART>`, else its default) while Loki is down: if it answers, it is cut off, not down, and the one alert is Loki's, "Loki is down: Dellingr, Huginn and Munin are cut off", instead of one per part. It checks the parts in `RATATOSKR_WATCH` every 30 s, at their `YGG_<PART>_URL`. Down is `down:<part>`
 (critical). A loop that hasn't run within three of its intervals plus a
 minute is `stalled:<part>:<loop>` (warning). A loop whose last run failed is
 `failing:<part>:<loop>` (warning), with the error as the detail; it resolves
