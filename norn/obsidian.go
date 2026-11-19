@@ -53,6 +53,9 @@ type Vault struct {
 
 	scanned time.Time
 	notes   []VaultNote
+
+	linksScanned time.Time
+	links        []LinkTarget
 }
 
 // VaultNote is one note, by its path in the vault.
@@ -607,6 +610,7 @@ func (n *Norn) mountVault(p *part.Part) {
 	p.Handle("GET /v1/notes/meeting", n.meetingNotes)
 	p.Handle("POST /v1/notes/meeting", n.addMeetingNote)
 	p.Handle("PUT /v1/notes/meeting/live", n.writeLiveNote)
+	n.mountNoteLinks(p)
 }
 
 var errNoVault = errors.New("no Obsidian vault: set OBSIDIAN_VAULT to its folder")

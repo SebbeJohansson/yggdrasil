@@ -867,6 +867,98 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/notes/links/suggest:
+    post:
+      summary: The vault notes whose title is named in `text` and not linked yet, as [[wiki links]] to offer. Only titles are matched (dated meeting notes are not targets); existing links, code, URLs and comments are skipped. `on` is false without a vault.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 20000 }
+      responses:
+        "200":
+          description: The suggestions, most mentioned first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [on, suggestions]
+                properties:
+                  on: { type: boolean }
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      required: [target, link, matched, count, wiki]
+                      properties:
+                        target: { type: string, example: Northwind, description: "What goes inside [[ ]]; the note path when two notes share a title." }
+                        link: { type: string, description: obsidian:// link to the note. }
+                        matched: { type: string, description: The first match as written. }
+                        count: { type: integer }
+                        wiki: { type: string, example: "[[Northwind|northwind]]", description: What the first match becomes. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/notes/links/apply:
+    post:
+      summary: Wrap every unlinked match of a vault note's title in `text` as [[Title]] and answer the new text. A text transform; nothing is saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, target]
+              properties:
+                text: { type: string, maxLength: 20000 }
+                target: { type: string, example: Northwind, description: A `target` from the suggestions. }
+      responses:
+        "200":
+          description: The linked text.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, changed]
+                properties:
+                  text: { type: string }
+                  changed: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No note in the vault has that title. }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/notes/meeting/link:
+    post:
+      summary: Wrap every unlinked match of a vault note's title as [[Title]] inside the meeting's saved Obsidian note for its day. Links, code, comments (the live-note marks too) are never touched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, start, target]
+              properties:
+                subject: { type: string }
+                start: { type: integer, description: Epoch ms. }
+                target: { type: string, example: Northwind }
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [note, changed]
+                properties:
+                  note: { $ref: "#/components/schemas/VaultNote" }
+                  changed: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No such vault note, or no note for that meeting yet. }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v1/notes/meeting/actions:
     post:
       summary: Suggest the actions in the notes taken during a meeting, for you to approve before any goes to Linear. The local model reads the notes; they never leave the machine. Empty notes have no actions. `team` is the Linear team key an action goes to unless you pick another.
