@@ -57,7 +57,8 @@ info:
       freeze only with `allowFreeze` on.
     - Passive strikes: only with `passive` on, at most `perDay`, in working
       hours (WORK_HOURS, Monday to Friday), never at night, never while
-      Hermóðr says you are in a meeting, on a break or in focus. Each ends
+      Hermóðr says you are in a meeting, on a break, in focus or in a focus
+      block you booked. Each ends
       with one Hermóðr message holding the tale, with `push: false`.
 servers:
   - url: http://127.0.0.1:8780

@@ -59,6 +59,8 @@ type Channels struct {
 	Channels  []Channel `json:"channels"`
 	InMeeting bool      `json:"inMeeting"`
 	InBreak   bool      `json:"inBreak"`
+	// InFocusBlock is a focus block you booked from the week's plan.
+	InFocusBlock bool `json:"inFocusBlock"`
 }
 
 // Seen is everything the blind spots are built from.

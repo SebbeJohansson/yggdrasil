@@ -114,7 +114,7 @@ func (l *Loki) busy(ctx context.Context) (Busy, error) {
 	if err := hermodr.Do(ctx, http.MethodGet, "/v1/focus", nil, &focus); err != nil {
 		return Busy{}, err
 	}
-	return Busy{InMeeting: channels.InMeeting, InBreak: channels.InBreak, Focus: focus.On}, nil
+	return Busy{InMeeting: channels.InMeeting, InBreak: channels.InBreak, Focus: focus.On || channels.InFocusBlock}, nil
 }
 
 func sameDay(a, b time.Time, zone *time.Location) bool {
