@@ -237,3 +237,12 @@ func TestScreenshotsStoppedByARestartAreTakenAgain(t *testing.T) {
 		t.Fatalf("got %d screenshot agents, want the stopped one and a new one", shots)
 	}
 }
+
+func TestShowsOnScreen(t *testing.T) {
+	if !ShowsOnScreen([]string{"app/pages/a.vue"}) || !ShowsOnScreen([]string{"x/style.css"}) {
+		t.Fatal("ui files should show")
+	}
+	if ShowsOnScreen([]string{"main.go", "README.md", "a_test.go"}) {
+		t.Fatal("backend and docs should not show")
+	}
+}

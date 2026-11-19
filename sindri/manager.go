@@ -515,6 +515,7 @@ func (m *Manager) onEventLocked(a *Agent, process *live, event map[string]any, c
 		a.Queued = nil
 		m.sendLocked(a, queued, nil)
 	} else if !copilot && before != Waiting && a.Status == Waiting {
+		m.insistOnShotsLocked(a)
 		m.photographLocked(a)
 		m.followThroughLocked(a)
 	}
@@ -896,6 +897,32 @@ func (m *Manager) photographLocked(a *Agent) {
 		return
 	}
 	started.ScreenshotFor = a.ID
+}
+
+// maxShotTries is how many times a screenshot agent is sent back for pictures.
+const maxShotTries = 2
+
+// insistOnShotsLocked sends a screenshot agent back to work when its turn ended
+// with no pictures although the branch changed something that shows on screen.
+func (m *Manager) insistOnShotsLocked(a *Agent) {
+	w := a.Worktree
+	if a.ScreenshotFor == "" || a.ShotTries >= maxShotTries || w == nil || !exists(w.Path) {
+		return
+	}
+	for _, shot := range ListScreenshots(m.shotDir(a.ScreenshotFor), a.ScreenshotFor) {
+		if !shot.Before {
+			return
+		}
+	}
+	var paths []string
+	for _, file := range w.numstat(w.Base + "...HEAD") {
+		paths = append(paths, file.Path)
+	}
+	if !ShowsOnScreen(paths) {
+		return
+	}
+	a.ShotTries++
+	m.sendLocked(a, InsistShotsPrompt(m.shotDir(a.ScreenshotFor)), nil)
 }
 
 // RetakeScreenshots starts again the screenshot agents a restart stopped.

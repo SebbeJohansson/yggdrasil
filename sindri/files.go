@@ -211,12 +211,33 @@ func ReadScreenshot(dir, name string) ([]byte, string, bool) {
 	return data, kind, true
 }
 
+var visibleFile = regexp.MustCompile(`(?i)\.(vue|tsx|jsx|svelte|astro|html?|css|scss|sass|less|svg|png|jpe?g|webp|gif|ico|templ|tmpl|gohtml|erb|hbs|ejs|pug|md|mdx)$`)
+
+// ShowsOnScreen is whether any changed file is of a kind that is displayed
+// (components, pages, styles, templates, images).
+func ShowsOnScreen(paths []string) bool {
+	for _, p := range paths {
+		if visibleFile.MatchString(p) && !strings.HasSuffix(strings.ToLower(p), ".md") || strings.Contains(p, "/components/") || strings.Contains(p, "/pages/") {
+			return true
+		}
+	}
+	return false
+}
+
+// InsistShotsPrompt is sent to a screenshot agent that ended with no pictures.
+func InsistShotsPrompt(dir string) string {
+	return "No picture is saved in " + dir + " yet, but this branch changes files that show on screen. Pictures are required here: " +
+		"do not stop without them. Start the app (a dev server, or a small static page or test harness that renders the changed component if the real app needs " +
+		"services you cannot reach), open the changed view in Playwright and save `<view>-desktop.png` (1440x900) and `<view>-phone.png` (390x844) there. " +
+		"If something fails, fix your approach and try another way. Only if it is truly impossible, say in one line exactly what blocked you."
+}
+
 // ScreenshotPrompt asks an agent to photograph a branch's visible changes.
 func ScreenshotPrompt(branch, base, dir string) string {
 	return strings.Join([]string{
 		"You are in the git worktree of branch " + branch + ", which another agent has just worked on. Take screenshots of what its changes look like.",
-		"1. Look at `git diff " + base + "...HEAD` to see what changed. If nothing in it is visible (no UI, page, or rendered output), save nothing and say so. A change to styles, a component, or text shown on screen is visible.",
-		"2. Start the project the way its README or package.json says, and open the changed pages or views with Playwright or any headless browser that is installed (Playwright's browsers may already be in ~/.cache/ms-playwright: reuse them before downloading). Show them as a person meets them: with the project's real data and services when you can reach them (its .env, dev servers already running), logged in if that is how it is used, with a realistic amount of content. Use seeded or mock data only when real data is out of reach, and say so.",
+		"1. Look at `git diff " + base + "...HEAD` to see what changed. Treat the change as visible by default: a change to styles, a component, a page, a template, or text shown on screen is visible, and then you must save pictures. Save nothing only when every changed file is plainly not shown on screen (backend code, tests, config, docs), and say so.",
+		"2. Start the project the way its README or package.json says, and open the changed pages or views with Playwright or any headless browser that is installed (Playwright's browsers may already be in ~/.cache/ms-playwright: reuse them before downloading). Show them as a person meets them: with the project's real data and services when you can reach them (its .env, dev servers already running), logged in if that is how it is used, with a realistic amount of content. Use seeded or mock data, or a small page that renders the changed component alone, when real data is out of reach, and say so. Never finish without at least one picture of a visible change.",
 		"3. Shoot each changed view at real screen sizes: desktop 1440x900 as `<view>-desktop.png` and phone 390x844 as `<view>-phone.png`. If the view is made for one screen (a kiosk, an always-on display, a widget or panel of a fixed size), shoot it at that size instead, as `<view>-<size>.png`. Capture the viewport, scrolled so the change is in view; never crop to a single element. Save them in " + dir + " (at most 10; the folder exists). They show the branch as it is now.",
 		"4. Look at every picture you saved. If one shows a broken layout, overflow, cut-off text, or an error page, say so in your final message in one line per problem.",
 		"5. Only for a view that already existed on " + base + " and whose change is hard to see without a comparison (a restyle, a moved or removed element, a fixed layout bug), also save how it looked before as `<same name>.before.png`, like `dashboard-review-desktop.before.png`, with the same size and state as the after shot. Take it from a temporary worktree (`git worktree add --detach <tmp dir> " + base + "`, then `git worktree remove --force <tmp dir>`), never by switching this one. Skip before shots for new pages, new views, and added elements: most changes need none.",
