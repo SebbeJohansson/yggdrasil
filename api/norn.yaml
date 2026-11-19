@@ -1301,6 +1301,35 @@ paths:
               schema: { $ref: "#/components/schemas/PersonRecap" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/people/recap/next:
+    get:
+      summary: >-
+        The recaps for the meeting about to start: the first in the work
+        calendar that starts within 10 minutes with someone else in it (not
+        declined, not all day, not shown as free, not a break or focus block).
+        Its main people are everyone invited when they are 3 or fewer, else
+        only the organizer (none in a big meeting you organize). Nothing while
+        a break you kept free or a focus block holds you, and nothing once the
+        meeting has started. Kept on this machine only.
+      responses:
+        "200":
+          description: The meeting and its people's recaps; no meeting and no people when none is near.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [on, people]
+                properties:
+                  on: { type: boolean }
+                  meeting:
+                    type: object
+                    required: [id, subject, start]
+                    properties:
+                      id: { type: string }
+                      subject: { type: string }
+                      start: { type: integer, description: Epoch ms. }
+                  people: { type: array, items: { $ref: "#/components/schemas/PersonRecap" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/gap:
     get:
       summary: >-

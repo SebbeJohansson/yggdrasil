@@ -173,6 +173,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountWeave(p)
 	n.mountRewind(p)
 	n.mountRecap(p)
+	n.mountRecapNext(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

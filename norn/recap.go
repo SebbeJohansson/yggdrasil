@@ -285,6 +285,8 @@ type Recaps struct {
 	// Exchanges reads the person's mail, chats and meetings with you, and
 	// fills in their address or user id where it learns them.
 	Exchanges func(ctx context.Context, person RecapPerson, now time.Time) ([]Exchange, RecapPerson)
+	// Invited is who is in a meeting, with addresses where Graph has them (recap_next.go).
+	Invited func(ctx context.Context, event CalendarEvent) []invitee
 	now     func() time.Time
 
 	mu    sync.Mutex
@@ -304,6 +306,7 @@ func NewRecaps(n *Norn) *Recaps {
 			return n.LLM.Chat(ctx, messages, options)
 		}}
 	r.Exchanges = n.readExchanges
+	r.Invited = n.meetingInvitees
 	return r
 }
 
