@@ -543,6 +543,10 @@ func (n *Norn) personRecap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	person := ParseRecapPerson(who, name)
+	if !n.Recaps.On(r.Context()) {
+		part.JSON(w, http.StatusOK, PersonRecap{Who: who, Name: person.Name, Promises: []RecapPromise{}, Open: []RecapThread{}})
+		return
+	}
 	recap, err := n.Recaps.For(r.Context(), person)
 	if err != nil {
 		n.fail(w, err)

@@ -495,6 +495,7 @@ stays listed (`GET /v1/settings/promises` says whether it runs).
 | --- | --- | --- |
 | `GET /v1/people/recap?who=&name=` | anyone | `who` is an email address, a Teams user id, or a name → `{ on, who, name, last?: { kind: mail\|chat\|meeting, source, at, title, words, link?, fromThem }, promises: [{ id, what, due?, source, link?, createdAt }], open: [{ id, kind, source, subject, at, link?, inInbox }] }` |
 | `GET /v1/people/recap/next` | anyone | `{ on, meeting?: { id, subject, start }, people: [recap] }` for the meeting about to start |
+| `GET`, `PUT /v1/settings/person-recap` | owner to change | `{ on }`: on until you turn it off |
 
 When someone writes to you, or just before a meeting with them, the dashboard
 shows a small card: the last time you spoke, what you promised them, and what
@@ -514,8 +515,9 @@ block). Its people are everyone invited when they are 3 or fewer (addresses
 from the invitation through Graph), else only the organizer. Nothing while a
 break you kept free or a focus block holds you, and nothing once it starts.
 The widget asks for it on the overview; no message is sent, so nothing reaches
-ntfy. Everything stays on this machine: no text goes to a cloud model, so no names
-are swapped.
+ntfy. Off (`PUT /v1/settings/person-recap` `{ on: false }`), both routes
+answer empty with `on: false` and read nothing. Everything stays on this
+machine: no text goes to a cloud model, so no names are swapped.
 
 ### Norn: a task sized to your gap
 

@@ -139,6 +139,10 @@ func (n *Norn) mountRecapNext(p *part.Part) {
 }
 
 func (n *Norn) nextRecap(w http.ResponseWriter, r *http.Request) {
+	if !n.Recaps.On(r.Context()) {
+		part.JSON(w, http.StatusOK, RecapNext{People: []PersonRecap{}})
+		return
+	}
 	next, err := n.Recaps.Next(r.Context())
 	if err != nil {
 		n.fail(w, err)

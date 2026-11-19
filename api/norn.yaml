@@ -183,6 +183,31 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/settings/person-recap:
+    get:
+      summary: Whether the person recap is given (on until you turn it off).
+      responses:
+        "200": { $ref: "#/components/responses/RecapSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: >-
+        Turn the person recap on or off. Off, GET /v1/people/recap and
+        /v1/people/recap/next answer empty, with on false, and nothing is read
+        for them. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/RecapSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/settings/send-names:
     get:
       summary: Until when names go to Claude as they are, without placeholders (Unix ms; 0 means they are swapped).
@@ -1794,6 +1819,15 @@ components:
             required: [on]
             properties:
               on: { type: boolean }
+    RecapSettings:
+      description: Whether the person recap is given.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on]
+            properties:
+              on: { type: boolean }
     Microsoft:
       description: The sign-in.
       content:
@@ -2157,7 +2191,7 @@ components:
       type: object
       required: [on, who, name, promises, open]
       properties:
-        on: { type: boolean }
+        on: { type: boolean, description: False when the recap is turned off; then everything else is empty. }
         who: { type: string }
         name: { type: string }
         last:
