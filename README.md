@@ -383,6 +383,55 @@ Norn sends no `calendar.*` events for it, Ratatoskr ends a stretch at it
 and does not count it toward a packed week, and Hermóðr holds messages
 through it and says `inBreak` rather than `inMeeting`.
 
+### Norn: the week's plan (the weave)
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/weave` | anyone | `{ week, madeAt, words, waiting, days: [{ date, words, blocks: [{ id, kind: focus\|break, start, end, for?, link?, booked, eventId?, skipped }] }] }`; `week` is `""` before the first plan |
+| `POST /v1/weave/book` | owner | `{ ids? }` (every open block when empty) → `{ results: [{ id, booked, eventId?, error? }], weave }` |
+| `POST /v1/weave/remake` | owner | make it again now; blocks already booked stay |
+| `POST /v1/weave/blocks/{id}/skip` | owner | leave one block out (`409` once booked) |
+| `GET`, `PUT /v1/settings/weave` | owner to change | `{ on, makeAt, focusMinutes }`: on, `18:00` and `90` until set |
+
+Once a week Norn proposes the coming Monday to Friday, within `WORK_HOURS`. It
+looks every 3 minutes, and on start: from Sunday's `makeAt` (18:00 in
+`TIME_ZONE`) the next week is due, and on a weekday the current one, so a
+machine that was off on Sunday plans on Monday morning, and one started on
+Wednesday plans the rest of the week. A week is planned once; only Make it
+again plans it anew. The plan waits for a fresh read of the work calendar.
+
+It is made by Norn's own code, not a model. Busy is what the gap reads as
+busy, and breaks and focus blocks Yggdrasil booked count as booked. A day is
+packed when meetings fill 60% of its working hours, as Ratatoskr's packed
+week counts them. Then:
+
+- **Focus blocks**: at most one a day, never on a packed day or one with a
+  focus block booked already, in the longest free stretch of `focusMinutes`
+  or more, mornings (before 12:00) first, two hours at most. Each gets a
+  suggested use from what waits: a promise due on or after its day (or late
+  already), soonest first ("the promise to Anna due Thursday: send the
+  deck"); what a draft that runs tonight did, on the first day; then a review,
+  a race to pick, a draft to start, an agent to answer.
+- **Breaks**: after each run of meetings of 3 hours or more (gaps under 15
+  minutes do not end a run), 15 to 30 minutes in the first free time after
+  it, unless a break you kept is there already.
+- One line per day ("Tuesday is heavy: a break after lunch, no focus
+  block.") and one for the week. The local model (`SUMMARY_MODEL`) may say
+  the week's line more warmly; a line that drops a day, adds a number or
+  exclaims is thrown away, and without the model the plain line stands.
+
+When it is made with a block in it, Norn sends `weave.ready` once, and
+Huginn's `week-plan` rule tells the widget. Nothing is booked by itself: Book
+keeps each block the way a break is kept, a break as "Break", a focus block as
+"Focus" with the Outlook category `Yggdrasil focus` (`focus: true` on
+`GET /v1/calendar`), busy, one `transactionId` per slot, so a double click is
+one event. A slot no longer free gets its reason. A focus block is not a
+meeting: no `calendar.*` events or save points for it, Hermóðr holds what asks
+to hold through it (`inFocusBlock`), the gap offers nothing in it, Ratatoskr
+does not count it toward a packed week, and passive Loki does not strike in
+it. Calendar, goals and promises stay on this machine: nothing here goes to
+Claude.
+
 ### Norn: save points
 
 | Route | Who | What it does |
@@ -445,7 +494,8 @@ stays listed (`GET /v1/settings/promises` says whether it runs).
 
 You are free when nothing in the work calendar holds you now (a meeting not
 declined, not all day, not shown as free; a break you kept free counts as
-busy, since a break is not for work) within the working day, `WORK_HOURS` in
+busy, since a break is not for work, and so does a focus block you booked)
+within the working day, `WORK_HOURS` in
 `parts.env` (09:00-17:00, Monday to Friday), the one Ratatoskr reads too. The gap lasts until the next such
 meeting or the end of the day. What waits: Sindri's goals by their next step,
 and the open promises due by tomorrow. Each kind has a rough size: answer an

@@ -89,9 +89,10 @@ type SavePoint struct {
 // --- what counts -----------------------------------------------------------------
 
 // SavePointMeeting is whether a meeting is one to keep your place through:
-// not declined, not all day, not shown as free, not a break you kept free.
+// not declined, not all day, not shown as free, not a break you kept free
+// or a focus block you booked.
 func SavePointMeeting(event CalendarEvent) bool {
-	return event.ID != "" && !declined(event) && !event.AllDay && event.ShowAs != "free" && !event.Break
+	return event.ID != "" && !declined(event) && !event.AllDay && event.ShowAs != "free" && !event.Break && !event.Focus
 }
 
 // GoalActivity is the little of Sindri's goal a save point needs.

@@ -91,9 +91,10 @@ func ParseWorkHours(text string) (WorkDay, error) {
 }
 
 // GapBusy is whether an event holds you: a meeting not declined, not all
-// day, not shown as free; and a break you kept free, since a break is not for work.
+// day, not shown as free; a break you kept free, since a break is not for
+// work; and a focus block you booked, since you are focusing.
 func GapBusy(event CalendarEvent) bool {
-	if event.Break {
+	if event.Break || event.Focus {
 		return true
 	}
 	return !declined(event) && !event.AllDay && event.ShowAs != "free"

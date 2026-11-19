@@ -67,9 +67,33 @@ func blocks(event CalendarEvent) bool {
 // BreakSlot is the break already kept for exactly this slot, or the event in
 // its way. Both nil: the slot is free.
 func BreakSlot(events []CalendarEvent, slot BreakRequest) (kept, taken *CalendarEvent) {
+	return KeptSlot(events, slot, breakKind)
+}
+
+// SlotKind is what Norn keeps a slot free as: a break here, a focus block
+// for the week's plan (weave.go). Each has its own subject and category.
+type SlotKind struct {
+	Subject, Category, Body string
+	// Focus is a focus block; otherwise a break.
+	Focus bool
+}
+
+var breakKind = SlotKind{Subject: BreakSubject, Category: BreakCategory, Body: "Kept free by Yggdrasil, so this time stays a break."}
+
+// isKind is whether an event is one Yggdrasil kept as kind.
+func (kind SlotKind) isKind(event CalendarEvent) bool {
+	if kind.Focus {
+		return event.Focus
+	}
+	return event.Break
+}
+
+// KeptSlot is the event of kind already kept for exactly this slot, or the
+// event in its way. Both nil: the slot is free.
+func KeptSlot(events []CalendarEvent, slot BreakRequest, kind SlotKind) (kept, taken *CalendarEvent) {
 	for i := range events {
 		event := events[i]
-		if event.Break && event.Start == slot.Start && event.End == slot.End {
+		if kind.isKind(event) && event.Start == slot.Start && event.End == slot.End {
 			return &event, nil
 		}
 	}
@@ -82,21 +106,25 @@ func BreakSlot(events []CalendarEvent, slot BreakRequest) (kept, taken *Calendar
 	return nil, nil
 }
 
-// graphBreak is the event Graph is asked to make. transactionId makes a
+// graphSlot is the event Graph is asked to make. transactionId makes a
 // second POST of the same slot (a double click) the same event.
-func graphBreak(slot BreakRequest) map[string]any {
+func graphSlot(kind SlotKind, slot BreakRequest) map[string]any {
 	at := func(ms int64) map[string]string {
 		return map[string]string{"dateTime": time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05"), "timeZone": "UTC"}
 	}
+	prefix := "yggdrasil-break"
+	if kind.Focus {
+		prefix = "yggdrasil-focus"
+	}
 	return map[string]any{
-		"subject":       BreakSubject,
-		"body":          map[string]string{"contentType": "text", "content": "Kept free by Yggdrasil, so this time stays a break."},
+		"subject":       kind.Subject,
+		"body":          map[string]string{"contentType": "text", "content": kind.Body},
 		"start":         at(slot.Start),
 		"end":           at(slot.End),
 		"showAs":        "busy",
-		"categories":    []string{BreakCategory},
+		"categories":    []string{kind.Category},
 		"isReminderOn":  false,
-		"transactionId": fmt.Sprintf("yggdrasil-break-%d-%d", slot.Start, slot.End),
+		"transactionId": fmt.Sprintf("%s-%d-%d", prefix, slot.Start, slot.End),
 	}
 }
 
@@ -117,55 +145,72 @@ func (n *Norn) keepBreak(w http.ResponseWriter, r *http.Request) {
 		part.Error(w, http.StatusBadRequest, problem)
 		return
 	}
-	token, err := n.Accounts.Microsoft.Token(r.Context())
-	if err != nil {
-		part.Error(w, http.StatusConflict, "sign in to Microsoft first")
+	token, events, status, problem := n.calendarToWrite(r.Context())
+	if problem != "" {
+		part.Error(w, status, problem)
 		return
 	}
-	// Read again first: the slot was free when the dashboard last looked.
-	if err := n.readWorkCalendar(r.Context()); err != nil {
-		n.logf("reading the calendar before keeping a break: %v", err)
+	event, status, problem := n.keepSlot(r.Context(), token, events, breakKind, slot)
+	if problem != "" {
+		part.Error(w, status, problem)
+		return
+	}
+	if status == http.StatusCreated {
+		// Read again, so the break shows everywhere Norn shows the calendar.
+		if err := n.readWorkCalendar(r.Context()); err != nil {
+			n.logf("reading the calendar after keeping a break: %v", err)
+		}
+	}
+	part.JSON(w, status, map[string]any{"event": event})
+}
+
+// calendarToWrite is the Microsoft token and the work calendar read again
+// (the slot was free when the dashboard last looked); a status and why not
+// when Norn cannot write to it now.
+func (n *Norn) calendarToWrite(ctx context.Context) (string, []CalendarEvent, int, string) {
+	token, err := n.Accounts.Microsoft.Token(ctx)
+	if err != nil {
+		return "", nil, http.StatusConflict, "sign in to Microsoft first"
+	}
+	if err := n.readWorkCalendar(ctx); err != nil {
+		n.logf("reading the calendar before keeping a slot free: %v", err)
 	}
 	snapshot := n.Accounts.Work.Current(time.Now())
 	if snapshot == nil {
-		part.Error(w, http.StatusConflict, "the work calendar has not been read yet")
-		return
+		return "", nil, http.StatusConflict, "the work calendar has not been read yet"
 	}
-	kept, taken := BreakSlot(append(slices.Clone(snapshot.Events), snapshot.Later...), slot)
+	return token.AccessToken, append(slices.Clone(snapshot.Events), snapshot.Later...), 0, ""
+}
+
+// keepSlot keeps a slot free as kind, among the calendar's events: 201 with
+// the new event, 200 with the one already there, else a status and why not.
+func (n *Norn) keepSlot(ctx context.Context, token string, events []CalendarEvent, kind SlotKind, slot BreakRequest) (CalendarEvent, int, string) {
+	kept, taken := KeptSlot(events, slot, kind)
 	if kept != nil {
-		part.JSON(w, http.StatusOK, map[string]any{"event": kept})
-		return
+		return *kept, http.StatusOK, ""
 	}
 	if taken != nil {
 		zone := n.Zone
-		part.Error(w, http.StatusConflict, fmt.Sprintf("the slot is no longer free: something is booked %s-%s",
-			time.UnixMilli(taken.Start).In(zone).Format("15:04"), time.UnixMilli(taken.End).In(zone).Format("15:04")))
-		return
+		return CalendarEvent{}, http.StatusConflict, fmt.Sprintf("the slot is no longer free: something is booked %s-%s",
+			time.UnixMilli(taken.Start).In(zone).Format("15:04"), time.UnixMilli(taken.End).In(zone).Format("15:04"))
 	}
-	body, _ := json.Marshal(graphBreak(slot))
-	status, answer, err := n.Accounts.post(r.Context(), "https://graph.microsoft.com/v1.0/me/events", token.AccessToken, body)
+	body, _ := json.Marshal(graphSlot(kind, slot))
+	status, answer, err := n.Accounts.post(ctx, "https://graph.microsoft.com/v1.0/me/events", token, body)
 	switch {
 	case err != nil:
-		part.Error(w, http.StatusBadGateway, err.Error())
-		return
+		return CalendarEvent{}, http.StatusBadGateway, err.Error()
 	case status == http.StatusForbidden || status == http.StatusUnauthorized:
-		part.Error(w, http.StatusConflict, "Norn may only read your calendar: sign in to Microsoft again to let it change it")
-		return
+		return CalendarEvent{}, http.StatusConflict, "Norn may only read your calendar: sign in to Microsoft again to let it change it"
 	case status != http.StatusCreated && status != http.StatusOK:
-		part.Error(w, http.StatusBadGateway, apiError("Graph", status, answer).Error())
-		return
+		return CalendarEvent{}, http.StatusBadGateway, apiError("Graph", status, answer).Error()
 	}
-	events, _ := GraphEvents([]byte(`{"value":[` + strings.TrimSpace(string(answer)) + `]}`))
-	event := CalendarEvent{Subject: BreakSubject, Start: slot.Start, End: slot.End, ShowAs: "busy", Response: "organizer", Break: true}
-	if len(events) == 1 {
-		event = events[0]
-		event.Break = true
+	parsed, _ := GraphEvents([]byte(`{"value":[` + strings.TrimSpace(string(answer)) + `]}`))
+	event := CalendarEvent{Subject: kind.Subject, Start: slot.Start, End: slot.End, ShowAs: "busy", Response: "organizer"}
+	if len(parsed) == 1 {
+		event = parsed[0]
 	}
-	// Read again, so the break shows everywhere Norn shows the calendar.
-	if err := n.readWorkCalendar(r.Context()); err != nil {
-		n.logf("reading the calendar after keeping a break: %v", err)
-	}
-	part.JSON(w, http.StatusCreated, map[string]any{"event": event})
+	event.Break, event.Focus = !kind.Focus, kind.Focus
+	return event, http.StatusCreated, ""
 }
 
 // bearerPost is an authorized POST of JSON.

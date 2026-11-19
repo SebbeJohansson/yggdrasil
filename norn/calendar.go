@@ -66,6 +66,9 @@ type CalendarEvent struct {
 	// Break is a break Yggdrasil kept free in the work calendar
 	// (POST /v1/calendar/breaks), not a meeting.
 	Break bool `json:"break,omitempty"`
+	// Focus is a focus block Yggdrasil booked from the week's plan
+	// (POST /v1/weave/book), not a meeting.
+	Focus bool `json:"focus,omitempty"`
 }
 
 // joinLink is the first Teams or Google Meet link in text.
@@ -354,7 +357,7 @@ func graphPage(body []byte) (events, cancelled []CalendarEvent, next string) {
 			Location: strings.TrimSpace(raw.Location.DisplayName), Organizer: raw.Organizer.EmailAddress.Name,
 			Response: raw.ResponseStatus.Response, ShowAs: raw.ShowAs, ID: raw.ID, Attendees: attendees, Series: raw.SeriesMasterID,
 			Rooms: rooms, Join: JoinLink(raw.Body.Content, joinURL(raw.OnlineMeeting)),
-			Break: slices.Contains(raw.Categories, BreakCategory),
+			Break: slices.Contains(raw.Categories, BreakCategory), Focus: slices.Contains(raw.Categories, FocusCategory),
 		}
 		if raw.IsCancelled {
 			cancelled = append(cancelled, event)
@@ -798,6 +801,9 @@ func CalendarLines(snapshot CalendarSnapshot, now time.Time, zone *time.Location
 		}
 		if event.Break {
 			details = append(details, "a break you kept free, not a meeting")
+		}
+		if event.Focus {
+			details = append(details, "a focus block you booked, not a meeting")
 		}
 		switch event.ShowAs {
 		case "free":

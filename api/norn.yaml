@@ -673,6 +673,8 @@ paths:
         - `event: promise.due`, data PromiseDue: an open promise's day is
           the next working day (`by` tomorrow, or the weekday), or today
           when it was made too late for that. Once per promise and day.
+        - `event: weave.ready`, data WeaveReady: the week's plan was made
+          (GET /v1/weave) and has a block in it; once per week, not on remake.
       parameters:
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
       responses:
@@ -1282,7 +1284,8 @@ paths:
         The gap you are in, and the one waiting thing that fits it. Free is
         nothing in the work calendar holding you now (a meeting not declined,
         not all day, not shown as free; a break you kept free counts as busy),
-        within the working day (WORK_HOURS, 09:00-17:00, Monday to Friday).
+        within the working day (WORK_HOURS, 09:00-17:00, Monday to Friday);
+        a focus block you booked holds you too, so no gap is offered in it.
         freeUntil is the next such meeting's start or the end of the working
         day. item is one of Sindri's goals by its next step (answer an agent,
         pick a race, review a branch, start a draft) or an open promise due by
@@ -1298,6 +1301,123 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Gap" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/weave:
+    get:
+      summary: >-
+        The week's plan (the weave): one calm proposal for Monday to Friday
+        within WORK_HOURS, made once per week at the first chance after
+        Sunday's makeAt (18:00) in TIME_ZONE, checked on start and every 3
+        minutes, so a machine off on Sunday makes it on Monday; made on a
+        weekday it plans what is left of the week. Never made twice for one
+        week but with POST /v1/weave/remake. Made by Norn's own code from the
+        work calendar (busy as /v1/gap reads it; breaks and focus blocks
+        Yggdrasil booked count as booked), the promises due that week, the
+        goals waiting on you and the drafts that run tonight: at most one focus
+        block a day, in the longest free stretch of focusMinutes (90) or more,
+        mornings first, at most 2 hours, never on a day 60% or more in
+        meetings; and a break of 15 to 30 minutes in the first free time after
+        each run of meetings of 3 hours or more (gaps under 15 minutes do not
+        end a run), unless a break is kept there already. A focus block's for
+        is the first waiting thing that fits it: a promise due on or after its
+        day (or late already), what ran overnight (first day only), a review,
+        a race to pick, a draft to start, an agent to answer. One line per
+        day and one for the week in plain words; the local model may say the
+        week's line more warmly, never Claude. Nothing is booked by itself.
+        Kept on this machine only. Before the first plan, week is "" and
+        days is empty.
+      responses:
+        "200": { $ref: "#/components/responses/Weave" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/weave/book:
+    post:
+      summary: >-
+        Book the plan's blocks in the work calendar the way POST
+        /v1/calendar/breaks keeps a break: a break as "Break" (category
+        "Yggdrasil break"), a focus block as "Focus" with the category
+        "Yggdrasil focus" (focus true on the calendar's events), shown as busy,
+        nobody invited, one transactionId per slot. ids are the blocks to book;
+        none books every block still ahead that is neither booked nor skipped
+        (a skipped block is booked when named). The calendar is read first; a
+        slot no longer free gets its reason in results, and a block already
+        booked is not sent again. Owner only.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: What became of each block, and the plan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results, weave]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, booked]
+                      properties:
+                        id: { type: string }
+                        booked: { type: boolean }
+                        eventId: { type: string }
+                        error: { type: string, description: Why it was not booked. }
+                  weave: { $ref: "#/components/schemas/Weave" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/weave/remake:
+    post:
+      summary: >-
+        Make the plan again now, for this week (from Saturday on, the next):
+        blocks already booked stay in it. 409 when the work calendar has not
+        been read. No weave.ready. Owner only.
+      responses:
+        "200": { $ref: "#/components/responses/Weave" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/weave/blocks/{id}/skip:
+    post:
+      summary: Leave one block of the plan out. 409 when it is booked already (remove it in the calendar). Owner only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Weave" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/settings/weave:
+    get:
+      summary: The week's plan's settings.
+      responses:
+        "200": { $ref: "#/components/responses/WeaveSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Change them; what is left out stays. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                on: { type: boolean }
+                makeAt: { type: string, description: "When on Sunday the coming week is planned, HH:MM." }
+                focusMinutes: { type: integer, minimum: 30, maximum: 240 }
+      responses:
+        "200": { $ref: "#/components/responses/WeaveSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/inbox/summary:
     post:
       summary: Phrase a sentence for ranked items the caller collected. Never fails because of the model; falls back to the plain count, as it does when the model names someone the items don't hold.
@@ -1597,6 +1717,22 @@ components:
       scheme: bearer
       description: A named token. `owner` is you; any other name is a part.
   responses:
+    Weave:
+      description: The week's plan.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Weave" }
+    WeaveSettings:
+      description: The week's plan's settings.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on, makeAt, focusMinutes]
+            properties:
+              on: { type: boolean, description: On until you turn it off. }
+              makeAt: { type: string, description: "When on Sunday the coming week is planned, HH:MM in TIME_ZONE (18:00)." }
+              focusMinutes: { type: integer, description: The shortest free stretch worth a focus block (90). }
     PromiseSettings:
       description: Whether the promise ledger runs.
       content:
@@ -1817,6 +1953,7 @@ components:
         rooms: { type: array, items: { type: string }, description: "The rooms booked for it, by name; left out when none." }
         join: { type: string, description: "Its Teams or Google Meet link: the calendar's own, else the first in the invitation's text; left out when none." }
         break: { type: boolean, description: "A break kept free with POST /v1/calendar/breaks (Outlook category \"Yggdrasil break\"), not a meeting; left out otherwise. No calendar.* events are sent for it." }
+        focus: { type: boolean, description: "A focus block booked from the week's plan (POST /v1/weave/book, Outlook category \"Yggdrasil focus\"), not a meeting; left out otherwise. No calendar.* events are sent for it, and no save point is kept through it." }
     VaultNote:
       type: object
       required: [path, title, link]
@@ -1924,6 +2061,46 @@ components:
         kind: { type: string, enum: [duplicate, stale] }
         copy: { $ref: "#/components/schemas/CalendarEvent" }
         invite: { $ref: "#/components/schemas/CalendarEvent" }
+    Weave:
+      type: object
+      required: [week, madeAt, days, words, waiting]
+      properties:
+        week: { type: string, description: "The week's Monday, YYYY-MM-DD; \"\" before the first plan." }
+        madeAt: { type: integer, description: Epoch ms. }
+        words: { type: string, description: "The week in one line: plain, or said more warmly by the local model." }
+        waiting: { type: boolean, description: A block is still ahead that is neither booked nor skipped. }
+        days:
+          type: array
+          description: The working days planned, Monday to Friday, from the day it was made.
+          items:
+            type: object
+            required: [date, words, blocks]
+            properties:
+              date: { type: string, description: YYYY-MM-DD. }
+              words: { type: string, description: "The day in plain words: \"Tuesday is heavy: a break after lunch, no focus block.\"" }
+              blocks:
+                type: array
+                items:
+                  type: object
+                  required: [id, kind, start, end, booked, skipped]
+                  properties:
+                    id: { type: string }
+                    kind: { type: string, enum: [focus, break] }
+                    start: { type: integer, description: Epoch ms. }
+                    end: { type: integer }
+                    for: { type: string, description: "A focus block's suggested use: \"the promise to Anna due Thursday: send the deck\"." }
+                    link: { type: string, description: The dashboard path for that use. }
+                    booked: { type: boolean }
+                    eventId: { type: string, description: The calendar event once booked. }
+                    skipped: { type: boolean }
+    WeaveReady:
+      type: object
+      required: [week, words, madeAt, link]
+      properties:
+        week: { type: string }
+        words: { type: string }
+        madeAt: { type: integer }
+        link: { type: string, description: "The plan on the dashboard, /dashboard/plan." }
     Gap:
       type: object
       required: [free]
