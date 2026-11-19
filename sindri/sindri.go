@@ -107,6 +107,7 @@ func (s *Sindri) Mount(p *part.Part) {
 		s.Work.mountNight(p)
 		s.Work.mountSelfRepair(p)
 		s.Work.mountRaces(p)
+		s.Work.mountWhy(p)
 		p.Loop("night", time.Minute, s.Work.RunNight)
 		if s.Work.Linear.On() {
 			s.Work.linearFailed = map[int64]time.Time{}

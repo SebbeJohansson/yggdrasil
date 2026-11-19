@@ -63,6 +63,8 @@ type GoalView struct {
 	State  string      `json:"state"` // draft, running, needs-you, done, merged, closed
 	Tasks  []GoalTask  `json:"tasks"`
 	Next   GoalNext    `json:"next"`
+	// Why is what its agents were told about why it exists; absent before it started.
+	Why *GoalWhy `json:"why,omitempty"`
 	GoalRaceFields
 }
 
@@ -192,7 +194,8 @@ func (w *Work) GoalViews() ([]GoalView, error) {
 			tasks = []GoalTask{}
 		}
 		current := currentParts(tasks)
-		view := GoalView{Goal: goal, Images: images, State: GoalState(current), Tasks: tasks, Next: NextFor(current)}
+		why, _ := w.Store.GoalWhy(goal.ID)
+		view := GoalView{Goal: goal, Images: images, State: GoalState(current), Tasks: tasks, Next: NextFor(current), Why: why}
 		if goal.ClosedAt != nil {
 			view.State, view.Next = "closed", GoalNext{Action: "none", Text: "Closed"}
 		}
@@ -351,6 +354,9 @@ func (w *Work) startPartsOn(goal *Goal, repos []string, lane string) ([]Started,
 	}
 	if brief := SelfRepairBrief(goal); brief != "" {
 		parts = append(parts, brief)
+	} else if why := w.goalWhy(goal); why != "" {
+		// A self-repair goal's why is its alert, above; any other asks Norn.
+		parts = append(parts, why)
 	}
 	parts = append(parts, fmt.Sprintf("(From goal %d, source: %s.)", goal.ID, goal.Source))
 	request := CodeRequest{Session: goal.Session, Prompt: strings.Join(parts, "\n\n"), Name: ShortTask(goal.Title, 50), Projects: repos, GoalID: &goal.ID, Goal: goal.Title}

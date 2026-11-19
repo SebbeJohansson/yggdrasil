@@ -40,6 +40,7 @@ import (
 //	TIME_ZONE           the night shift's times are in this zone (Europe/Stockholm)
 //	SINDRI_SELF_REPAIR  on: draft goals for Yggdrasil's own alerts and dispatch corrections each night (off)
 //	YGG_GJALLAR_URL     Gjallar, whose alerts self-repair reads; GJALLAR_TOKEN is Sindri's token there
+//	SINDRI_WHY_TIMEOUT  how long a goal's start waits for Norn's why before going without it (30s)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("SINDRI_TOKENS")
 	if err != nil {
@@ -87,6 +88,11 @@ func Main(ctx context.Context) error {
 			Default: env.String("SINDRI_SELF_REPAIR", "off") == "on", Repo: "yggdrasil",
 		},
 		Kinds: NornKinds{Norn: call.New("norn", where.URL("norn"), env.String("NORN_TOKEN", ""), 3*time.Minute)},
+	}
+	// A goal's why comes from Norn (why.go); without NORN_TOKEN it is not asked.
+	WhyTimeout = env.Duration("SINDRI_WHY_TIMEOUT", WhyTimeout)
+	if norn := call.New("norn", where.URL("norn"), env.String("NORN_TOKEN", ""), WhyTimeout+5*time.Second); norn.On() {
+		work.Why = NornWhy{Norn: norn}
 	}
 	claudeDir := env.String("CLAUDE_DIR", filepath.Join(home, ".claude"))
 	socketDir := env.String("CLAUDE_SOCKET_DIR", fmt.Sprintf("/run/user/%d/cc-socks", os.Getuid()))

@@ -175,6 +175,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountRecap(p)
 	n.mountRecapNext(p)
 	n.mountRecapSettings(p)
+	n.mountWhy(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

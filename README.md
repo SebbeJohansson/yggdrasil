@@ -296,6 +296,28 @@ is kept once. Norn's Rewind reads it. It is kept forever unless
 `SINDRI_PROMPTS_KEEP` (a duration, e.g. `8760h`) is set in `sindri.env`.
 Goal tasks on `GET /v1/goals` carry `startedAt` and `mergedAt`.
 
+### Sindri: a goal's why
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET`, `PATCH /v1/settings/why` | owner changes it | `{ on }`: whether a goal's agents get the why; on until turned off |
+
+When a goal's coding agents start (Start, a restart, the night shift, each
+lane of a race), Sindri asks Norn's `POST /v1/why` with the goal's title,
+background, repos and id, and puts what comes back in the prompt under
+`## Why this goal exists`: one line per source with its day and kind,
+summarized by Norn's local model, names as placeholders. Where it is told
+whose words to follow, the goal wins. The `ref` of each source stays with
+you. Sindri waits at most `SINDRI_WHY_TIMEOUT` (30s) in `sindri.env`; when
+Norn does not answer, the agents start without it. A pack is used again for
+an hour, and Norn not answering for 5 minutes, so a race's two lanes wait
+once. A self-repair goal is never asked about: its alert is its why.
+
+What was sent is kept on the goal: `why` on `GET /v1/goals` is
+`{ at, state, sources }`, `state` being `sent`, `none` (Norn found nothing it
+was sure of), `unreachable` or `off` (Norn was not asked). Sindri asks with
+its `NORN_TOKEN`; without one it never asks.
+
 ### Veðrfölnir
 
 The same shapes as my-agent's runner, so my-widget's pages read either.
@@ -571,6 +593,28 @@ when and the words to look for; Norn turns the when into a range in
 the one before today, "at 3" is 14:00-16:00). Without a model the question is
 read as it is. Words with no day look back 31 days and send only the matches,
 `focus` on the latest.
+
+### Norn: a goal's why
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `POST /v1/why` | anyone (Sindri) | `{ goal, context?, repos?, goalId? }` → `{ sources }`: at most 5 `{ kind, at, summary, ref }`, `kind` mail, meeting or rewind |
+
+When Sindri starts coding agents on a goal, it asks Norn what lies behind
+it. Norn looks on this machine for what holds at least two of the goal's
+words (the one, for a one-word goal; words like "add", "fix" or "page" left
+out): the inbox (Outlook, Teams, Slack, Gmail), Outlook mail searched through
+Graph (with the Microsoft sign-in), the Obsidian meeting notes, and Rewind's
+timeline of the last 31 days (meetings, your messages to Norn, what it
+learned, promises, reply drafts, notes changed; Sindri's goals left out).
+The best 8 go to the local model only (`CHAT_URL`, never Claude or Sindri),
+which keeps what is clearly about the goal as one line each. The lines then
+have names swapped for placeholders as for any handover to Claude, and a line
+that may hold a key or a token is dropped. The pack is empty when nothing
+matches surely, either model does not answer, or names are being sent as they
+are (`PUT /v1/settings/send-names`). `ref` says where each was found
+(`inbox:<id>`, `outlook:<id>`, `obsidian:<path>`, `rewind:<kind>:<at>`), for
+you; it is never sent to an agent. It takes at most 25 seconds.
 
 ### Dellingr
 

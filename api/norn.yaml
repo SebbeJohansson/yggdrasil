@@ -1265,6 +1265,46 @@ paths:
                   unavailable: { type: array, items: { type: string } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/why:
+    post:
+      summary: >-
+        Why a goal exists, for the coding agent Sindri starts on it. Norn looks
+        on this machine for the mail and chats (the inbox, Outlook mail through
+        Graph), the Obsidian meeting notes and the Rewind moments of the last
+        31 days that hold at least two of the goal's words (the one, for a
+        one-word goal). The local model only (never Claude or Sindri) reads
+        them and keeps what is clearly about the goal, one line each; the
+        lines then have names swapped for placeholders, and a line that may
+        hold a key or a token is dropped. Empty when nothing matches surely,
+        the local model or the names model does not answer, or names are being
+        sent as they are (PUT /v1/settings/send-names). At most 25 seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [goal]
+              properties:
+                goal: { type: string, minLength: 1, maxLength: 300, description: The goal's title. }
+                context: { type: string, maxLength: 20000, description: The goal's background; read by the local model only. }
+                repos: { type: array, items: { type: string } }
+                goalId: { type: integer }
+      responses:
+        "200":
+          description: The pack; no sources when nothing matched surely.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sources]
+                properties:
+                  sources:
+                    type: array
+                    maxItems: 5
+                    items: { $ref: "#/components/schemas/WhySource" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/savepoints:
     get:
       summary: >-
@@ -2260,6 +2300,14 @@ components:
         link: { type: string, description: "A dashboard path, or obsidian:// for a note." }
         source: { type: string, description: "calendar:work, calendar:personal, norn, sindri or obsidian." }
         match: { type: boolean, description: "On POST /v1/rewind/ask: it holds what was asked about." }
+    WhySource:
+      type: object
+      required: [kind, at, summary, ref]
+      properties:
+        kind: { type: string, enum: [mail, meeting, rewind], description: "mail: mail and chats; meeting: a meeting or its notes; rewind: anything else on the timeline." }
+        at: { type: integer, description: When it happened, epoch ms; 0 when unknown. }
+        summary: { type: string, maxLength: 220, description: One line by the local model, names swapped for placeholders. }
+        ref: { type: string, description: "Where it was found (inbox:<id>, outlook:<id>, obsidian:<path>, rewind:<kind>:<at>): for the owner, never sent to an agent." }
     SavePoint:
       type: object
       required: [id, at, meeting, meetingId, meetingStart, meetingEnd, title, link, goal, session, readyAt, doneAt]

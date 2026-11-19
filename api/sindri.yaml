@@ -770,6 +770,32 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Error" }
+  /v1/settings/why:
+    get:
+      summary: >-
+        Whether a goal's coding agents get the why: when they start, Sindri asks Norn's POST /v1/why for the mail, meetings
+        and Rewind moments behind the goal (summarized by Norn's local model, names as placeholders) and puts them in the
+        prompt under "Why this goal exists". At most SINDRI_WHY_TIMEOUT (30s) is waited; without an answer the agents start
+        without it. On until the owner turns it off; off, Norn is not asked.
+      responses:
+        "200": { $ref: "#/components/responses/WhySettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Turn it on or off. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/WhySettings" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
   /v1/goals:
     get:
       summary: Every goal, newest first, with its state and next step read from its tasks.
@@ -1490,6 +1516,15 @@ components:
             properties:
               on: { type: boolean }
               perNight: { type: integer, example: 3 }
+    WhySettings:
+      description: Whether a goal's agents get the why.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on]
+            properties:
+              on: { type: boolean }
     Races:
       description: The race settings.
       content:
@@ -1688,6 +1723,28 @@ components:
                   state: { type: string, enum: [draft, running, needs-you, done, merged] }
                   tasks: { type: array, items: { $ref: "#/components/schemas/GoalTask" } }
         raceNote: { type: string, description: Why a goal marked to race ran once instead. }
+        why:
+          type: object
+          description: >-
+            What the goal's agents were told about why it exists, from Norn's POST /v1/why when they started; absent
+            before. A self-repair goal is never asked about.
+          required: [at, state, sources]
+          properties:
+            at: { type: integer, description: When Norn was asked (or would have been), epoch ms. }
+            state:
+              type: string
+              enum: [sent, none, unreachable, off]
+              description: "sent: the sources went into the prompt; none: Norn found nothing it was sure of; unreachable: Norn did not answer in time, so the agents started without it; off: turned off, Norn was not asked."
+            sources:
+              type: array
+              items:
+                type: object
+                required: [kind, at, summary, ref]
+                properties:
+                  kind: { type: string, enum: [mail, meeting, rewind] }
+                  at: { type: integer }
+                  summary: { type: string, description: One line from Norn's local model, names swapped for placeholders. }
+                  ref: { type: string, description: Where Norn found it; never sent to the agent. }
         next:
           type: object
           required: [action, text]
