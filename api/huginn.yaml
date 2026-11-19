@@ -43,6 +43,12 @@ info:
       unstarted), no goal has it (Sindri's `GET /v1/goals/candidates`), and
       Norn, asked with `/local`, says it is development work. Each ticket is
       judged once. Huginn only suggests: the goal is added by you.
+    - savepoint.ready: a meeting ended, and Norn hands back what you were
+      on when it started (its save point: the goal or your own Claude Code
+      session, and your last prompt). The built-in save-point rule tells the
+      widget only (never the phone, so the prompt does not reach ntfy), not
+      held, titled "You were on: <title>", linking to the goal or session on
+      the dashboard. Fields: title, meeting, prompt, project, branch, said.
     - A stream that stays down for 5 minutes is raised on Gjallar as
       `stream:<part>` (warning).
 servers:
@@ -246,7 +252,7 @@ components:
       properties:
         id: { type: string }
         enabled: { type: boolean }
-        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact, linear-todo." }
+        builtIn: { type: boolean, description: "Shipped with Huginn: important-message, urgent-message, meeting-prep, meeting-moved, alert-impact, calendar-duplicate, calendar-stale, linear-todo, save-point." }
         createdBy: { type: string, description: owner, or the name of the part or agent that made it. }
         lastFiredAt: { type: string, format: date-time }
         lastResult: { type: string, enum: [delivered, failed, skipped] }
@@ -257,7 +263,7 @@ components:
       properties:
         event:
           type: string
-          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, calendar.duplicate, calendar.stale, alert.opened, alert.escalated, alert.resolved, linear.todo]
+          enum: [inbox.arrived, draft.ready, calendar.soon, calendar.added, calendar.moved, calendar.removed, calendar.ended, calendar.duplicate, calendar.stale, alert.opened, alert.escalated, alert.resolved, linear.todo, savepoint.ready]
         relation: { type: array, items: { type: string, enum: [manager, above, leadership, report, peer] }, description: inbox.arrived and draft.ready only. }
         band: { type: array, items: { type: string, enum: [urgent, notable] }, description: inbox.arrived and draft.ready only. }
         direct: { type: boolean, description: inbox.arrived and draft.ready only. }

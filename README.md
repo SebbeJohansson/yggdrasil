@@ -308,7 +308,7 @@ Ratatoskr watches those.
 
 It follows Norn's `GET /v1/events/stream` (`inbox.arrived`, `calendar.added`,
 `calendar.moved`, `calendar.removed`, `calendar.ended`, `calendar.duplicate`,
-`calendar.stale`) and Gjallar's alert
+`calendar.stale`, `savepoint.ready`) and Gjallar's alert
 stream, which it turns into `alert.opened`, `alert.escalated` and
 `alert.resolved`. Built-in rules: a message from your manager or above, an
 urgent direct message, a brief for a meeting added or moved into the next
@@ -319,7 +319,10 @@ add it), and a meeting you put in your calendar yourself that an invite now
 covers, or whose invite was cancelled (widget only; Norn's
 `GET /v1/calendar/suggestions`, and the dashboard deletes your copy with
 `POST /v1/calendar/suggestions/{id}/apply`, which needs the Microsoft sign-in
-with the calendar, now `Calendars.ReadWrite`). Each reaction goes
+with the calendar, now `Calendars.ReadWrite`), and, when a meeting ends, what
+you were on before it ("You were on: …" with your last prompt, linking to the
+goal or session; widget only and not held, so the prompt never reaches ntfy).
+Each reaction goes
 to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A
 stream down for 5 minutes is `stream:<part>` (warning).
 
@@ -338,6 +341,25 @@ the Microsoft sign-in with `Calendars.ReadWrite`. A break is not a meeting:
 Norn sends no `calendar.*` events for it, Ratatoskr ends a stretch at it
 and does not count it toward a packed week, and Hermóðr holds messages
 through it and says `inBreak` rather than `inMeeting`.
+
+### Norn: save points
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/savepoints?limit=` | any | `{ savepoints }`, newest first (20, at most 100) |
+| `POST /v1/savepoints/{id}/done` | owner | put one away → the save point with `doneAt` |
+
+When a meeting starts, Norn keeps your place: the open goal (Sindri's
+`GET /v1/goals`, by its agents' last activity) and your own Claude Code
+session (`GET /v1/sessions/recent`: title, folder, branch, your last prompt
+clipped to 200 characters) that moved last in the 30 minutes before. Nothing
+is kept when nothing moved, and not for a declined, all-day or free meeting,
+a break you kept free, or a meeting already running when Norn started. Two
+overlapping meetings share the first one's save point. When the meeting ends
+(as the calendar says by then), Norn sends `savepoint.ready` with it, Huginn
+tells the widget, and the dashboard's overview shows "You were here" with
+Pick up until you put it away or two hours pass. It all stays on this
+machine: nothing here goes to Claude.
 
 ### Dellingr
 

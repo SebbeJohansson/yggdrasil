@@ -87,7 +87,9 @@ type Norn struct {
 	Inbox                      *Inbox
 	// Events is what just changed, for parts that react to it (Huginn).
 	Events *Events
-	Zone   *time.Location
+	// SavePoints keeps your place through a meeting (savepoints.go).
+	SavePoints *SavePoints
+	Zone       *time.Location
 	// Sindri is where coding work and questions that need tools go.
 	Sindri *SindriClient
 	// Lookup answers questions its MCP servers cover before an agent is
@@ -151,6 +153,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountVault(p)
 	n.mountMeetingActions(p)
 	n.mountMeetingPrep(p)
+	n.mountSavePoints(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

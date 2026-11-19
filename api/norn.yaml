@@ -642,6 +642,9 @@ paths:
           invite (GET /v1/calendar/suggestions).
         - `event: calendar.stale`, data CalendarChange with invite: the
           invite your copy matches was cancelled.
+        - `event: savepoint.ready`, data SavePoint: a meeting you kept your
+          place through ended (GET /v1/savepoints). It carries your last
+          prompt to Huginn, which tells the widget only.
       parameters:
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
       responses:
@@ -1060,6 +1063,44 @@ paths:
               schema: { $ref: "#/components/schemas/MeetingPrep" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/savepoints:
+    get:
+      summary: >-
+        Save points, newest first. When a meeting starts (not declined, not all
+        day, not shown as free, not a break you kept free), Norn keeps what you
+        were doing: the open goal (Sindri) and your own Claude Code session
+        that moved last within 30 minutes, with your last prompt there clipped
+        to 200 characters. Nothing is kept when nothing moved. When the meeting
+        ends, readyAt is set and savepoint.ready goes out on the event stream.
+        Kept on this machine only; nothing here goes to Claude.
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: The save points.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [savepoints]
+                properties:
+                  savepoints: { type: array, items: { $ref: "#/components/schemas/SavePoint" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/savepoints/{id}/done:
+    post:
+      summary: Put a save point away (the dashboard's Pick up or Not now). Saying it twice keeps the first doneAt. Owner only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Put away.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SavePoint" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/inbox/summary:
     post:
       summary: Phrase a sentence for ranked items the caller collected. Never fails because of the model; falls back to the plain count, as it does when the model names someone the items don't hold.
@@ -1640,6 +1681,38 @@ components:
         kind: { type: string, enum: [duplicate, stale] }
         copy: { $ref: "#/components/schemas/CalendarEvent" }
         invite: { $ref: "#/components/schemas/CalendarEvent" }
+    SavePoint:
+      type: object
+      required: [id, at, meeting, meetingId, meetingStart, meetingEnd, title, link, goal, session, readyAt, doneAt]
+      properties:
+        id: { type: integer }
+        at: { type: integer, description: When it was kept, the meeting's start (epoch ms). }
+        meeting: { type: string, description: The meeting's subject. }
+        meetingId: { type: string }
+        meetingStart: { type: integer }
+        meetingEnd: { type: integer, description: On savepoint.ready, the end as the calendar last said. }
+        title: { type: string, description: The goal's or the session's title, whichever moved last. }
+        link: { type: string, description: "The dashboard path that picks it up: /dashboard/goals/<id>, else /dashboard/sessions/<id>?dir=…&name=…" }
+        goal:
+          type: [object, "null"]
+          required: [id, title, lastActivity]
+          properties:
+            id: { type: integer }
+            title: { type: string }
+            lastActivity: { type: integer }
+        session:
+          type: [object, "null"]
+          required: [id, title, lastActivity]
+          properties:
+            id: { type: string }
+            title: { type: string }
+            cwd: { type: string }
+            project: { type: string }
+            branch: { type: string }
+            lastPrompt: { type: string, maxLength: 200, description: Your last prompt in it, clipped. }
+            lastActivity: { type: integer }
+        readyAt: { type: [integer, "null"], description: When its meeting ended and it was handed back. }
+        doneAt: { type: [integer, "null"], description: When you put it away. }
     MeetingPrep:
       type: object
       required: [key, prompt, model]

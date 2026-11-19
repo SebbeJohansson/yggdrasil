@@ -101,7 +101,7 @@ type Reaction struct {
 }
 
 // Events are the events a trigger can name.
-var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "calendar.duplicate", "calendar.stale", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo"}
+var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "calendar.duplicate", "calendar.stale", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo", "savepoint.ready"}
 
 var (
 	yes      = true
@@ -129,6 +129,7 @@ func BuiltIn() []Rule {
 			Action: Action{Kind: "notify", Text: `{inviteOrganizer} cancelled "{inviteSubject}", but your own "{subject}" on {day} at {start} is still there: delete it?`}, Deliver: []string{"widget"}, Hold: true},
 		{ID: "linear-todo", Name: "Linear ticket with no goal", On: Trigger{Event: "linear.todo"},
 			Action: Action{Kind: "notify", Text: "{key} is in {state} and no goal has it: {title}. Add it as a goal?"}, Deliver: both, Hold: true},
+		savePointRule,
 	}
 }
 
@@ -500,6 +501,8 @@ func (h *Huginn) clock(ms int64) string {
 func (h *Huginn) FromNorn(event sse.Event) (Fired, bool) {
 	now := h.now()
 	switch {
+	case event.Kind == "savepoint.ready":
+		return h.fromSavePoint(event)
 	case event.Kind == "inbox.arrived":
 		var item InboxArrived
 		if json.Unmarshal([]byte(event.Data), &item) != nil {

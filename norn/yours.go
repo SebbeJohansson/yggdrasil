@@ -21,6 +21,7 @@ type OwnSession struct {
 	Title        string `json:"title"`
 	Cwd          string `json:"cwd"`
 	Project      string `json:"project"`
+	Branch       string `json:"branch,omitempty"`
 	LastActivity int64  `json:"lastActivity"`
 	LastPrompt   string `json:"lastPrompt"`
 	LastText     string `json:"lastText"`
