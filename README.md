@@ -707,10 +707,13 @@ until the commit is gone from every branch and tag; the fix is to rotate the
 key, then remove it from history.
 
 A finding not found again is resolved and kept 30 days. A check that fails
-or is skipped leaves its findings as they were. Each high finding raises
-`<check>:<id>` on Gjallar as a warning, critical for a secret in a pushed
-commit or a part listening beyond loopback, and resolves it when it is
-gone. Self-repair takes `deps:` and `listening:` alerts; a secret is never
+or is skipped leaves its findings as they were. The high findings of a check
+raise one alert on Gjallar, `<check>:summary`, with how many and the first
+ten: a warning, critical while one of them is a secret in a pushed commit or
+a part listening beyond loopback; it resolves when the check has none left.
+One alert per check, never one per finding: a first run over a long history
+finds hundreds. A secret is a value with digits in it, not a name or a
+reference (`config.API_TOKEN`, `keys.move_left`). Self-repair takes `deps:` and `listening:` alerts; a secret is never
 handed to a coding agent.
 
 It runs as a host unit, `ygg-heimdall.service`, like Veðrfölnir: it needs the
@@ -721,7 +724,8 @@ repos with their real history and git, and the real modes of the files in
 | Setting (`heimdall.env`) | Default | What it does |
 | --- | --- | --- |
 | `HEIMDALL_TOKENS` | | `owner=…` |
-| `HEIMDALL_REPOS` | `~/projects/yggdrasil,~/projects/my-widget` | the repos, until `PATCH /v1/settings` sets them; Sindri's projects are added when `SINDRI_TOKEN` is set |
+| `HEIMDALL_REPOS` | `~/projects/yggdrasil,~/projects/my-widget` | the repos, until `PATCH /v1/settings` sets them |
+| `HEIMDALL_SINDRI_REPOS` | `off` | `on` also reads every repo Sindri knows (needs `SINDRI_TOKEN`) |
 | `HEIMDALL_FILES` | none | more files to check the mode and age of, as globs (`~/projects/yggdrasil/data/*.json` for Norn's sign-ins) |
 | `HEIMDALL_STATE` | `~/.local/state/yggdrasil/heimdall.json` | settings, findings, what each repo was read up to, the alerts raised |
 | `HEIMDALL_OSV_URL` | `https://api.osv.dev` | osv.dev's API |

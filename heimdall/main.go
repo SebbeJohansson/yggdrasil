@@ -22,6 +22,7 @@ import (
 //	HEIMDALL_ADDR    listen address (127.0.0.1:8781)
 //	HEIMDALL_TOKENS  who may call it: owner=…
 //	HEIMDALL_STATE   where findings and settings are kept (~/.local/state/yggdrasil/heimdall.json)
+//	HEIMDALL_SINDRI_REPOS  on: also every repo Sindri knows (off)
 //	HEIMDALL_REPOS   the repos, comma separated (~/projects/yggdrasil,~/projects/my-widget),
 //	                 until PATCH /v1/settings sets them; Sindri's projects are added
 //	HEIMDALL_FILES   more files to check the mode and age of, globs (none)
@@ -61,7 +62,9 @@ func Main(ctx context.Context) error {
 	h := New(checks, alert.NewClient(where.URL("gjallar"), env.String("GJALLAR_TOKEN", "")), DefaultSettings(repos))
 	h.Zone = zone
 	h.StatePath = env.String("HEIMDALL_STATE", filepath.Join(home, ".local/state/yggdrasil/heimdall.json"))
-	if sindri := call.New("sindri", where.URL("sindri"), env.String("SINDRI_TOKEN", ""), 15*time.Second); sindri.On() {
+	// Sindri's other repos only on request: a first run over every project's
+	// history is a lot to read at once (HEIMDALL_SINDRI_REPOS=on).
+	if sindri := call.New("sindri", where.URL("sindri"), env.String("SINDRI_TOKEN", ""), 15*time.Second); sindri.On() && env.String("HEIMDALL_SINDRI_REPOS", "off") == "on" {
 		h.MoreRepos = func(ctx context.Context) ([]Repo, error) {
 			var projects []struct {
 				Name string `json:"name"`

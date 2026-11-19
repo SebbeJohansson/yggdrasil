@@ -633,20 +633,36 @@ func (h *Heimdall) syncAlerts(ctx context.Context) {
 		}
 	}
 	h.mu.Lock()
-	want := map[string]alert.Raise{}
+	// One alert per check, not per finding: a first run over a big history
+	// finds hundreds, and each would be its own toast. The report page has
+	// them all; the alert says how many and names the first few.
+	byCheck := map[string][]Finding{}
 	for _, f := range h.state.Findings {
 		if f.ResolvedAt != nil || f.Severity != High {
 			continue
 		}
+		byCheck[f.Check] = append(byCheck[f.Check], f)
+	}
+	want := map[string]alert.Raise{}
+	for check, found := range byCheck {
+		sort.Slice(found, func(i, j int) bool { return found[i].ID < found[j].ID })
 		severity := alert.Warning
-		if f.Critical {
+		if slices.ContainsFunc(found, func(f Finding) bool { return f.Critical }) {
 			severity = alert.Critical
 		}
-		want[f.AlertKey()] = alert.Raise{
-			Key: clip(f.AlertKey(), 200), Severity: severity,
-			Title:  clip("Heimdall: "+f.Title, 200),
-			Detail: clip(alertDetail(f), 4000),
+		title := "Heimdall: " + found[0].Title
+		if len(found) > 1 {
+			title = fmt.Sprintf("Heimdall: %d %s findings, among them %s", len(found), check, found[0].Title)
 		}
+		var lines []string
+		for _, f := range found[:min(len(found), 10)] {
+			lines = append(lines, "- "+f.Title)
+		}
+		if len(found) > 10 {
+			lines = append(lines, fmt.Sprintf("… and %d more on Heimdall's report.", len(found)-10))
+		}
+		key := check + ":summary"
+		want[key] = alert.Raise{Key: key, Severity: severity, Title: clip(title, 200), Detail: clip(strings.Join(lines, "\n"), 4000)}
 	}
 	raised := map[string]string{}
 	for k, v := range h.state.Raised {

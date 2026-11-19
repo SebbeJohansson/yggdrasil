@@ -138,7 +138,8 @@ func TestHighFindingsRaiseAlertsAndResolveWhenGone(t *testing.T) {
 	h := New([]Check{check}, g.client(), DefaultSettings(nil))
 	run(h)
 	g.mu.Lock()
-	if len(g.raised) != 2 || g.raised["secrets:pushed"].Severity != alert.Critical || g.raised["secrets:local"].Severity != alert.Warning {
+	// One alert for the check, critical while any finding in it is.
+	if len(g.raised) != 1 || g.raised["secrets:summary"].Severity != alert.Critical || !strings.Contains(g.raised["secrets:summary"].Title, "2 secrets findings") {
 		t.Fatalf("raised: %+v", g.raised)
 	}
 	if !slices.Contains(g.resolved, "listening:0.0.0.0:9999") {
@@ -149,8 +150,15 @@ func TestHighFindingsRaiseAlertsAndResolveWhenGone(t *testing.T) {
 	run(h)
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if _, still := g.raised["secrets:pushed"]; still || len(g.raised) != 1 {
-		t.Fatalf("gone finding not resolved: %+v", g.raised)
+	if got := g.raised["secrets:summary"]; len(g.raised) != 1 || got.Severity != alert.Warning || got.Title != "Heimdall: local key" {
+		t.Fatalf("the summary did not follow the findings: %+v", g.raised)
+	}
+	check.findings = nil
+	g.mu.Unlock()
+	run(h)
+	g.mu.Lock()
+	if _, still := g.raised["secrets:summary"]; still {
+		t.Fatalf("the check's alert stayed with nothing found: %+v", g.raised)
 	}
 }
 
@@ -478,7 +486,7 @@ func TestSecretsAreFoundMaskedAndStayUntilGoneFromHistory(t *testing.T) {
 	assertNoSecret("the report", text)
 	g.mu.Lock()
 	assertNoSecret("the alerts", []byte(strings.Join(g.bodies, "\n")))
-	if g.raised[gh.AlertKey()].Severity != alert.Warning {
+	if g.raised["secrets:summary"].Severity != alert.Warning {
 		t.Errorf("an unpushed secret is a warning: %+v", g.raised)
 	}
 	g.mu.Unlock()
@@ -494,8 +502,8 @@ func TestSecretsAreFoundMaskedAndStayUntilGoneFromHistory(t *testing.T) {
 		t.Fatalf("kept: %+v", r.Findings)
 	}
 	g.mu.Lock()
-	if g.raised[gh.AlertKey()].Severity != alert.Critical {
-		t.Errorf("a pushed secret is critical: %+v", g.raised[gh.AlertKey()])
+	if g.raised["secrets:summary"].Severity != alert.Critical {
+		t.Errorf("a pushed secret is critical: %+v", g.raised["secrets:summary"])
 	}
 	g.mu.Unlock()
 
@@ -648,5 +656,21 @@ func TestALineLongerThanTheBufferNeitherEndsTheReadNorBlocksGit(t *testing.T) {
 	hits := ParseLog(strings.NewReader(log))
 	if len(hits) != 2 || hits[0].commit != "c1" || hits[0].line != 2 || hits[1].commit != "c2" {
 		t.Fatalf("hits after a long line: %+v", hits)
+	}
+}
+
+func TestNamesAndReferencesAreNotSecrets(t *testing.T) {
+	for _, line := range []string{
+		`const token = config.APP_INTEGRATION_TOKEN_VALUE`,
+		`keys.move_pane_left_key = "ctrl_shift_left_arrow_key"`,
+		`clientSecret: env.STORYBLOK_CLIENT_SECRET_KEY`,
+		`authSecretKey = "authSecretKeyForTheSessionCookie"`,
+	} {
+		if got := ScanLine(line); len(got) != 0 {
+			t.Errorf("%q: found %+v", line, got)
+		}
+	}
+	if got := ScanLine(`API_TOKEN = "q8Wm2Lx0Pz7Nv5Rt3Ys1Ua9Kc"`); len(got) != 1 { // heimdall:ignore, a fake
+		t.Errorf("a real-looking token was missed: %+v", got)
 	}
 }

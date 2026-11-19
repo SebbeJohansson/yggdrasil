@@ -106,10 +106,18 @@ func looksLikeCode(value string) bool {
 	if strings.Count(value, ".") >= 2 && !strings.ContainsAny(value, "+/=") {
 		return true
 	}
+	// A dotted name (config.API_TOKEN, keys.move_left) is a reference, and a
+	// value with no digit at all (authSecret, a word list) is a name: real
+	// keys and tokens almost always mix in digits.
+	if dottedName.MatchString(value) || !strings.ContainsAny(value, "0123456789") {
+		return true
+	}
 	return identifier.MatchString(value) || placeholder.MatchString(value)
 }
 
 // identifier is a name made of words: camelCase, SHOUTING_CASE, kebab-case.
+var dottedName = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z0-9_$-]+)+$`)
+
 var identifier = regexp.MustCompile(`^[a-z]+([A-Z][a-z]+)+$|^[A-Z_]+$|^[a-z]+([-_][a-z]+)*$`)
 
 // placeholder is a value made up for a test or an example.
