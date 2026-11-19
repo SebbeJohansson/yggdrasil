@@ -493,6 +493,12 @@ func (c *SindriClient) OwnPrompts(ctx context.Context, from, to int64) ([]OwnPro
 // Timeline is every source's entries in from..to, in time order, and the
 // sources that could not be read.
 func (n *Norn) Timeline(ctx context.Context, from, to time.Time) ([]RewindEntry, []string) {
+	return n.timeline(ctx, from, to, true)
+}
+
+// timeline is Timeline, with Sindri's goals, agents and prompts left out
+// when withSindri is false (a goal's why, asked by Sindri itself).
+func (n *Norn) timeline(ctx context.Context, from, to time.Time, withSindri bool) ([]RewindEntry, []string) {
 	f, t := from.UnixMilli(), to.UnixMilli()
 	var mu sync.Mutex
 	entries := []RewindEntry{}
@@ -553,7 +559,7 @@ func (n *Norn) Timeline(ctx context.Context, from, to time.Time) ([]RewindEntry,
 		}
 		return append(out, ReplyEntries(replies, f, t)...), nil
 	})
-	if n.Sindri.On() {
+	if withSindri && n.Sindri.On() {
 		run("sindri", func() ([]RewindEntry, error) {
 			goals, err := n.Sindri.RewindGoals(ctx)
 			if err != nil {
