@@ -208,3 +208,20 @@ func TestNamesAreAskedAgainAfterATimeout(t *testing.T) {
 		t.Fatalf("names %v, err %v, asked %d times", names, err, asked)
 	}
 }
+
+func TestNamesGoAsTheyAreWhileSwitchedOff(t *testing.T) {
+	n, _ := newNorn(t)
+	n.LLM = &llm.Client{OllamaURL: "http://127.0.0.1:1"} // no model to look for names
+	ctx := context.Background()
+	if err := n.Store.SetSetting(ctx, namesOffKey, time.Now().Add(time.Hour).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	texts, _, err := n.pseudonymize(ctx, "s11", nil, "Did Kalle Ek answer?")
+	if err != nil || texts[0] != "Did Kalle Ek answer?" {
+		t.Fatalf("%q, %v", texts, err)
+	}
+	_ = n.Store.SetSetting(ctx, namesOffKey, time.Now().Add(-time.Minute).UnixMilli())
+	if _, _, err := n.pseudonymize(ctx, "s11", nil, "Did Kalle Ek answer?"); err == nil {
+		t.Fatal("still off after the time ran out")
+	}
+}

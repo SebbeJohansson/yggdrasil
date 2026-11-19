@@ -158,6 +158,43 @@ paths:
         "200": { $ref: "#/components/responses/WidgetSettings" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/send-names:
+    get:
+      summary: Until when names go to Claude as they are, without placeholders (Unix ms; 0 means they are swapped).
+      responses:
+        "200":
+          description: Until when.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [until]
+                properties:
+                  until: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Send names to Claude as they are for this many hours, for when the local model cannot look for them; 0 swaps them again. It turns itself back on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hours]
+              properties:
+                hours: { type: number, minimum: 0, maximum: 24 }
+      responses:
+        "200":
+          description: Until when.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [until]
+                properties:
+                  until: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/conversations:
     get:
       summary: Every conversation, the most recent first, named by your first message in it.

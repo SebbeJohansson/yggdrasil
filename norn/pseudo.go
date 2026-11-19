@@ -210,6 +210,10 @@ func (n *Norn) findNames(ctx context.Context, text string) ([]string, error) {
 // local model cannot look for names or names are still there afterwards.
 func (n *Norn) pseudonymize(ctx context.Context, session string, extra []pseudo.Person, texts ...string) ([]string, *pseudo.Map, error) {
 	m := &pseudo.Map{}
+	if n.NamesOff(ctx) {
+		// Switched off for a while (PUT /v1/settings/send-names): sent as they are.
+		return texts, m, nil
+	}
 	if session != "" {
 		var err error
 		if m, err = n.Store.Pseudonyms(ctx, session); err != nil {

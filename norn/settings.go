@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"time"
 
 	"yggdrasil/internal/part"
 )
@@ -84,4 +85,56 @@ func (n *Norn) setWidgetSettings(w http.ResponseWriter, r *http.Request) {
 		_ = n.readPersonalCalendar(ctx)
 	}()
 	part.JSON(w, http.StatusOK, settings)
+}
+
+// namesOffKey is when names may go to Claude until (Unix ms): a way round a
+// local model that cannot look for them, which turns itself back off.
+const namesOffKey = "send-names-until"
+
+// NamesOff is whether names go to Claude as they are, without placeholders.
+func (n *Norn) NamesOff(ctx context.Context) bool {
+	var until int64
+	if ok, err := n.Store.Setting(ctx, namesOffKey, &until); err != nil || !ok {
+		return false
+	}
+	return time.Now().UnixMilli() < until
+}
+
+// NamesOffSettings are until when names go to Claude unswapped (0: they don't).
+type NamesOffSettings struct {
+	Until int64 `json:"until"`
+}
+
+func (n *Norn) namesOffSettings(w http.ResponseWriter, r *http.Request) {
+	var until int64
+	if _, err := n.Store.Setting(r.Context(), namesOffKey, &until); err != nil {
+		n.fail(w, err)
+		return
+	}
+	if until < time.Now().UnixMilli() {
+		until = 0
+	}
+	part.JSON(w, http.StatusOK, NamesOffSettings{Until: until})
+}
+
+// setNamesOff sends names to Claude unswapped for {"hours": N}, at most 24;
+// 0 swaps them again.
+func (n *Norn) setNamesOff(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Hours *float64 `json:"hours"`
+	}
+	if err := part.Decode(r, &body); err != nil || body.Hours == nil || *body.Hours < 0 || *body.Hours > 24 {
+		part.Error(w, http.StatusBadRequest, "`hours` must be 0 to 24 (0: names are swapped again)")
+		return
+	}
+	var until int64
+	if *body.Hours > 0 {
+		until = time.Now().Add(time.Duration(*body.Hours * float64(time.Hour))).UnixMilli()
+	}
+	if err := n.Store.SetSetting(r.Context(), namesOffKey, until); err != nil {
+		n.fail(w, err)
+		return
+	}
+	n.logf("names to Claude: %s", map[bool]string{true: "sent as they are until " + time.UnixMilli(until).Format("15:04"), false: "swapped for placeholders"}[until > 0])
+	part.JSON(w, http.StatusOK, NamesOffSettings{Until: until})
 }

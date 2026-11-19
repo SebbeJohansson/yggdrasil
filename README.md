@@ -82,7 +82,9 @@ the inbox), by the local model (`NAMES_MODEL`, qwen2.5:7b), and by the shape
 of an address. The local model gets 90 s per 4,000 characters, and a second
 try after a timeout (a paged-out XeStrata is slow until that first call brings
 it back). When it still does not answer, or a known name is still
-there after the swap, nothing is sent. A Claude meeting brief is gathered by
+there after the swap, nothing is sent. To get by without the local model for a
+while, `PUT /v1/settings/send-names` with `{"hours": 2}` (at most 24) sends
+names to Claude as they are until then; `{"hours": 0}` swaps them again. A Claude meeting brief is gathered by
 Norn itself (the invitation, and your email and Teams chats with the people
 invited, from the last 30 days) and given to a Claude agent with no tools.
 A brief for a meeting with another company (by the invitees' address domains) adds an About line on what that company does, and says when there is no earlier email or chat with it.
