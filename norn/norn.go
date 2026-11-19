@@ -99,6 +99,8 @@ type Norn struct {
 	Linear *linear.Client
 	// Promises is the promise ledger (promises.go).
 	Promises *Promises
+	// Rewind is the timeline's state (rewind.go).
+	Rewind rewindState
 	// suggestions remembers what the improve check said about each sentence.
 	suggestions *SuggestionCache
 	logf        func(format string, args ...any)
@@ -158,6 +160,7 @@ func (n *Norn) Mount(p *part.Part) {
 	n.mountMeetingPrep(p)
 	n.mountSavePoints(p)
 	n.mountPromises(p)
+	n.mountRewind(p)
 	p.Loop("model-health", healthEvery, n.checkHealth)
 }
 

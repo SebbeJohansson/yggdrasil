@@ -436,6 +436,38 @@ marked done by `norn` with why; you can open it again. `PUT /v1/settings/promise
 for promises, no follow-ups are written and no reminders sent; what it kept
 stays listed (`GET /v1/settings/promises` says whether it runs).
 
+### Norn: Rewind
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/rewind?from=&to=` | anyone | `{ from, to, entries, unavailable }`: one timeline (epoch ms; today in `TIME_ZONE` by default, at most 31 days): `{ at, end?, kind, title, detail?, link?, source }` in time order |
+| `POST /v1/rewind/ask` | anyone | `{ q }`: "Tuesday afternoon", "yesterday at 3", "when did I last work on races?" → `{ from, to, focus, entries, said, words, fromModel, unavailable }`, the entries that match marked `match` |
+
+Built when asked from what Yggdrasil already keeps; nothing is copied. How
+far back each source reaches:
+
+| Source | Kinds | How far back |
+| --- | --- | --- |
+| Outlook and Google calendars | `meeting`, `break` | any range: Graph's calendarView and Google Calendar are asked for it when it is older than the day Norn keeps (kept 5 minutes per range); declined, all-day and free meetings left out |
+| Sindri's prompt index | `session`, `prompt` | from the oldest transcript on disk when Sindri first indexed, then forever (`SINDRI_PROMPTS_KEEP`) |
+| Sindri's goals and agents | `goal`, `merge`, `agent` | forever: goals made, started, merged, closed; agents outside a goal |
+| your messages to Norn and its agents | `chat` | forever |
+| what Norn learned | `memory` | until you delete it |
+| promises | `promise` | open ones forever, done or dropped ones 60 days |
+| save points | `savepoint` | the last 200 |
+| reply drafts you used | `reply` | the last 500 |
+| Obsidian notes changed | `note` | titles and links only, never note text. A note's last change always; earlier changes from when Norn first ran with Rewind (it notes each note's modification time every 5 minutes) |
+
+A burst (your prompts in one session, or messages in one conversation, with
+pauses of at most 10 minutes) is one entry with the first and the last, each
+clipped to 200 characters. A question goes to the local model only
+(`CHAT_URL`, never Claude or Sindri), which only splits it into the words for
+when and the words to look for; Norn turns the when into a range in
+`TIME_ZONE` ("Tuesday" is the latest Tuesday, "i tisdags" and "last Tuesday"
+the one before today, "at 3" is 14:00-16:00). Without a model the question is
+read as it is. Words with no day look back 31 days and send only the matches,
+`focus` on the latest.
+
 ### Dellingr
 
 | Route | What it does |
