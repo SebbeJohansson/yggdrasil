@@ -13,8 +13,9 @@ info:
     - The sender is the caller's token name, never something in the body.
     - An urgent message goes out at once, always.
     - Any other message waits through quiet hours, and, when it asks to
-      `hold`, while you are in a meeting or a break you kept free (your
-      calendars, read from Norn). It goes out when that ends.
+      `hold`, while you are in a meeting, a break you kept free or a focus
+      block you booked (your calendars, read from Norn). It goes out when
+      that ends.
     - A message with `push: false` is listed only, never sent to a channel.
     - Each channel sends only what is at or above its minimum priority.
     - Messages are kept for 7 days.
@@ -92,7 +93,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/channels:
     get:
-      summary: Each channel, whether it is set up, what it sends, and how its last send went. Quiet hours and whether you are in a meeting or on a break you kept free now.
+      summary: Each channel, whether it is set up, what it sends, and how its last send went. Quiet hours and whether you are in a meeting, on a break you kept free or in a focus block you booked now.
       responses:
         "200":
           description: The channels.
@@ -100,7 +101,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [channels, quiet, inMeeting, inBreak]
+                required: [channels, quiet, inMeeting, inBreak, inFocusBlock]
                 properties:
                   channels: { type: array, items: { $ref: "#/components/schemas/Channel" } }
                   quiet:
@@ -110,10 +111,12 @@ paths:
                       from: { type: string, example: "22:00" }
                       to: { type: string, example: "07:00" }
                       now: { type: boolean }
-                  inMeeting: { type: boolean, description: "In a meeting now; a break you kept free is not one." }
+                  inMeeting: { type: boolean, description: "In a meeting now; a break you kept free or a focus block is not one." }
                   meetingEndsAt: { type: string, format: date-time }
                   inBreak: { type: boolean, description: "In a break you kept free now (Norn's calendar events with break true). Messages that ask to hold wait through it, as through a meeting." }
                   breakEndsAt: { type: string, format: date-time }
+                  inFocusBlock: { type: boolean, description: "In a focus block you booked from the week's plan now (Norn's calendar events with focus true; not a meeting). Messages that ask to hold wait through it, as through a meeting." }
+                  focusEndsAt: { type: string, format: date-time }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/channels/{name}/test:
     post:
@@ -251,7 +254,7 @@ components:
         text: { type: string, maxLength: 4000 }
         link: { type: string, maxLength: 1000 }
         priority: { type: string, enum: [low, normal, high, urgent], description: Defaults to normal. }
-        hold: { type: boolean, description: Wait while you are in a meeting or on a break you kept free. Never holds an urgent one. }
+        hold: { type: boolean, description: Wait while you are in a meeting, on a break you kept free or in a focus block you booked. Never holds an urgent one. }
         push: { type: boolean, description: "Defaults to true. false: listed for the widget only." }
         notBefore: { type: string, format: date-time, description: "Held until then, whatever its priority: a reminder you asked for later. At most 30 days ahead." }
     Message:

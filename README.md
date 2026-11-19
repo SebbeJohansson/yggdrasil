@@ -432,6 +432,55 @@ does not count it toward a packed week, and passive Loki does not strike in
 it. Calendar, goals and promises stay on this machine: nothing here goes to
 Claude.
 
+### Norn: the week's plan (the weave)
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/weave` | anyone | `{ week, madeAt, words, waiting, days: [{ date, words, blocks: [{ id, kind: focus\|break, start, end, for?, link?, booked, eventId?, skipped }] }] }`; `week` is `""` before the first plan |
+| `POST /v1/weave/book` | owner | `{ ids? }` (every open block when empty) → `{ results: [{ id, booked, eventId?, error? }], weave }` |
+| `POST /v1/weave/remake` | owner | make it again now; blocks already booked stay |
+| `POST /v1/weave/blocks/{id}/skip` | owner | leave one block out (`409` once booked) |
+| `GET`, `PUT /v1/settings/weave` | owner to change | `{ on, makeAt, focusMinutes }`: on, `18:00` and `90` until set |
+
+Once a week Norn proposes the coming Monday to Friday, within `WORK_HOURS`. It
+looks every 3 minutes, and on start: from Sunday's `makeAt` (18:00 in
+`TIME_ZONE`) the next week is due, and on a weekday the current one, so a
+machine that was off on Sunday plans on Monday morning, and one started on
+Wednesday plans the rest of the week. A week is planned once; only Make it
+again plans it anew. The plan waits for a fresh read of the work calendar.
+
+It is made by Norn's own code, not a model. Busy is what the gap reads as
+busy, and breaks and focus blocks Yggdrasil booked count as booked. A day is
+packed when meetings fill 60% of its working hours, as Ratatoskr's packed
+week counts them. Then:
+
+- **Focus blocks**: at most one a day, never on a packed day or one with a
+  focus block booked already, in the longest free stretch of `focusMinutes`
+  or more, mornings (before 12:00) first, two hours at most. Each gets a
+  suggested use from what waits: a promise due on or after its day (or late
+  already), soonest first ("the promise to Anna due Thursday: send the
+  deck"); what a draft that runs tonight did, on the first day; then a review,
+  a race to pick, a draft to start, an agent to answer.
+- **Breaks**: after each run of meetings of 3 hours or more (gaps under 15
+  minutes do not end a run), 15 to 30 minutes in the first free time after
+  it, unless a break you kept is there already.
+- One line per day ("Tuesday is heavy: a break after lunch, no focus
+  block.") and one for the week. The local model (`SUMMARY_MODEL`) may say
+  the week's line more warmly; a line that drops a day, adds a number or
+  exclaims is thrown away, and without the model the plain line stands.
+
+When it is made with a block in it, Norn sends `weave.ready` once, and
+Huginn's `week-plan` rule tells the widget. Nothing is booked by itself: Book
+keeps each block the way a break is kept, a break as "Break", a focus block as
+"Focus" with the Outlook category `Yggdrasil focus` (`focus: true` on
+`GET /v1/calendar`), busy, one `transactionId` per slot, so a double click is
+one event. A slot no longer free gets its reason. A focus block is not a
+meeting: no `calendar.*` events or save points for it, Hermóðr holds what asks
+to hold through it (`inFocusBlock`), the gap offers nothing in it, Ratatoskr
+does not count it toward a packed week, and passive Loki does not strike in
+it. Calendar, goals and promises stay on this machine: nothing here goes to
+Claude.
+
 ### Norn: save points
 
 | Route | Who | What it does |
@@ -445,7 +494,8 @@ session (`GET /v1/sessions/recent`: title, folder, branch, your last prompt
 clipped to 200 characters) that moved last in the 30 minutes before. Nothing
 is kept when nothing moved, and not for a declined, all-day or free meeting,
 a break you kept free, or a meeting already running when Norn started. Two
-overlapping meetings share the first one's save point. When the meeting ends
+busy, since a break is not for work, and so does a focus block you booked)
+within the working day, `WORK_HOURS` in
 (as the calendar says by then), Norn sends `savepoint.ready` with it, Huginn
 tells the widget, and the dashboard's overview shows "You were here" with
 Pick up until you put it away or two hours pass. It all stays on this
@@ -663,12 +713,12 @@ when you acknowledged the alert.
 | `LOKI_PROXY` | none | the parts Loki's proxy stands in front of, `norn,sindri,…` (dev only) |
 | `LOKI_PROXY_ADDR_<PART>` | `127.0.0.1:<port + 100>` | where that part's proxy listens |
 | `LOKI_UPSTREAM_<PART>` | `http://127.0.0.1:<port>` | where the real part is; never read from `YGG_<PART>_URL` |
-
+| `GET /v1/channels` | anyone | ntfy: set up or not, the lowest priority each sends, the last send; quiet hours; whether you are in a meeting (`inMeeting`, `meetingEndsAt`) on a break you kept free (`inBreak`, `breakEndsAt`) or in a focus block you booked (`inFocusBlock`, `focusEndsAt`) |
 To put Norn and Hermóðr behind the proxy, in `parts.env` (read by Loki and by
 every part that calls them):
 
-```
-LOKI_PROXY=norn,hermodr
+they ask to `hold`, while you are in a meeting, on a break you kept free or
+in a focus block you booked (your calendars, from Norn).
 YGG_NORN_URL=http://127.0.0.1:8871
 YGG_HERMODR_URL=http://127.0.0.1:8879
 ```

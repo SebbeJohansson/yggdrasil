@@ -126,6 +126,8 @@ type meeting struct {
 	Start, End int64
 	// Break is a break you kept free, not a meeting.
 	Break bool
+	// Focus is a focus block you booked from the week's plan, not a meeting.
+	Focus bool
 }
 
 type channelState struct {
@@ -321,6 +323,9 @@ func (h *Hermodr) holdFor(m Message) (string, bool) {
 		if until, resting := h.inBreak(now); resting {
 			return "on a break until " + time.UnixMilli(until).In(h.Zone).Format("15:04"), true
 		}
+		if until, focusing := h.inFocusBlock(now); focusing {
+			return "in a focus block until " + time.UnixMilli(until).In(h.Zone).Format("15:04"), true
+		}
 	}
 	return "", false
 }
@@ -470,12 +475,15 @@ func (h *Hermodr) channels(w http.ResponseWriter, _ *http.Request) {
 		_, inside := h.Quiet.Until(now)
 		quiet = map[string]any{"from": hhmm(h.Quiet.From), "to": hhmm(h.Quiet.To), "now": inside}
 	}
-	answer := map[string]any{"channels": list, "quiet": quiet, "inMeeting": false, "inBreak": false}
+	answer := map[string]any{"channels": list, "quiet": quiet, "inMeeting": false, "inBreak": false, "inFocusBlock": false}
 	if until, busy := h.inMeeting(now); busy {
 		answer["inMeeting"], answer["meetingEndsAt"] = true, time.UnixMilli(until)
 	}
 	if until, resting := h.inBreak(now); resting {
 		answer["inBreak"], answer["breakEndsAt"] = true, time.UnixMilli(until)
+	}
+	if until, focusing := h.inFocusBlock(now); focusing {
+		answer["inFocusBlock"], answer["focusEndsAt"] = true, time.UnixMilli(until)
 	}
 	part.JSON(w, http.StatusOK, answer)
 }
@@ -510,21 +518,21 @@ func (h *Hermodr) test(w http.ResponseWriter, r *http.Request) {
 
 // inMeeting is whether now is in a meeting, and until when.
 func (h *Hermodr) inMeeting(now time.Time) (int64, bool) {
-	return h.inside(now, false)
+	return h.inside(now, func(m meeting) bool { return !m.Break && !m.Focus })
 }
 
 // inBreak is whether now is in a break you kept free, and until when.
 func (h *Hermodr) inBreak(now time.Time) (int64, bool) {
-	return h.inside(now, true)
+	return h.inside(now, func(m meeting) bool { return m.Break })
 }
 
-func (h *Hermodr) inside(now time.Time, breaks bool) (int64, bool) {
+func (h *Hermodr) inside(now time.Time, kind func(meeting) bool) (int64, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	nowMs := now.UnixMilli()
 	var until int64
 	for _, m := range h.meetings {
-		if m.Break == breaks && m.Start <= nowMs && nowMs < m.End && m.End > until {
+		if kind(m) && m.Start <= nowMs && nowMs < m.End && m.End > until {
 			until = m.End
 		}
 	}
@@ -540,6 +548,8 @@ type CalendarEvent struct {
 	ShowAs   string `json:"showAs"`
 	// Break is a break you kept free (Norn's POST /v1/calendar/breaks).
 	Break bool `json:"break"`
+	// Focus is a focus block you booked (Norn's POST /v1/weave/book).
+	Focus bool `json:"focus"`
 }
 
 // SetMeetings replaces what Hermóðr knows of your calendars.
@@ -547,7 +557,7 @@ func (h *Hermodr) SetMeetings(events []CalendarEvent) {
 	var meetings []meeting
 	for _, e := range events {
 		if !e.AllDay && e.Response != "declined" && e.ShowAs != "free" {
-			meetings = append(meetings, meeting{Start: e.Start, End: e.End, Break: e.Break})
+			meetings = append(meetings, meeting{Start: e.Start, End: e.End, Break: e.Break, Focus: e.Focus})
 		}
 	}
 	h.mu.Lock()
