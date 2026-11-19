@@ -183,6 +183,31 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/settings/person-recap:
+    get:
+      summary: Whether the person recap is given (on until you turn it off).
+      responses:
+        "200": { $ref: "#/components/responses/RecapSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: >-
+        Turn the person recap on or off. Off, GET /v1/people/recap and
+        /v1/people/recap/next answer empty, with on false, and nothing is read
+        for them. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/RecapSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/settings/send-names:
     get:
       summary: Until when names go to Claude as they are, without placeholders (Unix ms; 0 means they are swapped).
@@ -1278,6 +1303,58 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/people/recap:
+    get:
+      summary: >-
+        Last time with this person: the last exchange (the newest of your
+        Outlook mail with them, your one-to-one Teams chat, and a meeting you
+        had together in the last 14 days), with the local model's one line on
+        it (CHAT_URL, never Claude; the subject when it says nothing usable);
+        the open promises you made them; and what is open between you, at most
+        3: their messages in the inbox now, then a mail thread or chat from
+        the last 14 days where they wrote last. Kept 3 minutes per person.
+        Everything stays on this machine. A source hidden where you are, or
+        not signed in, is left out; an unknown person gets empty lists.
+      parameters:
+        - { name: who, in: query, required: true, example: anna.berg@example.com, schema: { type: string, maxLength: 320 }, description: "An email address, a Teams user id, or a name when neither is known." }
+        - { name: name, in: query, required: false, example: Anna Berg, schema: { type: string, maxLength: 200 }, description: "Their name, to match promises and meetings kept by name." }
+      responses:
+        "200":
+          description: The recap.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PersonRecap" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/people/recap/next:
+    get:
+      summary: >-
+        The recaps for the meeting about to start: the first in the work
+        calendar that starts within 10 minutes with someone else in it (not
+        declined, not all day, not shown as free, not a break or focus block).
+        Its main people are everyone invited when they are 3 or fewer, else
+        only the organizer (none in a big meeting you organize). Nothing while
+        a break you kept free or a focus block holds you, and nothing once the
+        meeting has started. Kept on this machine only.
+      responses:
+        "200":
+          description: The meeting and its people's recaps; no meeting and no people when none is near.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [on, people]
+                properties:
+                  on: { type: boolean }
+                  meeting:
+                    type: object
+                    required: [id, subject, start]
+                    properties:
+                      id: { type: string }
+                      subject: { type: string }
+                      start: { type: integer, description: Epoch ms. }
+                  people: { type: array, items: { $ref: "#/components/schemas/PersonRecap" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/gap:
     get:
       summary: >-
@@ -1742,6 +1819,15 @@ components:
             required: [on]
             properties:
               on: { type: boolean }
+    RecapSettings:
+      description: Whether the person recap is given.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on]
+            properties:
+              on: { type: boolean }
     Microsoft:
       description: The sign-in.
       content:
@@ -2101,6 +2187,49 @@ components:
         words: { type: string }
         madeAt: { type: integer }
         link: { type: string, description: "The plan on the dashboard, /dashboard/plan." }
+    PersonRecap:
+      type: object
+      required: [on, who, name, promises, open]
+      properties:
+        on: { type: boolean, description: False when the recap is turned off; then everything else is empty. }
+        who: { type: string }
+        name: { type: string }
+        last:
+          type: object
+          required: [kind, source, at, title, words, fromThem]
+          properties:
+            kind: { type: string, enum: [mail, chat, meeting] }
+            source: { type: string, enum: [outlook, teams, calendar] }
+            at: { type: integer, description: Epoch ms; a meeting's start. }
+            title: { type: string, description: "The mail's subject, the chat's name or the meeting's subject." }
+            words: { type: string, description: "The local model's one line on it; the title when it gave none." }
+            link: { type: string }
+            fromThem: { type: boolean }
+        promises:
+          type: array
+          items:
+            type: object
+            required: [id, what, source, createdAt]
+            properties:
+              id: { type: integer }
+              what: { type: string }
+              due: { type: string, description: YYYY-MM-DD in TIME_ZONE. }
+              source: { type: string }
+              link: { type: string }
+              createdAt: { type: integer }
+        open:
+          type: array
+          items:
+            type: object
+            required: [id, kind, source, subject, at, inInbox]
+            properties:
+              id: { type: string }
+              kind: { type: string, enum: [mail, chat] }
+              source: { type: string }
+              subject: { type: string }
+              at: { type: integer }
+              link: { type: string }
+              inInbox: { type: boolean, description: In the inbox now, unread. }
     Gap:
       type: object
       required: [free]

@@ -489,6 +489,36 @@ marked done by `norn` with why; you can open it again. `PUT /v1/settings/promise
 for promises, no follow-ups are written and no reminders sent; what it kept
 stays listed (`GET /v1/settings/promises` says whether it runs).
 
+### Norn: last time with this person
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/people/recap?who=&name=` | anyone | `who` is an email address, a Teams user id, or a name → `{ on, who, name, last?: { kind: mail\|chat\|meeting, source, at, title, words, link?, fromThem }, promises: [{ id, what, due?, source, link?, createdAt }], open: [{ id, kind, source, subject, at, link?, inInbox }] }` |
+| `GET /v1/people/recap/next` | anyone | `{ on, meeting?: { id, subject, start }, people: [recap] }` for the meeting about to start |
+| `GET`, `PUT /v1/settings/person-recap` | owner to change | `{ on }`: on until you turn it off |
+
+When someone writes to you, or just before a meeting with them, the dashboard
+shows a small card: the last time you spoke, what you promised them, and what
+is still open between you. The last exchange is the newest of your Outlook
+mail with them (Graph's search, last 30 days), your one-to-one Teams chat, and
+a meeting you had together in the work calendar's last 14 days. A mail or chat
+gets one line on what it was about from the local model (`SUMMARY_MODEL` on
+`CHAT_URL`), never Claude or Sindri; the subject when the model says nothing
+usable. Promises are the ledger's open ones to them, by address or name. Open
+is at most 3: their messages in the inbox now, then a mail thread or chat from
+the last 14 days where they wrote last. A source hidden where you are, or not
+signed in, is left out. A recap is kept 3 minutes per person.
+
+`/next` looks at the work calendar: the first meeting with someone else in it
+that starts within 10 minutes (not declined, all day, free, a break or a focus
+block). Its people are everyone invited when they are 3 or fewer (addresses
+from the invitation through Graph), else only the organizer. Nothing while a
+break you kept free or a focus block holds you, and nothing once it starts.
+The widget asks for it on the overview; no message is sent, so nothing reaches
+ntfy. Off (`PUT /v1/settings/person-recap` `{ on: false }`), both routes
+answer empty with `on: false` and read nothing. Everything stays on this
+machine: no text goes to a cloud model, so no names are swapped.
+
 ### Norn: a task sized to your gap
 
 | Route | Who | What it does |
