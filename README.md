@@ -313,7 +313,7 @@ Ratatoskr watches those.
 
 It follows Norn's `GET /v1/events/stream` (`inbox.arrived`, `calendar.added`,
 `calendar.moved`, `calendar.removed`, `calendar.ended`, `calendar.duplicate`,
-`calendar.stale`, `savepoint.ready`) and Gjallar's alert
+`calendar.stale`, `savepoint.ready`, `promise.due`) and Gjallar's alert
 stream, which it turns into `alert.opened`, `alert.escalated` and
 `alert.resolved`. Built-in rules: a message from your manager or above, an
 urgent direct message, a brief for a meeting added or moved into the next
@@ -326,8 +326,8 @@ covers, or whose invite was cancelled (widget only; Norn's
 `POST /v1/calendar/suggestions/{id}/apply`, which needs the Microsoft sign-in
 with the calendar, now `Calendars.ReadWrite`), and, when a meeting ends, what
 you were on before it ("You were on: …" with your last prompt, linking to the
-goal or session; widget only and not held, so the prompt never reaches ntfy).
-Each reaction goes
+goal or session; widget only and not held, so the prompt never reaches ntfy),
+and a promise you made that is due (below). Each reaction goes
 to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A
 stream down for 5 minutes is `stream:<part>` (warning).
 
@@ -383,6 +383,38 @@ overlapping meetings share the first one's save point. When the meeting ends
 tells the widget, and the dashboard's overview shows "You were here" with
 Pick up until you put it away or two hours pass. It all stays on this
 machine: nothing here goes to Claude.
+
+### Norn: promises you made
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/promises` | anyone | `?state=open\|done\|dropped` (open) → `{ promises }`: `{ id, what, to, toAddress?, due?, state, source, message, link?, subject?, thread, createdAt, changedAt, doneBy?, doneWhy?, doneLink?, remindedAt?, dev? }` |
+| `PATCH /v1/promises/{id}` | owner | `{ state?, due? }`: Done, Drop, open again, or a new day (`YYYY-MM-DD`, `""` for none), which is reminded again |
+| `PUT /v1/promises/{id}/dev` | a part | `{ dev }`: Huginn's judgement that it is development work |
+
+Every 2 minutes Norn reads what you sent in the last 3 days: Outlook's Sent
+Items (the Microsoft sign-in with mail), Gmail's Sent (the Google sign-in with
+Gmail), your own last message in each Teams chat, your Slack messages the
+inbox's sweep sees, and the meeting notes you save on the dashboard (After the
+meeting, and Done with the notes taken during it). A message with no promise
+words ("I'll", "jag ska", "återkommer"…) is skipped. The rest go to the local
+model only (`CHAT_URL`), never to Claude or Sindri, four a pass, and it
+answers with each promise: what, to whom (matched to the message's
+recipients), and the words for when, which Norn turns into a day in
+`TIME_ZONE` ("Friday" is the next Friday, "i morgon" tomorrow, "24/11";
+"soon" and "next week" give none). Only your own words: a reply's quoted
+thread is cut off. A promise is kept once per message (or meeting) and text;
+the message itself is not kept.
+
+On the working day before its day, from 08:00, or on the day when it was made
+too late for that, Norn publishes `promise.due` once. Before that, for a
+promise made in a thread, it writes a follow-up with the reply drafter (on
+`GET /v1/drafts` as item `promise:<id>`; `POST /v1/drafts` with that item
+writes one whenever you ask). Huginn's built-in `promise-due` rule
+then says "You promised Anna: Send the Q3 deck, by tomorrow", held through
+meetings, with a link to the dashboard. When a later message of yours to the
+same person keeps an open promise (the local model judges, strictly), it is
+marked done by `norn` with why; you can open it again.
 
 ### Dellingr
 

@@ -110,6 +110,7 @@ func (n *Norn) mountMeetingActions(p *part.Part) {
 func (n *Norn) suggestMeetingActions(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Subject   string   `json:"subject"`
+		Start     int64    `json:"start"`
 		Attendees []string `json:"attendees"`
 		Text      string   `json:"text"`
 	}
@@ -127,6 +128,11 @@ func (n *Norn) suggestMeetingActions(w http.ResponseWriter, r *http.Request) {
 		part.JSON(w, http.StatusOK, answer)
 		return
 	}
+	// The same notes, for the promises you made in the meeting (promises.go).
+	if body.Start <= 0 {
+		body.Start = time.Now().UnixMilli()
+	}
+	n.OfferNotes(Meeting{Subject: body.Subject, Start: body.Start, Attendees: body.Attendees}, text, "")
 	raw, err := n.LLM.Chat(r.Context(), ActionMessages(body.Subject, body.Attendees, text), llm.Options{
 		Purpose: "meeting actions", Model: n.Config.AskModel, Temperature: 0, MaxTokens: 1200,
 		Format: actionsFormat, Timeout: 90 * time.Second,

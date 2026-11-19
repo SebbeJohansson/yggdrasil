@@ -106,7 +106,7 @@ type Reaction struct {
 }
 
 // Events are the events a trigger can name.
-var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "calendar.duplicate", "calendar.stale", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo", "savepoint.ready"}
+var Events = []string{"inbox.arrived", "draft.ready", "calendar.soon", "calendar.added", "calendar.moved", "calendar.removed", "calendar.ended", "calendar.duplicate", "calendar.stale", "alert.opened", "alert.escalated", "alert.resolved", "linear.todo", "savepoint.ready", "promise.due"}
 
 var (
 	yes      = true
@@ -135,6 +135,7 @@ func BuiltIn() []Rule {
 		{ID: "linear-todo", Name: "Linear ticket with no goal", On: Trigger{Event: "linear.todo"},
 			Action: Action{Kind: "notify", Text: "{key} is in {state} and no goal has it: {title}. Add it as a goal?"}, Deliver: both, Hold: true},
 		savePointRule,
+		promiseRule(both),
 	}
 }
 
@@ -202,6 +203,7 @@ func (h *Huginn) Mount(p *part.Part) {
 	p.Loop("forget", time.Hour, h.forget)
 	p.Loop("linear", LinearEvery, h.watchLinear)
 	h.mountLearning(p)
+	p.Loop("promises", LinearEvery, h.watchPromises)
 }
 
 // --- routes ---
@@ -545,6 +547,8 @@ func (h *Huginn) FromNorn(event sse.Event) (Fired, bool) {
 		return Fired{Kind: event.Kind, Key: "draft:" + item.ID, At: time.UnixMilli(item.At), Title: "Reply drafted to " + item.From + relation,
 			Link: link, Urgent: item.Band == "urgent", Inbox: &item,
 			Fields: map[string]string{"from": item.From, "source": item.Source, "relation": item.Relation, "band": item.Band, "tone": draft.Tone, "link": link}}, true
+	case event.Kind == "promise.due":
+		return h.fromPromise(event)
 	case strings.HasPrefix(event.Kind, "calendar."):
 		var change CalendarChange
 		if json.Unmarshal([]byte(event.Data), &change) != nil {
