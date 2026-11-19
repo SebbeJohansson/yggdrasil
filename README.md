@@ -263,6 +263,38 @@ A goal job drafts the goal in Sindri, and starts it only with `autoStart`.
 Runs the machine slept through run once on wake, never once per missed tick.
 A job that fails 3 times in a row is `failing:<job id>` (warning).
 
+### Sindri: the night shift and self-repair
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET`, `PATCH /v1/settings/night-shift` | anyone | `{ start, report }` as HH:MM in `TIME_ZONE` (22:00 and 07:00) |
+| `GET`, `PATCH /v1/settings/self-repair` | owner changes it | `{ on, perNight }`: off and 3 until set; `SINDRI_SELF_REPAIR=on` in `sindri.env` turns it on by default |
+
+Goals marked "run tonight" start at `start`, and at `report` one message
+through Hermóðr says what is ready to review and what got stuck.
+
+With self-repair on, Sindri first drafts goals in the yggdrasil repo for
+what is wrong with Yggdrasil itself, marked to run tonight, with a source
+starting `self-repair:`:
+
+- Gjallar's active alerts from its own parts (Ratatoskr's `down:`,
+  `stalled:` and `failing:`, and the parts' own), with the key, title, error
+  and history. Munin, Veðrfölnir, sign-ins, the local model, ntfy and muted
+  alerts are left out: nothing in this repo fixes them.
+- Norn's dispatch picks you corrected the same way at least 3 times in a week
+  (`GET /v1/decisions`), as "picked answer, you said code:yggdrasil, 4
+  times". Only kinds, agent ids, projects and counts go in, never a
+  message's text or a name.
+
+No goal is drafted while one for the same alert or correction is open, or for
+an alert that has resolved; a waiting draft whose alert resolved is closed. At
+most `perNight` a night, critical alerts first. Each agent is told to
+reproduce the problem, fix its cause and add a test, or, when not confident,
+change nothing and say `NOT SURE:`. The morning report sorts them into fixed
+(ready to review), not sure and left alone. Nothing merges on its own: every
+fix waits for you. Sindri reads Gjallar with its `GJALLAR_TOKEN` and Norn with
+its `NORN_TOKEN`.
+
 ### Hermóðr
 
 | Route | Who | What it does |

@@ -10,6 +10,7 @@ import (
 	"time"
 	"yggdrasil/internal/linear"
 
+	"yggdrasil/internal/call"
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/part"
 	"yggdrasil/internal/tell"
@@ -37,6 +38,8 @@ import (
 //	YGG_NORN_URL        Norn, where agents' messages are posted; NORN_TOKEN is Sindri's token there
 //	YGG_HERMODR_URL     Hermóðr, for the night shift's morning report; HERMODR_TOKEN is Sindri's token there
 //	TIME_ZONE           the night shift's times are in this zone (Europe/Stockholm)
+//	SINDRI_SELF_REPAIR  on: draft goals for Yggdrasil's own alerts and dispatch corrections each night (off)
+//	YGG_GJALLAR_URL     Gjallar, whose alerts self-repair reads; GJALLAR_TOKEN is Sindri's token there
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("SINDRI_TOKENS")
 	if err != nil {
@@ -78,6 +81,11 @@ func Main(ctx context.Context) error {
 		Model:            env.String("DELEGATE_MODEL", "sonnet"),
 		AskCwd:           env.String("SINDRI_ASK_CWD", filepath.Join(roots[0], "yggdrasil", "workspace")),
 		AutoAllowDefault: env.String("AUTO_ALLOW", "true") == "true",
+		Repair: &Repair{
+			Gjallar: call.New("gjallar", where.URL("gjallar"), env.String("GJALLAR_TOKEN", ""), 10*time.Second),
+			Norn:    call.New("norn", where.URL("norn"), env.String("NORN_TOKEN", ""), 10*time.Second),
+			Default: env.String("SINDRI_SELF_REPAIR", "off") == "on", Repo: "yggdrasil",
+		},
 	}
 	claudeDir := env.String("CLAUDE_DIR", filepath.Join(home, ".claude"))
 	socketDir := env.String("CLAUDE_SOCKET_DIR", fmt.Sprintf("/run/user/%d/cc-socks", os.Getuid()))

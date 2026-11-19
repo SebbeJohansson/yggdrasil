@@ -742,6 +742,33 @@ paths:
         "200": { $ref: "#/components/responses/NightShift" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/settings/self-repair:
+    get:
+      summary: >-
+        Self-repair: at the night shift's start, Sindri drafts goals in the yggdrasil repo, marked to run tonight and with a
+        source starting `self-repair:`, for Gjallar's active alerts about Yggdrasil's own parts and for Norn's dispatch picks
+        you corrected the same way at least 3 times in a week (only kinds, agent ids, projects and counts, never message text).
+        No new goal while one for the same alert or correction is open, at most perNight a night. The morning report sorts them
+        into fixed, not sure and left alone. Nothing is merged on its own. Off unless SINDRI_SELF_REPAIR=on or the owner turns it on.
+      responses:
+        "200": { $ref: "#/components/responses/SelfRepair" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Turn it on or off, or change how many goals a night it drafts at most. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                on: { type: boolean }
+                perNight: { type: integer, minimum: 0, maximum: 10 }
+      responses:
+        "200": { $ref: "#/components/responses/SelfRepair" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
   /v1/goals:
     get:
       summary: Every goal, newest first, with its state and next step read from its tasks.
@@ -1277,6 +1304,16 @@ components:
             properties:
               start: { type: string, example: "22:00" }
               report: { type: string, example: "07:00" }
+    SelfRepair:
+      description: The self-repair settings.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [on, perNight]
+            properties:
+              on: { type: boolean }
+              perNight: { type: integer, example: 3 }
     GoalStarted:
       description: The goal, and which agents started or were told.
       content:
@@ -1402,7 +1439,7 @@ components:
         at: { type: integer }
         title: { type: string }
         repos: { type: array, items: { type: string } }
-        source: { type: string }
+        source: { type: string, description: "Where the goal came from: manual, todo:…, linear:…, or self-repair:alert:<source>:<key> and self-repair:dispatch:<picked>><said> for self-repair goals." }
         context: { type: string }
         session: { type: string }
         closedAt: { type: [integer, "null"], description: When you closed the goal without merging it all; null while open. }

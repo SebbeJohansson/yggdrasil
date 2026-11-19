@@ -92,7 +92,9 @@ type Work struct {
 	// Hermodr reaches you through Hermóðr: the night shift's morning report.
 	Hermodr tell.Teller
 	// Zone is the time zone the night shift's times are in.
-	Zone    *time.Location
+	Zone *time.Location
+	// Repair is where self-repair reads Gjallar's alerts and Norn's decisions; nil turns it off.
+	Repair  *Repair
 	feeding sync.Mutex
 }
 
