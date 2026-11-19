@@ -67,7 +67,7 @@ hold it to its spec: the same routes, and every answer in the spec's shape.
 | Huginn: reacts to events | 8777 | container | `huginn.db`: rules, reactions | built |
 | Dellingr: scheduled jobs | 8778 | container | `dellingr.db`: jobs, runs | built |
 | Hermóðr: messages to you | 8779 | container | `hermodr.db`: the last week of messages | built |
-| Loki: tests the watchers | 8780 | container | `loki.json`: settings, strikes | built |
+| Loki: tests the watchers | 8780 | container | `loki.json`: settings, strikes; `loki-strikes.jsonl`: every ended strike | built |
 | Heimdall: the security watchman | 8781 | host unit (the host's sockets, your repos, the real file modes) | `heimdall.json`: settings, findings | built |
 
 ## Tokens

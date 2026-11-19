@@ -688,6 +688,7 @@ A job that fails 3 times in a row is `failing:<job id>` (warning).
 | `GET /v1/targets` | anyone | `{ parts: [{ name, up, lokiOn, proxied, freezable, vias: [{ via, available, reason? }], tricks: [{ via, kind, loop?, delayMs?, status?, label, expect }] }] }`: each part's tricks by each way to strike it (switch tricks from its `/health`; proxy tricks only when proxied; freeze only when freezable), why a way is closed, and what should catch each (`ratatoskr:down:<part>`, `ratatoskr:failing:<part>:<loop>`, `gjallar:alert`…) |
 | `POST /v1/strikes` | owner | `{ part, trick: { via?: switch\|proxy\|freeze, kind: health\|loop\|slow\|error\|drop\|hang\|freeze, loop?, delayMs?, status?, path? }, minutes? }` (3, at most 10) → `201` Strike. No `via`: `freeze` for a freeze, `proxy` for error, drop and hang, else `switch` |
 | `GET /v1/strikes` | anyone | `?limit=` (50) → `{ strikes }`, newest first |
+| `GET /v1/strikes/log` | anyone | `{ strikes }`: every strike that ended, oldest first, each once. The state keeps the last 200; this log, an append-only file at `LOKI_LOG`, is never trimmed. The widget's tree draws a raven for each |
 | `GET /v1/strikes/{id}` | anyone | `{ id, part, trick, by: manual\|passive, startedAt, endsAt, healedAt?, state: striking\|watching\|caught\|missed\|stopped, checks: [{ watcher, expected, noticedAt?, ok? }], tale?, pids? }` |
 | `POST /v1/strikes/{id}/stop` | owner | end it now: the trick comes off, and it ends `stopped`, with no verdict |
 | `GET`, `PATCH /v1/settings` | owner changes it | `{ passive, perDay, allowWatchers, allowFreeze }`: off, 1, off and off until set; kept in `LOKI_STATE` |
@@ -782,6 +783,7 @@ when you acknowledged the alert.
 | `LOKI_TOKENS` | | `owner=…` |
 | `<PART>_TOKEN` | | Loki's token at each part: `NORN_TOKEN`, `GJALLAR_TOKEN`, `RATATOSKR_TOKEN`, `HERMODR_TOKEN`… (`scripts/install.sh` gives them) |
 | `LOKI_STATE` | `data/loki.json` | settings and the last 200 strikes |
+| `LOKI_LOG` | `data/loki-strikes.jsonl` | every strike that ended, one line each, appended and never trimmed. On first start it takes in the strikes `LOKI_STATE` still has |
 | `LOKI_PARTS` | every part but Loki | the parts it may trick |
 | `GJALLAR_HEARTBEATS` | `ratatoskr=3m` | read to find the heartbeat blind spot; set it in `parts.env` if you changed Gjallar's |
 | `LOKI_PROXY` | none | the parts Loki's proxy stands in front of, `norn,sindri,…` (dev only) |
