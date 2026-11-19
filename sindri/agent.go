@@ -110,6 +110,7 @@ type Agent struct {
 	AddRoots           bool          `json:"addRoots,omitempty"`
 	ScreenshotFor      string        `json:"screenshotFor,omitempty"`
 	ScreenshotHead     string        `json:"screenshotHead,omitempty"`
+	ShotTries          int           `json:"shotTries,omitempty"`
 	Check              *CheckSummary `json:"check,omitempty"`
 	Branches           []Branch      `json:"branches,omitempty"`
 	Worktree           *Worktree     `json:"worktree,omitempty"`

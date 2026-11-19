@@ -843,6 +843,13 @@ func (w *Work) TaskViews(tasks []Task) []TaskView {
 	for _, t := range tasks {
 		latest[t.Agent] = max(latest[t.Agent], t.ID)
 	}
+	// photographing is the agents whose pictures are still being taken: their work is not ready to review yet.
+	photographing := map[string]bool{}
+	for _, s := range byID {
+		if s.agent.ScreenshotFor != "" && busy(s.agent.Status) {
+			photographing[s.agent.ScreenshotFor] = true
+		}
+	}
 	views := make([]TaskView, len(tasks))
 	for i, t := range tasks {
 		s, known := byID[t.Agent]
@@ -857,6 +864,9 @@ func (w *Work) TaskViews(tasks []Task) []TaskView {
 			view.Status = "done"
 		default:
 			view.Status = "gone"
+		}
+		if current && view.Status == "done" && photographing[t.Agent] {
+			view.Status = "running"
 		}
 		if known {
 			label := s.agent.Label
