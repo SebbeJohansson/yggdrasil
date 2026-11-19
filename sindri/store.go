@@ -110,6 +110,10 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("sindri race schema: %w", err)
 	}
+	if _, err := db.Exec(whySchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("sindri why schema: %w", err)
+	}
 	return &Store{db: db, now: time.Now}, nil
 }
 

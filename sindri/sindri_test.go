@@ -199,6 +199,9 @@ func TestMeetsItsContract(t *testing.T) {
 	if _, err := store.AddGoal("A goal", []string{"demo"}, "manual", "", "goal-1"); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.PutGoalWhy(1, GoalWhy{At: 1, State: "sent", Sources: []WhySource{{Kind: "mail", At: 1, Summary: "Asked for it.", Ref: "inbox:1"}}}); err != nil {
+		t.Fatal(err)
+	}
 	p := part.New(Name, contracttest.Tokens(), nil)
 	(&Sindri{Agents: m, Root: m.roots[0], Work: work}).Mount(p)
 	contracttest.Run(t, p)

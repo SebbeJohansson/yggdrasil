@@ -99,7 +99,9 @@ type Work struct {
 	// Repair is where self-repair reads Gjallar's alerts and Norn's decisions; nil turns it off.
 	Repair *Repair
 	// Kinds judges a goal's kind for races; nil guesses from keywords alone.
-	Kinds   KindJudge
+	Kinds KindJudge
+	// Why asks Norn why a goal exists, for its agents' prompts (why.go); nil never asks.
+	Why     WhyAsker
 	feeding sync.Mutex
 }
 

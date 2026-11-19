@@ -296,6 +296,28 @@ is kept once. Norn's Rewind reads it. It is kept forever unless
 `SINDRI_PROMPTS_KEEP` (a duration, e.g. `8760h`) is set in `sindri.env`.
 Goal tasks on `GET /v1/goals` carry `startedAt` and `mergedAt`.
 
+### Sindri: a goal's why
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET`, `PATCH /v1/settings/why` | owner changes it | `{ on }`: whether a goal's agents get the why; on until turned off |
+
+When a goal's coding agents start (Start, a restart, the night shift, each
+lane of a race), Sindri asks Norn's `POST /v1/why` with the goal's title,
+background, repos and id, and puts what comes back in the prompt under
+`## Why this goal exists`: one line per source with its day and kind,
+summarized by Norn's local model, names as placeholders. Where it is told
+whose words to follow, the goal wins. The `ref` of each source stays with
+you. Sindri waits at most `SINDRI_WHY_TIMEOUT` (30s) in `sindri.env`; when
+Norn does not answer, the agents start without it. A pack is used again for
+an hour, and Norn not answering for 5 minutes, so a race's two lanes wait
+once. A self-repair goal is never asked about: its alert is its why.
+
+What was sent is kept on the goal: `why` on `GET /v1/goals` is
+`{ at, state, sources }`, `state` being `sent`, `none` (Norn found nothing it
+was sure of), `unreachable` or `off` (Norn was not asked). Sindri asks with
+its `NORN_TOKEN`; without one it never asks.
+
 ### Veðrfölnir
 
 The same shapes as my-agent's runner, so my-widget's pages read either.
