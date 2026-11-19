@@ -97,9 +97,10 @@ type AlertEvent struct {
 }
 
 // repairableSources are the parts whose alerts code in this repo can fix.
+// Loki's missed:<part>:<kind> is a watcher that did not notice a trick.
 // Munin (tcgpriser, offline, statuspage, XeStrata…) and Veðrfölnir (disks,
 // units and containers that are not Yggdrasil's) watch what lies outside it.
-var repairableSources = []string{"ratatoskr", "gjallar", "norn", "sindri", "huginn", "dellingr", "hermodr"}
+var repairableSources = []string{"ratatoskr", "gjallar", "norn", "sindri", "huginn", "dellingr", "hermodr", "loki"}
 
 // outsideKeys are alerts a Yggdrasil part raises about something outside it:
 // a sign-in to renew, the local model, a phone channel. A part gone silent

@@ -579,7 +579,7 @@ what is wrong with Yggdrasil itself, marked to run tonight, with a source
 starting `self-repair:`:
 
 - Gjallar's active alerts from its own parts (Ratatoskr's `down:`,
-  `stalled:` and `failing:`, and the parts' own), with the key, title, error
+  `stalled:` and `failing:`, Loki's `missed:`, and the parts' own), with the key, title, error
   and history. Munin, Veðrfölnir, sign-ins, the local model, ntfy and muted
   alerts are left out: nothing in this repo fixes them.
 - Norn's dispatch picks you corrected the same way at least 3 times in a week

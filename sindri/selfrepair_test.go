@@ -30,6 +30,7 @@ func TestRepairableKeepsOnlyWhatThisRepoCanFix(t *testing.T) {
 		{RepairAlert{Source: "norn", Key: "signin:microsoft", State: "open"}, false},
 		{RepairAlert{Source: "norn", Key: "model-failing", State: "open"}, false},
 		{RepairAlert{Source: "hermodr", Key: "channel:ntfy", State: "open"}, false},
+		{RepairAlert{Source: "loki", Key: "missed:norn:health", State: "open"}, true},
 		{RepairAlert{Source: "glim", Key: "anything", State: "open"}, false},
 		{RepairAlert{Source: "ratatoskr", Key: "down:norn", State: "resolved"}, false},
 		{RepairAlert{Source: "ratatoskr", Key: "down:norn", State: "open", Muted: true}, false},
