@@ -203,6 +203,10 @@ const KindAsk = `What kind of coding work is this goal? Answer with one word fro
 Goal: %s
 %s`
 
+// KindSession is the Norn conversation every kind question goes into, so
+// they stay one conversation instead of one each.
+const KindSession = "sindri"
+
 // NornKinds asks Norn's local model (`/local`), so the goal never leaves this machine.
 type NornKinds struct{ Norn *call.Part }
 
@@ -211,7 +215,7 @@ func (n NornKinds) Judge(ctx context.Context, title, context string) (string, er
 	if !n.Norn.On() {
 		return "", call.ErrOff
 	}
-	answer, err := n.Norn.Ask(ctx, fmt.Sprintf(KindAsk, title, Clip(context, 1500)), "")
+	answer, err := n.Norn.Ask(ctx, fmt.Sprintf(KindAsk, title, Clip(context, 1500)), KindSession)
 	if err != nil {
 		return "", err
 	}
