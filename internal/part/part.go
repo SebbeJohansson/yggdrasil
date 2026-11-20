@@ -157,13 +157,19 @@ func (p *Part) Loop(name string, every time.Duration, run func(context.Context) 
 	return loop
 }
 
-func (l *Loop) once(ctx context.Context, logger *log.Logger) {
+// RetryAfter is how soon a loop runs again after a failed run, when its
+// interval is longer. A part restarted alongside the one it asks fails its
+// first run; an hourly loop would otherwise show that failure for an hour.
+var RetryAfter = time.Minute
+
+// once runs the loop and reports whether the run failed.
+func (l *Loop) once(ctx context.Context, logger *log.Logger) bool {
 	if l.part != nil && l.part.loopTricked(l.Name) {
 		// Loki's trick: the run is skipped and fails, so Ratatoskr should see it.
 		l.mu.Lock()
 		l.lastRunAt, l.lastError = time.Now(), TrickError
 		l.mu.Unlock()
-		return
+		return false
 	}
 	err := func() (err error) {
 		defer func() {
@@ -180,21 +186,28 @@ func (l *Loop) once(ctx context.Context, logger *log.Logger) {
 	if err != nil && ctx.Err() == nil {
 		l.lastError = err.Error()
 		logger.Printf("loop %s: %v", l.Name, err)
+		return true
 	}
+	return false
 }
 
 func (l *Loop) start(ctx context.Context, logger *log.Logger, wg *sync.WaitGroup) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(l.Every)
-		defer ticker.Stop()
+		timer := time.NewTimer(0)
+		defer timer.Stop()
+		<-timer.C
 		for {
-			l.once(ctx, logger)
+			next := l.Every
+			if l.once(ctx, logger) && RetryAfter < next {
+				next = RetryAfter
+			}
+			timer.Reset(next)
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
+			case <-timer.C:
 			}
 		}
 	}()

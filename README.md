@@ -141,7 +141,8 @@ The specs in `api/` are the full reference; this is the short version.
 
 Every part answers `GET /health` and `GET /openapi.yaml` without a token:
 `{ ok, part, version, startedAt, loops: { <name>: { everySeconds, lastRunAt, lastError? } } }`.
-Ratatoskr reads it. Everything else needs `Authorization: Bearer <token>`.
+Ratatoskr reads it. A loop whose run fails runs again after a minute, not after its full interval.
+Everything else needs `Authorization: Bearer <token>`.
 
 ### Gjallar
 
