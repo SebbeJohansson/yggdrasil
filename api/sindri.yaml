@@ -321,6 +321,15 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/dismiss:
+    post:
+      summary: Forget a finished agent, and remove its worktree and branch when they hold no unmerged work. Refused while it runs or while its branch holds unmerged work.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "204": { description: Forgotten. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/agents/{id}/remove-worktree:
     post:
       summary: Remove the agent's worktree, and its branch once merged. force discards unmerged work.

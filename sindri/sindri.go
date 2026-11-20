@@ -77,6 +77,13 @@ func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("POST /v1/agents/{id}/push-base", func(w http.ResponseWriter, r *http.Request) {
 		done(w)(s.Agents.PushBase(r.PathValue("id")))
 	})
+	p.Handle("POST /v1/agents/{id}/dismiss", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Agents.Dismiss(r.PathValue("id")); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	p.Handle("POST /v1/agents/{id}/remove-worktree", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Force bool `json:"force"`

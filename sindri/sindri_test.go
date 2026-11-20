@@ -266,3 +266,48 @@ func TestASignalStopsAnAgentWithoutFailingIt(t *testing.T) {
 		t.Fatalf("got %s, log %+v", a.Status, a.Log)
 	}
 }
+
+func TestDismissForgetsAFailedAgentAndItsEmptyWorktree(t *testing.T) {
+	m, repo := setup(t)
+	a, err := m.Start(StartRequest{Cwd: "demo", Prompt: "Leave it as it is", Worktree: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, m, a.ID, func(a *Agent) bool { return a.Status == Waiting })
+	if err := m.Dismiss(a.ID); err == nil || !strings.Contains(err.Error(), "still running") {
+		t.Fatalf("dismissing a running agent: %v", err)
+	}
+	m.close(a.ID)
+	m.mu.Lock()
+	a.Status = Failed
+	path := a.Worktree.Path
+	m.mu.Unlock()
+	if err := m.Dismiss(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Get(a.ID); err == nil {
+		t.Fatal("the agent is still listed")
+	}
+	if exists(path) {
+		t.Fatalf("the worktree %s is still there", path)
+	}
+	if out, _ := exec.Command("git", "-C", repo, "branch", "--list", "agent/*").Output(); strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("branches left: %s", out)
+	}
+}
+
+func TestDismissKeepsABranchThatHoldsWork(t *testing.T) {
+	m, _ := setup(t)
+	a, err := m.Start(StartRequest{Cwd: "demo", Prompt: "change the work file", Worktree: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, m, a.ID, func(a *Agent) bool { return a.Status == Waiting })
+	m.close(a.ID)
+	if err := m.Dismiss(a.ID); err == nil || !strings.Contains(err.Error(), "has not merged") {
+		t.Fatalf("dismissing unmerged work: %v", err)
+	}
+	if _, err := m.Get(a.ID); err != nil {
+		t.Fatal("the agent was forgotten")
+	}
+}
