@@ -348,3 +348,24 @@ func TestMissedIsEmptyWhenNothingWasSaidByOthers(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// A part's /local question that mentions "status" is the model's to answer,
+// not the status rule's: Sindri asked a goal's kind and got an agent's status.
+func TestALocalQuestionAboutStatusIsTheModelsToAnswer(t *testing.T) {
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ui"}}]}`))
+	}))
+	defer model.Close()
+	n, _ := newNorn(t)
+	withSindri(t, n)
+	n.LLM = &llm.Client{PrimaryURL: model.URL + "/v1"}
+	ctx := context.Background()
+	_ = n.Store.BindAgent(ctx, "sindri", "a1")
+	response, err := n.Ask(ctx, AskRequest{Question: "/local What kind of coding work is this goal? Goal: show the day status on the DM titles", Session: "sindri", To: "norn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Via != "/local" || response.Answer != "ui" {
+		t.Fatalf("got %q via %q", response.Answer, response.Via)
+	}
+}

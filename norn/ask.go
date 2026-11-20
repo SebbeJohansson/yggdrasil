@@ -517,13 +517,15 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		everyone, _ = n.Sindri.Agents(ctx)
 		a.yours = n.Sindri.Sessions(ctx)
 	}
-	if sindri && route != "claude" && IsOverviewQuestion(question) && !Change.MatchString(question) {
+	if sindri && route == "" && IsOverviewQuestion(question) && !Change.MatchString(question) {
 		return a.answered(OverviewAnswer(everyone, a.yours, now), nil, "rule: overview"), nil
 	}
 	// A status question that names one of your own sessions better than any
 	// agent is about that session. Before the dispatcher, which is not shown
 	// your sessions and would pick the agent sharing one word with it.
-	if route != "claude" && statusAsk.MatchString(question) {
+	// /claude and /local never take these shortcuts: /local is the model's
+	// own answer, which parts rely on for a one-word judgment.
+	if route == "" && statusAsk.MatchString(question) {
 		if own := LikelySession(question, a.yours, everyone, now); own != nil {
 			return a.answered(SessionStatus(*own, now)+ReadLink(n.Config.DashboardURL, own.ID, own.Cwd, own.Title, ""), nil, "rule: your session"), nil
 		}
@@ -666,7 +668,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 			agent, _ = n.Sindri.Agent(ctx, own[0])
 		}
 	}
-	asksStatus := !decidedLocal && route != "claude" && statusAsk.MatchString(question)
+	asksStatus := !decidedLocal && route == "" && statusAsk.MatchString(question)
 	if agent == nil && asksStatus {
 		agent = LikelyAgent(question, everyone, now)
 	}
