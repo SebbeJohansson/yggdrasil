@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -247,5 +248,21 @@ func TestShowsOnScreen(t *testing.T) {
 	}
 	if ShowsOnScreen([]string{"main.go", "README.md", "a_test.go"}) {
 		t.Fatal("backend and docs should not show")
+	}
+}
+
+func TestASignalStopsAnAgentWithoutFailingIt(t *testing.T) {
+	m, _ := setup(t)
+	a, err := m.Start(StartRequest{Cwd: "demo", Prompt: "Leave it as it is"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, m, a.ID, func(a *Agent) bool { return a.Status == Waiting })
+	m.mu.Lock()
+	_ = m.live[a.ID].command.Process.Signal(syscall.SIGTERM)
+	m.mu.Unlock()
+	a = waitFor(t, m, a.ID, func(a *Agent) bool { return !running(a.Status) })
+	if a.Status != Done || !strings.HasPrefix(a.Log[len(a.Log)-1].Text, "stopped by a signal") {
+		t.Fatalf("got %s, log %+v", a.Status, a.Log)
 	}
 }

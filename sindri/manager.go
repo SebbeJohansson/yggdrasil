@@ -92,8 +92,10 @@ type Manager struct {
 	opencodeUp bool
 	claudeDir  string
 	delivering map[string]bool
-	logf       func(string, ...any)
-	now        func() time.Time
+	// stopping is set once Shutdown begins: the exits it causes are not failures.
+	stopping bool
+	logf     func(string, ...any)
+	now      func() time.Time
 	// OnChange is told when an agent changes, so its messages reach Norn soon.
 	OnChange func(id string)
 }
@@ -550,9 +552,14 @@ func (m *Manager) onExitLocked(a *Agent, process *live, err error, copilot bool)
 		code = -1
 	}
 	a.ExitCode, a.Pending, a.Tool = &code, nil, ""
+	stopped := !process.aborted && (m.stopping || killedBySignal(err))
 	switch {
 	case process.aborted:
 		a.Status = Aborted
+	case stopped:
+		// A restart or a signal from outside ended it, not its own work: it
+		// resumes on a follow-up like any finished agent.
+		a.Status = Done
 	case a.Status != Failed:
 		a.Status = Done
 		if code != 0 {
@@ -560,8 +567,13 @@ func (m *Manager) onExitLocked(a *Agent, process *live, err error, copilot bool)
 		}
 	}
 	text := fmt.Sprintf("exited (%d)", code)
-	if process.aborted {
+	switch {
+	case process.aborted:
 		text = "aborted"
+	case m.stopping:
+		text = "stopped when Sindri restarted"
+	case stopped:
+		text = fmt.Sprintf("stopped by a signal (%d)", code)
 	}
 	a.addLog(LogEntry{At: m.ms(), Kind: "exit", Text: text})
 	if copilot && a.Status == Done && len(a.Queued) > 0 && a.Engine == "copilot" {
@@ -851,6 +863,23 @@ func (m *Manager) Abort(id string) (*Agent, error) {
 	return a, nil
 }
 
+// killedBySignal is whether a process ended on SIGTERM, SIGINT or SIGHUP,
+// directly or as the 128+n exit code a CLI that catches the signal uses.
+func killedBySignal(err error) bool {
+	exit, ok := err.(*exec.ExitError)
+	if !ok {
+		return false
+	}
+	if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		switch status.Signal() {
+		case syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP:
+			return true
+		}
+	}
+	code := exit.ExitCode()
+	return code == 128+int(syscall.SIGTERM) || code == 128+int(syscall.SIGINT) || code == 128+int(syscall.SIGHUP)
+}
+
 // CloseOldestIdle makes room: closes the waiting agent quiet the longest and
 // returns once its process is gone. Its session stays resumable. Refuses
 // when none waits: every slot is at work.
@@ -902,6 +931,7 @@ func (m *Manager) close(id string) {
 // Shutdown stops every process and saves.
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
+	m.stopping = true
 	for _, process := range m.live {
 		_ = process.command.Process.Signal(syscall.SIGTERM)
 	}
