@@ -274,7 +274,7 @@ func TestDismissForgetsAFailedAgentAndItsEmptyWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, m, a.ID, func(a *Agent) bool { return a.Status == Waiting })
-	if err := m.Dismiss(a.ID); err == nil || !strings.Contains(err.Error(), "still running") {
+	if _, err := m.Dismiss(a.ID); err == nil || !strings.Contains(err.Error(), "still running") {
 		t.Fatalf("dismissing a running agent: %v", err)
 	}
 	m.close(a.ID)
@@ -282,7 +282,7 @@ func TestDismissForgetsAFailedAgentAndItsEmptyWorktree(t *testing.T) {
 	a.Status = Failed
 	path := a.Worktree.Path
 	m.mu.Unlock()
-	if err := m.Dismiss(a.ID); err != nil {
+	if _, err := m.Dismiss(a.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Get(a.ID); err == nil {
@@ -304,7 +304,7 @@ func TestDismissKeepsABranchThatHoldsWork(t *testing.T) {
 	}
 	waitFor(t, m, a.ID, func(a *Agent) bool { return a.Status == Waiting })
 	m.close(a.ID)
-	if err := m.Dismiss(a.ID); err == nil || !strings.Contains(err.Error(), "has not merged") {
+	if _, err := m.Dismiss(a.ID); err == nil || !strings.Contains(err.Error(), "has not merged") {
 		t.Fatalf("dismissing unmerged work: %v", err)
 	}
 	if _, err := m.Get(a.ID); err != nil {

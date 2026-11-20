@@ -883,31 +883,31 @@ func killedBySignal(err error) bool {
 // Dismiss forgets a finished agent: off every list, its screenshots deleted,
 // and its worktree and branch removed when they hold no work. Refused while it
 // runs, or while its branch holds work that has not merged.
-func (m *Manager) Dismiss(id string) error {
+func (m *Manager) Dismiss(id string) (string, error) {
 	m.mu.Lock()
 	a, err := m.getLocked(id)
 	if err != nil {
 		m.mu.Unlock()
-		return err
+		return "", err
 	}
 	if running(a.Status) || m.live[id] != nil {
 		m.mu.Unlock()
-		return httpErr(409, "the agent is still running: stop it first")
+		return "", httpErr(409, "the agent is still running: stop it first")
 	}
 	if w := a.Worktree; w != nil && (exists(w.Path) || w.branchExists()) {
 		if !w.IsEmpty() && !w.IsLanded() {
 			m.mu.Unlock()
-			return httpErr(409, "its branch %s holds work that has not merged: merge it or remove the worktree first", w.Branch)
+			return "", httpErr(409, "its branch %s holds work that has not merged: merge it or remove the worktree first", w.Branch)
 		}
 		for _, other := range m.agents {
 			if other.ID != id && running(other.Status) && (other.Cwd == w.Path || strings.HasPrefix(other.Cwd, w.Path+string(filepath.Separator))) {
 				m.mu.Unlock()
-				return httpErr(409, "another agent, %s, is still working in its worktree", other.Label)
+				return "", httpErr(409, "another agent, %s, is still working in its worktree", other.Label)
 			}
 		}
 		if _, err := w.Remove(false); err != nil {
 			m.mu.Unlock()
-			return err
+			return "", err
 		}
 	}
 	delete(m.agents, id)
@@ -915,7 +915,7 @@ func (m *Manager) Dismiss(id string) error {
 	m.mu.Unlock()
 	_ = os.RemoveAll(m.shotDir(id))
 	m.Save()
-	return nil
+	return a.Label, nil
 }
 
 // CloseOldestIdle makes room: closes the waiting agent quiet the longest and

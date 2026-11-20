@@ -326,7 +326,7 @@ paths:
       summary: Forget a finished agent, and remove its worktree and branch when they hold no unmerged work. Refused while it runs or while its branch holds unmerged work.
       parameters: [{ $ref: "#/components/parameters/ID" }]
       responses:
-        "204": { description: Forgotten. }
+        "200": { $ref: "#/components/responses/Done" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
