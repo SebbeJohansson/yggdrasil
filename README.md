@@ -56,7 +56,17 @@ server works as `CHAT_URL` (llama.cpp, LM Studio…). On a machine without one,
 `CHAT_URL=off` runs every call on Ollama, tool calls too, and
 `LOCAL_MODEL=qwen3:4b` (say) names the one model they all use; per-call
 settings such as `SUMMARY_MODEL` still win. Take `xestrata` out of
-`MUNIN_TARGETS` and `VEDRFOLNIR_PROBES` there too. Embeddings for memory
+`MUNIN_TARGETS` and `VEDRFOLNIR_PROBES` there too.
+
+A machine that can't run a model at all can use **cloud mode** (dashboard
+Settings → Model): every call that would go to XeStrata or Ollama goes to
+Claude Code (Haiku), or Copilot CLI when Claude Code isn't installed, through
+Sindri's `POST /v1/complete`, one plain `-p` run with no tools. Embeddings
+stay local. A privacy level sets what leaves the machine: `as-is` (default,
+the most exposed), `placeholders` (people Norn knows and email addresses
+swapped for Person 1, Person 2…) or `local-sensitive` (swapped, and inbox
+summaries, reply drafts, the inbox judge, recaps, promises, meeting actions,
+rewind and weave are not sent at all). Norn needs `SINDRI_TOKEN` for it. Embeddings for memory
 recall come from the compose `embeddings` service (llama.cpp with
 nomic-embed-text v1.5 on `127.0.0.1:8096`, `EMBED_URL` in `norn.env`); start it
 with `docker compose --profile embeddings up -d embeddings`. Memories embedded

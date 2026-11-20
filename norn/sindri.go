@@ -71,6 +71,11 @@ type SindriError struct {
 func (e *SindriError) Error() string { return e.Message }
 
 func (c *SindriClient) call(ctx context.Context, method, path string, body, into any) error {
+	return c.callWithin(ctx, 30*time.Second, method, path, body, into)
+}
+
+// callWithin is call with its own time limit.
+func (c *SindriClient) callWithin(ctx context.Context, limit time.Duration, method, path string, body, into any) error {
 	if !c.On() {
 		return &SindriError{Status: 503, Message: "agents are off here (no Sindri)"}
 	}
@@ -79,7 +84,7 @@ func (c *SindriClient) call(ctx context.Context, method, path string, body, into
 		payload, _ := json.Marshal(body)
 		reader = bytes.NewReader(payload)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.URL, "/")+path, reader)
 	if err != nil {

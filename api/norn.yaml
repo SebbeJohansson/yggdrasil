@@ -208,6 +208,50 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/settings/model:
+    get:
+      summary: 'Where model calls go. local is XeStrata or Ollama; cloud sends every one of them to Claude Code or Copilot CLI through Sindri (engine, "" when neither is installed). privacy is what may leave the machine in cloud mode: as-is (default, the most exposed), placeholders (known names and email addresses swapped), local-sensitive (swapped, and calls that read mail and chats are not sent; they fail with "kept on this machine in cloud mode").'
+      responses:
+        "200":
+          description: The mode.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mode, privacy, engine, engineLabel]
+                properties:
+                  mode: { type: string, enum: [local, cloud] }
+                  privacy: { type: string, enum: [as-is, placeholders, local-sensitive] }
+                  engine: { type: string, enum: [claude, copilot, ""] }
+                  engineLabel: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Switch between local and cloud, and set the privacy level. Takes effect at once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, privacy]
+              properties:
+                mode: { type: string, enum: [local, cloud] }
+                privacy: { type: string, enum: [as-is, placeholders, local-sensitive] }
+      responses:
+        "200":
+          description: The mode now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mode, privacy, engine, engineLabel]
+                properties:
+                  mode: { type: string, enum: [local, cloud] }
+                  privacy: { type: string, enum: [as-is, placeholders, local-sensitive] }
+                  engine: { type: string, enum: [claude, copilot, ""] }
+                  engineLabel: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/settings/send-names:
     get:
       summary: Until when names go to Claude as they are, without placeholders (Unix ms; 0 means they are swapped).

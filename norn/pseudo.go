@@ -289,7 +289,9 @@ func (n *Norn) pseudonymize(ctx context.Context, session string, extra []pseudo.
 		// A text inside one already read (the question inside its prompt)
 		// has its names in the map already.
 		var found []string
-		if !slices.ContainsFunc(texts[:i], func(earlier string) bool { return strings.Contains(earlier, text) }) {
+		// In cloud mode the model is Claude itself: names are looked for
+		// among the people Norn knows and by an address's shape only.
+		if !n.LLM.CloudOn() && !slices.ContainsFunc(texts[:i], func(earlier string) bool { return strings.Contains(earlier, text) }) {
 			var err error
 			if found, err = n.findNames(ctx, text); err != nil {
 				return nil, nil, err

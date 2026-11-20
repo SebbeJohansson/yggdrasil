@@ -150,6 +150,8 @@ func (n *Norn) Mount(p *part.Part) {
 	p.Handle("POST /v1/jokes/rating", n.rateJoke)
 	p.Handle("GET /v1/settings/widgets", n.widgetSettings)
 	p.Handle("PATCH /v1/settings/widgets", n.setWidgetSettings)
+	p.Handle("GET /v1/settings/model", n.modelModeSettings)
+	p.Handle("PUT /v1/settings/model", n.setModelMode)
 	p.Handle("GET /v1/settings/send-names", n.namesOffSettings)
 	p.Handle("PUT /v1/settings/send-names", n.setNamesOff)
 	p.Handle("GET /v1/conversations", n.conversations)

@@ -38,6 +38,8 @@ type Sindri struct {
 // Mount adds Sindri's routes and loops to the part.
 func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("GET /v1/agents", s.list)
+	p.Handle("GET /v1/complete", s.completeEngine)
+	p.Handle("POST /v1/complete", s.complete)
 	p.Handle("GET /v1/sessions/recent", s.sessions)
 	s.mountSessionPrompts(p)
 	p.Handle("GET /v1/activity", s.activity)

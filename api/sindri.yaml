@@ -82,6 +82,50 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
+  /v1/complete:
+    get:
+      summary: Which engine a one-shot answer runs on now (claude, copilot, or "" when neither is installed and on).
+      responses:
+        "200":
+          description: The engine.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [engine, label]
+                properties:
+                  engine: { type: string, enum: ["claude", "copilot", ""] }
+                  label: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: One plain answer from Claude Code (haiku unless a model is given) or Copilot CLI, with no tools, no session kept and no settings loaded. Norn's cloud mode sends what would go to the local model here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                system: { type: string }
+                prompt: { type: string }
+                model: { type: string }
+      responses:
+        "200":
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, engine, model]
+                properties:
+                  text: { type: string }
+                  engine: { type: string }
+                  model: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/agents/close-idle:
     post:
       summary: Make room when every slot is taken. Closes the waiting agent quiet the longest; its session stays resumable.

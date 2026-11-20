@@ -37,6 +37,7 @@ import (
 //	NAMES_MODEL      finds people's names in what goes to Claude, to swap them for placeholders first (qwen2.5:7b)
 //	WRITE_MODEL      the writing checks (qwen2.5:7b); LOOKUP_MODEL the Linear lookups (lookup), on Ollama too when CHAT_URL is off
 //	DISPATCH_KEEP_ALIVE  how long Ollama keeps it loaded after a call (unset: Ollama's own 5m)
+//	                 Cloud mode (Settings → Model) sends all of these to Claude Code or Copilot CLI through Sindri instead
 //	WARM_EVERY       how long XeStrata may sit idle before Norn asks it for a token (2m); off: never
 //	YGG_SINDRI_URL   Sindri, for coding and questions that need tools; SINDRI_TOKEN is Norn's token there (unset: agents off)
 //	INBOX_JUDGE      laya, typesafe, xestrata, ollama or off (laya; when Laya doesn't answer, Ollama, or XeStrata with Ollama off); INBOX_JUDGE_MODEL, TYPESAFE_KEY
@@ -155,6 +156,7 @@ func Main(ctx context.Context) error {
 			{Name: "linear", Client: &mcp.Client{URL: env.String("LINEAR_MCP_URL", "https://mcp.linear.app/mcp"), Token: key}},
 		}}
 	}
+	n.StartModelMode(ctx)
 	n.WakeShadow()
 	// Ask XeStrata for a token when it has sat idle, so your next message
 	// does not wait for Windows to page its model back in (llm.KeepWarm).

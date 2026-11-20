@@ -456,6 +456,11 @@ type JudgeSettings struct {
 	Provider, LayaURL, LayaKey, TypesafeKey, OllamaURL, OllamaModel string
 	// Chat asks XeStrata; nil when there is no XeStrata (CHAT_URL off).
 	Chat func(context.Context, []llm.Message, llm.Options) (string, error)
+	// Cloud is whether cloud mode is on; then CloudChat (Norn's model
+	// client, which sends it to Claude Code or Copilot CLI) judges instead
+	// of XeStrata or Ollama.
+	Cloud     func() bool
+	CloudChat func(context.Context, []llm.Message, llm.Options) (string, error)
 }
 
 var embedModel = regexp.MustCompile(`(?i)embed`)
@@ -490,6 +495,9 @@ func PickJudge(ctx context.Context, settings JudgeSettings, client *http.Client)
 	}
 	if provider == "typesafe" && settings.TypesafeKey != "" {
 		return &JudgeBackend{ID: "typesafe", Label: "TypeSafe", URL: "https://api.typesafe.ai/v1/systemone", Model: "jev-latest", Key: settings.TypesafeKey}
+	}
+	if settings.Cloud != nil && settings.Cloud() && settings.CloudChat != nil {
+		return &JudgeBackend{ID: "xestrata", Label: "Cloud (Claude Code or Copilot CLI)", Chat: settings.CloudChat}
 	}
 	xestrata := &JudgeBackend{ID: "xestrata", Label: "XeStrata", Model: settings.OllamaModel, Chat: settings.Chat}
 	if provider == "xestrata" || settings.OllamaURL == "" {

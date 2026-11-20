@@ -70,7 +70,7 @@ type HealthCall struct {
 
 // HealthCalls is every model call since `since`, oldest first, without its text.
 func (s *Store) HealthCalls(ctx context.Context, since int64) ([]HealthCall, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT at, purpose, backend, total_ms, COALESCE(error, '') FROM llm_calls WHERE at >= ? ORDER BY at, id`, since)
+	rows, err := s.db.QueryContext(ctx, `SELECT at, purpose, backend, total_ms, COALESCE(error, '') FROM llm_calls WHERE at >= ? AND COALESCE(error, '') NOT LIKE 'kept on this machine%' ORDER BY at, id`, since)
 	if err != nil {
 		return nil, err
 	}

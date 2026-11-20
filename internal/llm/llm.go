@@ -158,6 +158,11 @@ type Client struct {
 	NoFallback bool
 	// lastAnswer is when XeStrata last answered, in Unix ms, for KeepWarm.
 	lastAnswer atomic.Int64
+	// Cloud answers instead of XeStrata and Ollama while cloud mode is on
+	// (SetCloud); Guard looks at each call first (cloud.go).
+	Cloud   CloudFunc
+	Guard   CloudGuard
+	cloudOn atomic.Bool
 }
 
 // ErrNoModel is a client with neither XeStrata nor Ollama.
@@ -168,6 +173,9 @@ var ErrNoEmbeddings = errors.New("no embedding server: EMBED_URL and OLLAMA_URL 
 
 // Chat answers, from XeStrata or, when it fails, from Ollama.
 func (c *Client) Chat(ctx context.Context, messages []Message, options Options) (string, error) {
+	if c.CloudOn() {
+		return c.cloudAttempt(ctx, messages, options)
+	}
 	if c.PrimaryURL == "" {
 		if c.OllamaURL == "" {
 			return "", ErrNoModel
@@ -193,7 +201,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, options Options) 
 // to come back (0.8 prompt tokens a second, against 40 when warm). The ask
 // is not recorded; the debug view is for your messages.
 func (c *Client) KeepWarm(ctx context.Context, idle time.Duration) error {
-	if c.PrimaryURL == "" || time.Since(time.UnixMilli(c.lastAnswer.Load())) < idle {
+	if c.PrimaryURL == "" || c.CloudOn() || time.Since(time.UnixMilli(c.lastAnswer.Load())) < idle {
 		return nil
 	}
 	_, err := c.openaiChat(ctx, []Message{{Role: "user", Content: "hi"}}, Options{MaxTokens: 1, Timeout: 2 * time.Minute})
@@ -511,6 +519,9 @@ type ToolTurn struct {
 // failed tool turn: the small models it runs beside XeStrata pick tools too
 // poorly for that.
 func (c *Client) ToolChat(ctx context.Context, messages []ToolMessage, tools []Tool, options Options) (ToolTurn, error) {
+	if c.CloudOn() {
+		return c.cloudToolChat(ctx, messages, tools, options)
+	}
 	start := time.Now()
 	plain := make([]Message, len(messages))
 	for i, message := range messages {
