@@ -57,6 +57,15 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "       ygg check <part> [url]   check a running part, built-in or not, against its contract")
 	fmt.Fprintln(os.Stderr, "       ygg migrate from-my-agent|to-my-agent [--replace]   move your data between my-agent and Yggdrasil")
 	fmt.Fprintln(os.Stderr, "       ygg version")
+	fmt.Fprintln(os.Stderr, "\nasking the running parts (--json for what they answered):")
+	commands := make([]string, 0, len(tellCommands))
+	for name := range tellCommands {
+		commands = append(commands, name)
+	}
+	sort.Strings(commands)
+	for _, name := range commands {
+		fmt.Fprintf(os.Stderr, "  ygg %-9s %s\n", name, tellCommands[name].about)
+	}
 	fmt.Fprintln(os.Stderr, "\nparts:")
 	names := make([]string, 0, len(parts))
 	for name := range parts {
@@ -74,6 +83,11 @@ func main() {
 	}
 	if len(os.Args) >= 3 && os.Args[1] == "check" {
 		os.Exit(check(os.Args[2:]))
+	}
+	if len(os.Args) >= 2 {
+		if command, ok := tellCommands[os.Args[1]]; ok {
+			os.Exit(command.run(os.Args[2:]))
+		}
 	}
 	if len(os.Args) != 2 {
 		usage()

@@ -37,6 +37,27 @@ ygg check munin http://127.0.0.1:8786    # or any URL
 Parts find each other only through `YGG_<PART>_URL`
 (`~/.config/yggdrasil/parts.env`), never by assuming the built-in one.
 
+## Ask from a terminal
+
+`ygg` also asks the running parts how things are, in plain lines, for you
+and for coding agents. Each finds its part at `YGG_<PART>_URL` (or the
+default port) with the owner token (`YGG_TOKEN`, or
+`~/.config/yggdrasil/owner.token`); `--json` prints what the part answered.
+
+```sh
+ygg status             # each part up or down, loops failing or late, Gjallar's open alerts; exits 1 when a part is down
+ygg alerts             # Gjallar's open alerts, the most recent first
+ygg gossip [n]         # the last n exchanges of the parts' gossip (default 3)
+ygg findings [--all]   # Heimdall's open findings with their fixes, the small ones with --all
+ygg agents             # Sindri's agents that are not done, and the Claude Code sessions running
+ygg strikes            # Loki's last strikes and who noticed
+ygg strike norn [loop] [--loop calendar] [--minutes 3] [--yes]   # have Loki trick a part
+```
+
+Only `ygg strike` changes anything: it picks the trick from Loki's
+`/v1/targets` (health when no kind is given, by a way that is open), says
+what it will do and asks first unless given `--yes`.
+
 ## Run
 
 The host has no Go; `scripts/go` runs the toolchain in Docker.
