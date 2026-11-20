@@ -274,8 +274,13 @@ func (n *Norn) rateJoke(w http.ResponseWriter, r *http.Request) {
 
 // --- conversations and search ----------------------------------------------------
 
+// ConversationsListed is how many conversations GET /v1/conversations lists,
+// newest first: enough that a burst of parts' questions does not push yours
+// off the list.
+const ConversationsListed = 1000
+
 func (n *Norn) conversations(w http.ResponseWriter, r *http.Request) {
-	conversations, err := n.Store.Conversations(r.Context(), 100)
+	conversations, err := n.Store.Conversations(r.Context(), ConversationsListed)
 	if err != nil {
 		n.fail(w, err)
 		return
