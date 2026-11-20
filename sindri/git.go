@@ -296,7 +296,10 @@ type ListedWorktree struct {
 	Missing  bool   `json:"missing"`
 	Merged   bool   `json:"merged,omitempty"`
 	Checkout bool   `json:"checkout,omitempty"`
-	Agent    *struct {
+	// linked: listed from a checkout that is itself a linked worktree, which
+	// sees every worktree of the repo it shares, measured against its own branch.
+	linked bool
+	Agent  *struct {
 		ID     string `json:"id"`
 		Label  string `json:"label"`
 		Status string `json:"status"`
@@ -319,14 +322,15 @@ func ListWorktrees(root string) []ListedWorktree {
 		if err1 != nil || err2 != nil {
 			continue
 		}
+		blocks := regexp.MustCompile(`\n\n+`).Split(porcelain, -1)
+		linked := strings.TrimPrefix(strings.SplitN(blocks[0], "\n", 2)[0], "worktree ") != repo
 		if main := DefaultBranch(repo); main != "" && base != main && base != "HEAD" {
 			if ahead := count(repo, "rev-list", "--count", main+".."+base); ahead > 0 {
 				head, _ := tryGit(repo, "rev-parse", "--short", "HEAD")
 				status, _ := tryGit(repo, "status", "--porcelain", "--untracked-files=no")
-				out = append(out, ListedWorktree{Project: project.Name, Repo: repo, Path: repo, Branch: base, Head: head, Base: main, Ahead: ahead, Dirty: status != "", Checkout: true})
+				out = append(out, ListedWorktree{Project: project.Name, Repo: repo, Path: repo, Branch: base, Head: head, Base: main, Ahead: ahead, Dirty: status != "", Checkout: true, linked: linked})
 			}
 		}
-		blocks := regexp.MustCompile(`\n\n+`).Split(porcelain, -1)
 		for _, block := range blocks[1:] {
 			field := func(name string) string {
 				for _, line := range strings.Split(block, "\n") {
@@ -353,7 +357,7 @@ func ListWorktrees(root string) []ListedWorktree {
 				dirty = status != ""
 			}
 			head := field("HEAD")
-			out = append(out, ListedWorktree{Project: project.Name, Repo: repo, Path: path, Branch: branch, Head: head[:min(len(head), 7)], Base: base, Ahead: ahead, Dirty: dirty, Missing: missing, Merged: landed})
+			out = append(out, ListedWorktree{Project: project.Name, Repo: repo, Path: path, Branch: branch, Head: head[:min(len(head), 7)], Base: base, Ahead: ahead, Dirty: dirty, Missing: missing, Merged: landed, linked: linked})
 		}
 	}
 	return out

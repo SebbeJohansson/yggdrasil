@@ -1203,7 +1203,7 @@ func (m *Manager) Worktrees() []ListedWorktree {
 		}
 	}
 	m.mu.Unlock()
-	list := ListWorktrees(m.roots[0])
+	list := onePerPath(ListWorktrees(m.roots[0]), owners)
 	for i := range list {
 		if owner := owners[list[i].Path]; owner != nil {
 			list[i].Agent = &struct {
@@ -1214,6 +1214,35 @@ func (m *Manager) Worktrees() []ListedWorktree {
 		}
 	}
 	return list
+}
+
+// onePerPath keeps one entry per worktree path. Every checkout of a repo
+// lists all of its worktrees, each measured against its own branch, so one
+// path can come back several times with different bases. The one kept is
+// from the repo its agent was started in, else from the repo's main
+// checkout, else the first.
+func onePerPath(list []ListedWorktree, owners map[string]*Agent) []ListedWorktree {
+	better := func(a, b ListedWorktree) bool {
+		if owner := owners[a.Path]; owner != nil {
+			if mine, theirs := a.Repo == owner.Worktree.Repo, b.Repo == owner.Worktree.Repo; mine != theirs {
+				return mine
+			}
+		}
+		return !a.linked && b.linked
+	}
+	at := map[string]int{}
+	out := []ListedWorktree{}
+	for _, w := range list {
+		if i, seen := at[w.Path]; seen {
+			if better(w, out[i]) {
+				out[i] = w
+			}
+			continue
+		}
+		at[w.Path] = len(out)
+		out = append(out, w)
+	}
+	return out
 }
 
 // OnUnowned reviews, merges, removes, publishes or moves a worktree no agent owns.
