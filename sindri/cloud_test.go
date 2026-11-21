@@ -196,3 +196,16 @@ func TestClaudeCloudStartsWithoutHerdr(t *testing.T) {
 		t.Fatalf("started %+v, %v", started, err)
 	}
 }
+
+func TestClaudeCloudStartsHereWhenHerdrIsNotRunning(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'View: https://claude.ai/code/session_down1'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cli := &ClaudeCloud{Bin: bin, Herdr: &Herdr{Socket: filepath.Join(dir, "no-herdr.sock")}}
+	started, err := cli.Start(context.Background(), dir, "Fix it")
+	if err != nil || started.ID != "session_down1" {
+		t.Fatalf("started %+v, %v", started, err)
+	}
+}

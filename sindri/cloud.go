@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -250,12 +251,38 @@ func (c *ClaudeCloud) Start(ctx context.Context, cwd, task string) (CloudStarted
 		return CloudStarted{}, err
 	}
 	if c.Herdr != nil {
-		return c.startInHerdr(ctx, cwd, task)
+		started, err := c.startInHerdr(ctx, cwd, task)
+		var down *HerdrDown
+		if !errors.As(err, &down) {
+			return started, err
+		}
+		// herdr is set up but not running: run it here, with no terminal.
 	}
+	return c.startHere(ctx, cwd, task)
+}
+
+// startHere runs `claude --cloud` here and reads its output. The CLI refuses
+// --cloud without a terminal, so it gets one from util-linux's `script`
+// (-e: its exit status, -f: output as it comes); it prints the session's link
+// and exits by itself.
+func (c *ClaudeCloud) startHere(ctx context.Context, cwd, task string) (CloudStarted, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.wait())
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.Bin, "--cloud", task)
+	var cmd *exec.Cmd
+	if script, err := exec.LookPath("script"); err == nil {
+		cmd = exec.CommandContext(ctx, script, "-qfec", shellQuote(c.Bin)+" --cloud "+shellQuote(task), "/dev/null")
+	} else {
+		cmd = exec.CommandContext(ctx, c.Bin, "--cloud", task)
+	}
 	cmd.Dir = cwd
+	// An open stdin: `script` ends when its input does.
+	stdin, hold, err := os.Pipe()
+	if err != nil {
+		return CloudStarted{}, err
+	}
+	defer stdin.Close()
+	defer hold.Close()
+	cmd.Stdin = stdin
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return CloudStarted{}, err
@@ -283,6 +310,10 @@ func (c *ClaudeCloud) Start(ctx context.Context, cwd, task string) (CloudStarted
 func (c *ClaudeCloud) startInHerdr(ctx context.Context, cwd, task string) (CloudStarted, error) {
 	agent, err := c.Herdr.Start(ctx, HerdrStart{Kind: "claude", Cwd: cwd, Name: "cloud " + HerdrAgentName(cwd), Args: []string{"--cloud", task}})
 	if err != nil {
+		var down *HerdrDown
+		if errors.As(err, &down) {
+			return CloudStarted{}, err // the caller runs it here instead
+		}
 		return CloudStarted{}, herdrHTTPError(err)
 	}
 	deadline := time.Now().Add(c.wait())
@@ -347,6 +378,11 @@ func (c *ClaudeCloud) Teleport(ctx context.Context, cwd, id string) (HerdrAgent,
 		return HerdrAgent{}, httpErr(503, "herdr is off here, and --teleport needs a terminal: run `claude --teleport %s` in %s", id, cwd)
 	}
 	agent, err := c.Herdr.Start(ctx, HerdrStart{Kind: "claude", Cwd: cwd, Args: []string{"--teleport", id}})
+	var down *HerdrDown
+	if errors.As(err, &down) {
+		return HerdrAgent{}, &HTTPError{Status: 503, Code: "not_running",
+			Message: fmt.Sprintf("herdr is not running, and --teleport needs a terminal: run `claude --teleport %s` in %s", id, cwd)}
+	}
 	if err != nil {
 		return HerdrAgent{}, herdrHTTPError(err)
 	}
