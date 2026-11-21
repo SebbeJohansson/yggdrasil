@@ -58,7 +58,7 @@ part_token() {
 gjallar_token() {
 	part_token gjallar "$1"
 }
-for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki heimdall; do
+for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki heimdall phone; do
 	gjallar_token "$part" >/dev/null
 done
 
@@ -232,6 +232,22 @@ ensure loki.env HEIMDALL_TOKEN "$(part_token heimdall loki)"
 ensure huginn.env LOKI_TOKEN "$(part_token loki huginn)"
 ensure huginn.env DELLINGR_TOKEN "$(part_token dellingr huginn)"
 
+# Sága syncs alerts with your phone through Mímir, the event log on your VPS
+# (github.com/SebbeJohansson/mimir). It runs on the host, so it can reach the
+# VPS by its tailnet name. It reads and acts on alerts as you, and raises the
+# phone's alerts as `phone`, a sender Gjallar never pushes (GJALLAR_QUIET).
+# Restart Gjallar after the phone's token is added there.
+write saga.env <<EOF
+SAGA_TOKENS=owner=$owner
+GJALLAR_OWNER_TOKEN=$owner
+SAGA_GJALLAR_TOKENS=phone=$(gjallar_token phone)
+SAGA_DEVICE=desktop
+# Mímir on your VPS, and this machine's token there (Mímir's deploy/install.sh prints both). Empty is off.
+MIMIR_URL=
+MIMIR_TOKEN=
+YGG_CORS_ORIGINS=$origins
+EOF
+
 write parts.env <<'EOF'
 # Where every part lives, read by every part. Leave a line commented to use
 # the built-in part on its default port. To replace a part with your own
@@ -248,6 +264,7 @@ write parts.env <<'EOF'
 #YGG_HERMODR_URL=http://127.0.0.1:8779
 #YGG_LOKI_URL=http://127.0.0.1:8780
 #YGG_HEIMDALL_URL=http://127.0.0.1:8781
+#YGG_SAGA_URL=http://127.0.0.1:8782
 
 # Your working day, Monday to Friday: Ratatoskr's rhythm and Norn's gap read it.
 #WORK_HOURS=09:00-17:00
@@ -268,6 +285,9 @@ fi
 if ! grep -q '^RATATOSKR_WATCH=.*heimdall' "$config/parts.env"; then
 	echo "  Note: add heimdall to RATATOSKR_WATCH in $config/parts.env"
 fi
+if ! grep -q '^RATATOSKR_WATCH=.*saga' "$config/parts.env"; then
+	echo "  Note: once Sága is set up (MIMIR_URL in saga.env), add saga to RATATOSKR_WATCH in $config/parts.env"
+fi
 
 umask 022
 mkdir -p profile data
@@ -282,8 +302,8 @@ for unit in deploy/systemd/*.service; do
 	install -m 0644 "$unit" "$HOME/.config/systemd/user/"
 done
 systemctl --user daemon-reload
-systemctl --user enable ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service
-systemctl --user restart ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service
+systemctl --user enable ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service ygg-saga.service
+systemctl --user restart ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service ygg-saga.service
 
 echo
 echo "Done. Your owner token (for the widget and curl) is in $config/owner.token."

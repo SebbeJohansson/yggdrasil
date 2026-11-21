@@ -11,6 +11,7 @@
 //     snooze and mute.
 //   - info shows on the dashboard, warning adds a widget badge, critical a
 //     widget toast and a phone push (ntfy), at most once per alert per 15 min.
+//     Quiet sources (another device's alerts, mirrored by Sága) are never pushed.
 //   - Gjallar never acts on an alert.
 //
 // Routes (all but /health need a token):
@@ -70,6 +71,9 @@ type Gjallar struct {
 	Heartbeats map[string]time.Duration
 	// LimitedSources may send info and warning only (Glim).
 	LimitedSources map[string]bool
+	// QuietSources are never pushed: another device's alerts, mirrored here
+	// by Sága. That device has already told you.
+	QuietSources map[string]bool
 	// DashboardURL makes the phone push open the alert.
 	DashboardURL string
 
@@ -80,7 +84,7 @@ type Gjallar struct {
 
 // New makes a Gjallar over the store.
 func New(store *Store, push tell.Teller) *Gjallar {
-	return &Gjallar{Store: store, Push: push, Heartbeats: map[string]time.Duration{}, LimitedSources: map[string]bool{}, started: time.Now(), now: time.Now}
+	return &Gjallar{Store: store, Push: push, Heartbeats: map[string]time.Duration{}, LimitedSources: map[string]bool{}, QuietSources: map[string]bool{}, started: time.Now(), now: time.Now}
 }
 
 // Mount adds Gjallar's routes and loops to the part.
@@ -172,7 +176,7 @@ func (g *Gjallar) Raise(ctx context.Context, raise alert.Raise) error {
 // opened again or escalated, unless it is muted, snoozed or pushed recently.
 func (g *Gjallar) changed(ctx context.Context, a Alert, change Change) {
 	g.hub.publish(a)
-	if change == Updated || a.Severity != alert.Critical || a.Muted || g.Push == nil || !g.Push.On() {
+	if change == Updated || a.Severity != alert.Critical || a.Muted || g.QuietSources[a.Source] || g.Push == nil || !g.Push.On() {
 		return
 	}
 	now := g.now()

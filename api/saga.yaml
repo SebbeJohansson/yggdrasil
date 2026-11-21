@@ -1,0 +1,119 @@
+openapi: 3.1.0
+info:
+  title: Sága
+  version: "1"
+  description: |
+    Keeps the story the same on every device. Sága syncs this machine's
+    Gjallar alerts with the other devices (the phone) through Mímir, the event
+    log on the VPS (github.com/SebbeJohansson/mimir; its docs/events.md says
+    what each event means). Any program that serves this contract and passes
+    `ygg check saga <url>` can replace the built-in one
+    (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - Send each of this machine's alerts to Mímir as `gjallar.alert` whenever
+      anything about it changes, but not each time it is only seen again.
+    - Keep another device's alerts in Gjallar as mirrors: raised with a
+      Gjallar sender token named after the device, keyed `<source>/<key>`,
+      and resolved, acknowledged, snoozed and muted as the device says.
+      Gjallar never pushes them (GJALLAR_QUIET).
+    - Acknowledging, snoozing or muting a mirror in Gjallar asks the device
+      that owns it to do the same (`gjallar.alert.ack|snooze|mute`), once
+      until it answers. Never act on a mirror's device's behalf otherwise.
+    - Do what other devices ask of this machine's alerts in Gjallar, as the
+      owner. A snooze is at most 30 days; a resolved alert is left alone.
+    - Write each event to its own outbox first and keep it until Mímir has
+      it, so nothing is lost while Mímir or this machine is down.
+    - Talk to Gjallar over its API only.
+servers:
+  - url: http://127.0.0.1:8782
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when the sync loop last ran (every 30 s).
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/status:
+    get:
+      summary: How syncing goes.
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/sync:
+    post:
+      summary: Sync now, and say how it went. Owner only.
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Only the owner may do this.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Status:
+      description: How syncing goes.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [device, mimirUrl, read, waiting, mirrors]
+            properties:
+              device: { type: string, description: This machine's name at Mímir. }
+              mimirUrl: { type: string }
+              lastSyncAt: { type: string, format: date-time }
+              lastError: { type: string, description: Why the last sync failed; absent when it worked. }
+              read: { type: integer, description: The last Mímir position applied. }
+              waiting: { type: integer, description: Events not yet taken by Mímir. }
+              mirrors: { type: integer, description: Other devices' alerts not resolved. }
+  schemas:
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }

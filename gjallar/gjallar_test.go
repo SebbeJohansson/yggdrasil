@@ -13,6 +13,7 @@ import (
 
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/part"
+	"yggdrasil/internal/tell"
 )
 
 const (
@@ -318,5 +319,39 @@ func TestHealedListsEveryHealingOldestFirst(t *testing.T) {
 	}
 	if status, _ := f.call("GET", "/v1/alerts/healed?limit=0", ownerToken, nil); status != http.StatusBadRequest {
 		t.Fatalf("limit 0: status %d", status)
+	}
+}
+
+type recordingTeller struct{ told chan string }
+
+func (r recordingTeller) On() bool { return true }
+func (r recordingTeller) Tell(_ context.Context, m tell.Message) error {
+	r.told <- m.Title
+	return nil
+}
+
+func TestQuietSourcesAreNeverPushed(t *testing.T) {
+	f := newFixture(t)
+	teller := recordingTeller{told: make(chan string, 4)}
+	f.g.Push = teller
+	f.g.QuietSources["munin"] = true // as if munin were another device's mirror
+	if status, _ := f.call("POST", "/v1/alerts", muninToken, alert.Raise{Key: "k", Severity: alert.Critical, Title: "mirrored"}); status != http.StatusCreated {
+		t.Fatalf("raise: %d", status)
+	}
+	if status, _ := f.call("POST", "/v1/alerts", ratToken, alert.Raise{Key: "k", Severity: alert.Critical, Title: "local"}); status != http.StatusCreated {
+		t.Fatalf("raise: %d", status)
+	}
+	select {
+	case title := <-teller.told:
+		if title != "local" {
+			t.Fatalf("pushed %q, a quiet source", title)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the loud source was not pushed")
+	}
+	select {
+	case title := <-teller.told:
+		t.Fatalf("pushed %q as well", title)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
