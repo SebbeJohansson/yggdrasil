@@ -17,6 +17,7 @@ Why one process per part: [docs/architecture.md](docs/architecture.md).
 | **Hermóðr** | carries every message for you to the widget and your phone | 8779 | container |
 | **Loki** | tests the watchers: finds blind spots, and tricks a part for a few minutes to see who notices | 8780 | container |
 | **Heimdall** | the security watchman: vulnerable packages, ports open beyond loopback, keys in commits, loose token files | 8781 | host unit |
+| **Sága** | keeps the story the same on every device: syncs alerts with your phone through Mímir | 8782 | host unit |
 
 None of the watching parts fixes anything. Huginn only tells you things;
 Dellingr acts only as far as you set a job up to. Everything listens on 127.0.0.1 only.
@@ -162,6 +163,39 @@ Ratatoskr reads it. Everything else needs `Authorization: Bearer <token>`.
 How loud: `info` shows on the dashboard, `warning` adds a widget badge,
 `critical` adds a widget toast and an urgent message through Hermóðr (straight
 to ntfy when Hermóðr can't take it), at most once per alert every 15 minutes.
+Senders in `GJALLAR_QUIET` (default `phone`) are never pushed: they are
+another device's alerts, mirrored by Sága, and that device already told you.
+
+### Sága
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/status` | anyone | `{ device, mimirUrl, lastSyncAt, lastError, read, waiting, mirrors }`: how syncing goes |
+| `POST /v1/sync` | owner | sync now, and the status after |
+
+Sága keeps the desktop's and the phone's alerts in step through
+[Mímir](https://github.com/SebbeJohansson/mimir), a small event log on your
+VPS, reached over Tailscale. Either device can be off; the other's side
+waits in Mímir until it starts. What each event means is in Mímir's
+`docs/events.md`.
+
+- **Desktop alerts to the phone:** each time something about one changes
+  (opened, acknowledged, snoozed, muted, resolved), not each time a part
+  raises it again.
+- **Phone alerts here:** as mirrors in Gjallar, source `phone`, key
+  `<source>/<key>` (`vedrfolnir/battery-low`). The widget lists them with the
+  rest. They are never pushed.
+- **Acknowledging, snoozing or muting a mirror** asks the phone to do the
+  same; it does, and the mirror follows. What the phone asks of a desktop
+  alert, Sága does in Gjallar for you.
+- Every event goes to Sága's outbox first and stays until Mímir has it, so
+  nothing is lost while the VPS or this machine is down.
+
+Set up: run Mímir on the VPS (its `deploy/install.sh` prints a token per
+device and the URL), put `MIMIR_URL` and `MIMIR_TOKEN` in `saga.env`,
+restart Gjallar (it gets the phone's token) and `systemctl --user restart
+ygg-saga`, then add `saga` to `RATATOSKR_WATCH`. Until `MIMIR_URL` is set,
+Sága waits and says so in `/v1/status`.
 
 ### Ratatoskr
 

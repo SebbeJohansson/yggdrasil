@@ -31,6 +31,7 @@ import (
 	"yggdrasil/munin"
 	"yggdrasil/norn"
 	"yggdrasil/ratatoskr"
+	"yggdrasil/saga"
 	"yggdrasil/sindri"
 	"yggdrasil/vedrfolnir"
 )
@@ -50,6 +51,7 @@ var parts = map[string]struct {
 	"hermodr":    {"carries every message for you to the widget and your phone", hermodr.Main},
 	"loki":       {"tests the watchers: blind spots, and short tricks to see who notices", loki.Main},
 	"heimdall":   {"the security watchman: vulnerable packages, open ports, leaked keys, loose files", heimdall.Main},
+	"saga":       {"keeps the story the same on every device: syncs alerts with the phone through Mímir", saga.Main},
 }
 
 func usage() {
