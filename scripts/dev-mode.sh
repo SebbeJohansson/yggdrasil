@@ -8,16 +8,19 @@
 #
 # Dev mode is two halves: the dev container (Norn, Gjallar, Munin, Huginn,
 # Dellingr, Hermóðr, Loki) and
-# ygg-dev.service (Sindri, Veðrfölnir, Ratatoskr, Heimdall, which need the host).
+# ygg-dev.service (Sindri, Veðrfölnir, Ratatoskr, Heimdall, Sága, which need the host).
 set -eu
 cd "$(dirname "$0")/.."
-host_units="ygg-sindri.service ygg-vedrfolnir.service ygg-ratatoskr.service ygg-heimdall.service"
+host_units="ygg-sindri.service ygg-vedrfolnir.service ygg-ratatoskr.service ygg-heimdall.service ygg-saga.service"
 
 case "${1:-}" in
 on)
 	install -m 0644 deploy/systemd/ygg-dev.service "$HOME/.config/systemd/user/"
 	systemctl --user daemon-reload
-	systemctl --user disable --now $host_units
+	# Only the units installed here: a part not set up yet (no unit file) is skipped.
+	for unit in $host_units; do
+		if [ -f "$HOME/.config/systemd/user/$unit" ]; then systemctl --user disable --now "$unit"; fi
+	done
 	systemctl --user enable --now ygg-dev.service
 	docker compose stop norn gjallar munin huginn dellingr hermodr loki >/dev/null 2>&1 || true
 	docker compose --profile dev up -d --build dev

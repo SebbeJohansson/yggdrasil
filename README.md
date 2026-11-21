@@ -886,7 +886,7 @@ checks and keeps what they find.
 | --- | --- | --- |
 | `GET /v1/report` | anyone | `?state=active\|resolved` → `{ checkedAt, running, findings: [{ id, check, severity: low\|medium\|high, title, detail, where?, fix?, repo?, firstSeen, lastSeen, resolvedAt?, critical?, commit? }], checks: [{ name, ok, lastRun, error?, skipped? }] }`, high first |
 | `POST /v1/report/run` | owner | `202 { running: true }`: run every check now, in the background |
-| `GET`, `PATCH /v1/settings` | owner changes it | `{ at, repos, tokenAgeDays }`: 03:00, `HEIMDALL_REPOS` (else `~/projects/yggdrasil` and `~/projects/my-widget`), 180; kept in `HEIMDALL_STATE` |
+| `GET`, `PATCH /v1/settings` | owner changes it | `{ at, repos, tokenAgeDays }`: 03:00, `HEIMDALL_REPOS` (else `~/projects/yggdrasil/yggdrasil-desktop`, `~/projects/yggdrasil/mimir` and `~/projects/my-widget`), 180; kept in `HEIMDALL_STATE` |
 
 | Check | What it looks at | Severity |
 | --- | --- | --- |
@@ -924,9 +924,9 @@ repos with their real history and git, and the real modes of the files in
 | Setting (`heimdall.env`) | Default | What it does |
 | --- | --- | --- |
 | `HEIMDALL_TOKENS` | | `owner=…` |
-| `HEIMDALL_REPOS` | `~/projects/yggdrasil,~/projects/my-widget` | the repos, until `PATCH /v1/settings` sets them |
+| `HEIMDALL_REPOS` | `~/projects/yggdrasil/yggdrasil-desktop,~/projects/yggdrasil/mimir,~/projects/my-widget` | the repos, until `PATCH /v1/settings` sets them |
 | `HEIMDALL_SINDRI_REPOS` | `off` | `on` also reads every repo Sindri knows (needs `SINDRI_TOKEN`) |
-| `HEIMDALL_FILES` | none | more files to check the mode and age of, as globs (`~/projects/yggdrasil/data/*.json` for Norn's sign-ins) |
+| `HEIMDALL_FILES` | none | more files to check the mode and age of, as globs (`~/projects/yggdrasil/yggdrasil-desktop/data/*.json` for Norn's sign-ins) |
 | `HEIMDALL_STATE` | `~/.local/state/yggdrasil/heimdall.json` | settings, findings, what each repo was read up to, the alerts raised |
 | `HEIMDALL_OSV_URL` | `https://api.osv.dev` | osv.dev's API |
 | `GJALLAR_TOKEN`, `NORN_TOKEN`, `SINDRI_TOKEN` | | Heimdall's token at each (`scripts/install.sh` gives them); without `NORN_TOKEN` the scopes check is skipped |

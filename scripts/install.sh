@@ -204,7 +204,7 @@ GJALLAR_TOKEN=$(gjallar_token heimdall)
 NORN_TOKEN=$(part_token norn heimdall)
 SINDRI_TOKEN=$(part_token sindri heimdall)
 TIME_ZONE=Europe/Stockholm
-# The repos to check, comma separated; Sindri's projects are added. Empty: ~/projects/yggdrasil and ~/projects/my-widget.
+# The repos to check, comma separated; Sindri's projects are added. Empty: ~/projects/yggdrasil/yggdrasil-desktop, ~/projects/yggdrasil/mimir and ~/projects/my-widget.
 HEIMDALL_REPOS=
 YGG_CORS_ORIGINS=$origins
 EOF

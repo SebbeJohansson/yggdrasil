@@ -8,6 +8,10 @@
 #
 # Host networking, so 127.0.0.1 in here is 127.0.0.1 on this machine: the
 # parts listen on loopback only and reach each other there.
+# The project keeps its name from before the checkout moved into
+# yggdrasil/yggdrasil-desktop, so compose finds the containers it already runs.
+name: yggdrasil
+
 x-part: &part
   build: .
   image: yggdrasil
@@ -177,8 +181,8 @@ services:
   # running while Norn runs from source.
   languagetool:
     profiles: [languagetool]
-    # Built from the official release zip (../pennvass/docker/languagetool).
-    build: ../pennvass/docker/languagetool
+    # Built from the official release zip (~/projects/pennvass/docker/languagetool).
+    build: ../../pennvass/docker/languagetool
     image: pennvass-languagetool
     restart: unless-stopped
     ports:
@@ -200,7 +204,7 @@ services:
     restart: unless-stopped
     network_mode: host
     user: "1000:1000"
-    working_dir: ${HOME}/projects/yggdrasil
+    working_dir: ${HOME}/projects/yggdrasil/yggdrasil-desktop
     command: ["scripts/dev.sh", "norn", "gjallar", "munin", "huginn", "dellingr", "hermodr", "loki"]
     environment:
       HOME: ${HOME}
@@ -213,7 +217,7 @@ services:
       OBSIDIAN_VAULT: ${OBSIDIAN_VAULT_DIR:+/vault}
       OBSIDIAN_VAULT_NAME: ${OBSIDIAN_VAULT_NAME:-}
     volumes:
-      - .:${HOME}/projects/yggdrasil
+      - .:${HOME}/projects/yggdrasil/yggdrasil-desktop
       - ${OBSIDIAN_VAULT_DIR:-./data/no-vault}:/vault
       - ${HOME}/.config/yggdrasil:${HOME}/.config/yggdrasil:ro
       - ${HOME}/go/pkg/mod:/gomod
