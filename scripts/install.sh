@@ -247,6 +247,12 @@ MIMIR_URL=
 MIMIR_TOKEN=
 YGG_CORS_ORIGINS=$origins
 EOF
+# Sága also shares this machine's coding sessions (Sindri's) with your other
+# devices, and carries out what the devices in SAGA_DRIVE_FROM ask of them:
+# type a prompt, answer a dialog, start or follow up a cloud session. Empty
+# SAGA_DRIVE_FROM is look only. Restart Sindri after its token is added.
+ensure saga.env SINDRI_TOKEN "$(part_token sindri saga)"
+ensure saga.env SAGA_DRIVE_FROM "phone"
 
 write parts.env <<'EOF'
 # Where every part lives, read by every part. Leave a line commented to use

@@ -40,6 +40,7 @@ import (
 	"unicode/utf8"
 
 	"yggdrasil/internal/alert"
+	"yggdrasil/internal/call"
 	"yggdrasil/internal/part"
 )
 
@@ -114,9 +115,16 @@ type Saga struct {
 	Gjallar *Gjallar
 	// Device is this machine's name at Mímir ("desktop").
 	Device string
+	// Sindri is this machine's Sindri, whose sessions go to Mímir (sessions.go); off leaves sessions out.
+	Sindri *call.Part
+	// DriveFrom is the devices whose requests to this machine's sessions are carried out.
+	DriveFrom []string
 
 	now func() time.Time
 	mu  sync.Mutex // one sync at a time
+	// runMu: one round of requests at a time.
+	runMu  sync.Mutex
+	nudges chan struct{}
 
 	statusMu   sync.Mutex
 	lastSyncAt time.Time
@@ -125,18 +133,36 @@ type Saga struct {
 
 // New makes a Sága.
 func New(store *Store, mimir *Mimir, gjallar *Gjallar, device string) *Saga {
-	return &Saga{Store: store, Mimir: mimir, Gjallar: gjallar, Device: device, now: time.Now}
+	return &Saga{Store: store, Mimir: mimir, Gjallar: gjallar, Device: device, now: time.Now, nudges: make(chan struct{}, 1)}
 }
+
+// nudge asks for a sync soon.
+func (s *Saga) nudge() {
+	select {
+	case s.nudges <- struct{}{}:
+	default:
+	}
+}
+
+// on says whether Gjallar is set up here. A laptop that only shares its
+// coding sessions runs Sága without it.
+func (g *Gjallar) on() bool { return g != nil && g.Owner.On() }
 
 // Mount adds the routes and the sync loop.
 func (s *Saga) Mount(p *part.Part) {
 	p.Handle("GET /v1/status", s.status)
 	p.Handle("POST /v1/sync", s.syncNow)
+	p.Handle("GET /v1/sessions", s.sessionsView)
+	p.Handle("POST /v1/sessions/{device}/requests", s.ask)
 	p.Loop("sync", 30*time.Second, s.Sync)
+	p.Loop("requests", 10*time.Second, s.RunRequests)
 }
 
 // isMirror says whether an alert in Gjallar is another device's.
 func (s *Saga) isMirror(a gAlert) bool {
+	if s.Gjallar == nil {
+		return false
+	}
 	_, ok := s.Gjallar.Devices[a.Source]
 	return ok
 }
@@ -166,13 +192,20 @@ func (s *Saga) sync(ctx context.Context) error {
 	}
 	// Read first, so a mirror is current before a difference from it counts as yours.
 	readErr := s.pull(ctx)
-	if err := s.scan(ctx); err != nil {
-		return err
+	if s.Gjallar.on() {
+		if err := s.scan(ctx); err != nil {
+			return err
+		}
 	}
+	// Sessions not read (Sindri down) don't hold up the alerts.
+	sessionsErr := s.scanSessions(ctx)
 	if err := s.push(ctx); err != nil {
 		return err
 	}
-	return readErr
+	if readErr != nil {
+		return readErr
+	}
+	return sessionsErr
 }
 
 // startCount picks up this device's numbering from Mímir the first time, so
@@ -227,6 +260,12 @@ func (s *Saga) pull(ctx context.Context) error {
 // apply acts on a page of events. Only each alert's newest state in the page
 // counts. It is safe to run again: a failure leaves the mark where it was.
 func (s *Saga) apply(ctx context.Context, events []Event) error {
+	if err := s.applySessions(ctx, events); err != nil {
+		return err
+	}
+	if !s.Gjallar.on() {
+		return nil
+	}
 	type id struct{ device, source, key string }
 	newest := map[id]AlertState{}
 	var order []id
@@ -513,6 +552,10 @@ type Status struct {
 	Read       int64      `json:"read"`
 	Waiting    int        `json:"waiting"`
 	Mirrors    int        `json:"mirrors"`
+	// Alerts and Sessions say what this machine syncs: Gjallar's alerts, Sindri's sessions.
+	Alerts    bool     `json:"alerts"`
+	Sessions  bool     `json:"sessions"`
+	DriveFrom []string `json:"driveFrom"`
 }
 
 func (s *Saga) currentStatus(ctx context.Context) (Status, error) {
@@ -524,6 +567,12 @@ func (s *Saga) currentStatus(ctx context.Context) (Status, error) {
 	}
 	status.LastError = s.lastError
 	s.statusMu.Unlock()
+	status.Alerts = s.Gjallar.on()
+	status.Sessions = s.Sindri.On()
+	status.DriveFrom = s.DriveFrom
+	if status.DriveFrom == nil {
+		status.DriveFrom = []string{}
+	}
 	if !s.Mimir.on() {
 		// Not an error on /health: Sága simply waits to be set up.
 		status.LastError = "Mímir is not set up: set MIMIR_URL and MIMIR_TOKEN in saga.env"

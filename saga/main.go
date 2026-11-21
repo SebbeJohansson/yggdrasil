@@ -28,6 +28,12 @@ import (
 //	GJALLAR_OWNER_TOKEN  your owner token at Gjallar: Sága reads alerts and acts on them for you
 //	SAGA_GJALLAR_TOKENS  a Gjallar sender token per other device, named after it: phone=…
 //	YGG_GJALLAR_URL      where Gjallar is
+//	SINDRI_TOKEN         Sága's token at Sindri: this machine's coding sessions go to Mímir. Empty leaves them out
+//	SAGA_DRIVE_FROM      the devices whose requests to this machine's sessions are carried out (desktop,phone). Empty: look only
+//	YGG_SINDRI_URL       where Sindri is
+//
+// Without GJALLAR_OWNER_TOKEN Sága syncs no alerts: a laptop that only shares
+// its coding sessions runs Sindri and Sága, and nothing else.
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("SAGA_TOKENS")
 	if err != nil {
@@ -68,21 +74,23 @@ func Main(ctx context.Context) error {
 		HTTP:  &http.Client{Timeout: 20 * time.Second},
 	}
 	s := New(store, mimir, g, env.String("SAGA_DEVICE", "desktop"))
+	// Cloud starts wait for the CLI to print the session's link (up to 90 s).
+	s.Sindri = call.New("sindri", where.URL("sindri"), env.String("SINDRI_TOKEN", ""), 2*time.Minute)
+	s.DriveFrom = env.List("SAGA_DRIVE_FROM")
+	if !g.on() && !s.Sindri.On() {
+		return fmt.Errorf("Sága has nothing to sync: set GJALLAR_OWNER_TOKEN (alerts), SINDRI_TOKEN (coding sessions), or both")
+	}
 
 	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))
 	s.Mount(p)
 
 	// Sync soon after anything changes, at either end: the loop is the floor.
-	nudges := make(chan struct{}, 1)
-	nudge := func(sse.Event) {
-		select {
-		case nudges <- struct{}{}:
-		default:
-		}
-	}
-	go s.Nudge(ctx, nudges)
+	nudge := func(sse.Event) { s.nudge() }
+	go s.Nudge(ctx, s.nudges)
 	started := time.Now()
-	go sse.New("gjallar", gjallarURL+"/v1/alerts/stream", g.Owner.Token, started).Follow(ctx, nudge)
+	if g.on() {
+		go sse.New("gjallar", gjallarURL+"/v1/alerts/stream", g.Owner.Token, started).Follow(ctx, nudge)
+	}
 	if mimir.on() {
 		mark, _, err := store.Mark(ctx, "read")
 		if err != nil {

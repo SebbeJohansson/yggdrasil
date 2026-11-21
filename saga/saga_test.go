@@ -39,7 +39,7 @@ func (m *fakeMimir) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "down", http.StatusServiceUnavailable)
 		return
 	}
-	device := map[string]string{"Bearer desktop-mimir": "desktop"}[r.Header.Get("Authorization")]
+	device := map[string]string{"Bearer desktop-mimir": "desktop", "Bearer laptop-mimir": "laptop"}[r.Header.Get("Authorization")]
 	if device == "" {
 		http.Error(w, "no", http.StatusUnauthorized)
 		return

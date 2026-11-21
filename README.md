@@ -197,6 +197,34 @@ restart Gjallar (it gets the phone's token) and `systemctl --user restart
 ygg-saga`, then add `saga` to `RATATOSKR_WATCH`. Until `MIMIR_URL` is set,
 Sága waits and says so in `/v1/status`.
 
+#### Sága: coding sessions on every device
+
+With `SINDRI_TOKEN` in `saga.env`, Sága also sends this machine's coding
+sessions (Claude Code's, herdr's panes, the cloud sessions Sindri started,
+and the projects to start one in) to Mímir as `sindri.sessions`, when they
+change and at least every 5 minutes, and keeps every other device's.
+Claude's last words go along, cut to 600 characters.
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/sessions` | anyone | `{ device, devices, asked }`: each other device's sessions with when it was last heard from and whether it takes this machine's requests (`drivable`), and what you asked in the last day (`waiting`, `done`, `failed`) |
+| `POST /v1/sessions/{device}/requests` | owner | `{ kind, … }`: ask a thing of another device's session. `session.prompt` (session, text) and `session.choose` (session, question, key, label) need the session in a herdr pane there; `session.resume` (session, cwd); `cloud.start` (cwd, task), `cloud.message` (session, text), `cloud.teleport` (session) |
+
+Only the device that owns a session carries a request out, through its own
+Sindri, and only for the devices in its `SAGA_DRIVE_FROM` (empty: look
+only). A request older than 30 minutes when it gets there is answered as not
+done. A session outside herdr can't be typed into from elsewhere: turn on
+Remote Control there (`/config`, *Enable Remote Control for all sessions*)
+and its `bridgeSessionId` opens it in the Claude app.
+
+**Another laptop.** It runs only Sindri and Sága, with no Gjallar:
+
+1. Add the laptop to Mímir's `MIMIR_TOKENS` on the VPS (`laptop=<48 random characters>`) and restart Mímir.
+2. On the laptop, build and install `ygg` (`scripts/go build -o ~/.local/bin/ygg ./cmd/ygg`) and the two units from `deploy/systemd` (`ygg-sindri`, `ygg-saga`).
+3. `~/.config/yggdrasil/sindri.env`: `SINDRI_TOKENS=owner=<token>,saga=<token>`.
+4. `~/.config/yggdrasil/saga.env`: `SAGA_TOKENS=owner=<token>`, `SAGA_DEVICE=laptop`, `SINDRI_TOKEN=<the saga token>`, `MIMIR_URL`, `MIMIR_TOKEN=<the laptop's>`, and `SAGA_DRIVE_FROM=desktop,phone` to let them type into its sessions.
+5. `systemctl --user enable --now ygg-sindri ygg-saga`.
+
 ### Ratatoskr
 
 | Route | What it does |
@@ -313,6 +341,22 @@ answers or when Norn is out of reach. Once a kind has `minPicks` picks with
 a winner, a draft goal of that kind that does not race shows the conduit
 that wins it most (`suggestion`; none on a tie). It only suggests: you
 choose with `PUT /v1/goals/{id}/conduit`.
+
+### Sindri: cloud sessions
+
+Claude Code on the web, started and followed through the real `claude` CLI
+on this machine, signed in as you. Anthropic has no API that lists cloud
+sessions, so Sindri lists only the ones it started.
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `GET /v1/cloud` | anyone | `{ sessions }`: the cloud sessions started here, newest first, each with its `url` (opens in the Claude app too) |
+| `POST /v1/cloud` | owner, Sága | `{ cwd, task }`: `claude --cloud "<task>"` in the repo, in a herdr pane while herdr is on, read until the CLI prints the session's link (`SINDRI_CLOUD_START_WAIT`, 90 s). The cloud session works on the repo's GitHub remote at its current branch |
+| `POST /v1/cloud/{id}/message` | owner, Sága | `{ text }`: `claude -p "<text>" --cloud <id> --output-format json` queues a follow-up |
+| `POST /v1/cloud/{id}/teleport` | owner, Sága | `claude --teleport <id>` in a new herdr pane in the repo. The repo must be clean and the session's branch pushed |
+| `DELETE /v1/cloud/{id}` | owner, Sága | leaves the list; the session goes on at claude.ai |
+
+The branch a cloud session pushes is reviewed like any other.
 
 ### Sindri: your prompts, kept
 

@@ -1201,6 +1201,106 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
         "504": { $ref: "#/components/responses/Error" }
+  /v1/cloud:
+    get:
+      summary: The cloud sessions (Claude Code on the web) started here, newest first. Anthropic lists no others, so these are all Sindri knows.
+      responses:
+        "200":
+          description: The sessions; `off` says why there are none to start.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions: { type: array, items: { $ref: "#/components/schemas/CloudSession" } }
+                  off: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Start a cloud session for the repo at `cwd` (its GitHub remote, its current branch) with `claude --cloud "<task>"`, and wait for its link. Owner or Sága only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cwd, task]
+              properties:
+                cwd: { type: string, description: The repo's absolute path. }
+                task: { type: string }
+      responses:
+        "201":
+          description: Started.
+          content:
+            application/json:
+              schema: { type: object, required: [session], properties: { session: { $ref: "#/components/schemas/CloudSession" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+  /v1/cloud/{id}/message:
+    post:
+      summary: Queue a message in a cloud session started here (`claude -p "<text>" --cloud <id>`). Owner or Sága only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: "The session's id (session_…)." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [text], properties: { text: { type: string } } }
+      responses:
+        "200":
+          description: Queued.
+          content:
+            application/json:
+              schema: { type: object, required: [session], properties: { session: { $ref: "#/components/schemas/CloudSession" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/cloud/{id}/teleport:
+    post:
+      summary: Bring a cloud session home with `claude --teleport <id>` in a new herdr pane in its repo. The repo must be clean and the session's branch pushed. Owner or Sága only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The pane it runs in.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, agent]
+                properties:
+                  session: { $ref: "#/components/schemas/CloudSession" }
+                  agent: { $ref: "#/components/schemas/HerdrAgent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+  /v1/cloud/{id}:
+    delete:
+      summary: Forget a cloud session. It goes on at claude.ai; it only leaves this list. Owner or Sága only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Forgotten.
+          content:
+            application/json:
+              schema: { type: object, required: [forgotten], properties: { forgotten: { type: boolean } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/activity:
     get:
       summary: Per day, sessions started, agents started and branches merged.
@@ -1630,6 +1730,20 @@ components:
         sessions: { type: [array, "null"], items: { type: object } }
         error: { type: string }
         from: { type: string, description: Where it reads from, or off. }
+    CloudSession:
+      type: object
+      description: A cloud session (Claude Code on the web) Sindri started. Times are epoch millis.
+      required: [id, at, cwd, task, url]
+      properties:
+        id: { type: string, description: "session_…" }
+        at: { type: integer }
+        cwd: { type: string, description: The repo it was started from. }
+        task: { type: string }
+        url: { type: string, description: "https://claude.ai/code/session_…, which opens in the Claude app too." }
+        pane: { type: string, description: The herdr pane it was started from. }
+        lastSentAt: { type: integer }
+        lastError: { type: string, description: Why the last message did not go. }
+        teleportedAt: { type: integer }
     HerdrAgent:
       type: object
       required: [paneId, workspaceId, tabId, status, focused]
