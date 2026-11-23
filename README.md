@@ -331,6 +331,8 @@ restart raises nothing twice.
 | Source | What it watches | Settings |
 | --- | --- | --- |
 | `tcgpriser` | tcgpriser.se: `/health` (`tcgpriser:down`, critical), `/admin/status` (`tcgpriser:status`), every alert the site posts to Discord except the shop scraping's (`shop-import`) (`feed:tcgpriser:<key>`, its own severity, closed when the site resolves it or after 24 h), and `/admin/usage` for the last 7 days | `MUNIN_TCGPRISER_TOKEN`, a service token from the API's `API_AUTH_TOKENS` (without it, `/health` only); `MUNIN_TCGPRISER_URL` (`https://api.tcgpriser.se`) |
+| `release` | the repos in `MUNIN_RELEASE_WATCH` (`owner/name,…`): the latest finished workflow run on the default branch and the latest deployment. A failed run or deployment raises `release:<owner/name>` (warning, with the run's link), resolved when the next one passes | `MUNIN_RELEASE_WATCH`, `MUNIN_RELEASE_TOKEN`, a GitHub token that reads Actions and deployments (`MUNIN_RELEASE_API`, `https://api.github.com`) |
+| `prod` | production health URLs: an error or status of 400 or more raises `prod:<url>` (critical, so it reaches the phone through Hermóðr), resolved when it answers again | `MUNIN_PROD_URLS`, `https://a.example/health,…` |
 
 A new source is a package under `munin/` that implements `munin/source`, and
 one line in `Sources` in `munin/sources.go`.
