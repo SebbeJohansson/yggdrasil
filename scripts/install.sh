@@ -233,8 +233,8 @@ ensure huginn.env LOKI_TOKEN "$(part_token loki huginn)"
 ensure huginn.env DELLINGR_TOKEN "$(part_token dellingr huginn)"
 
 # Sága syncs alerts with your phone through Mímir, the event log on your VPS
-# (github.com/SebbeJohansson/mimir). It runs on the host, so it can reach the
-# VPS by its tailnet name. It reads and acts on alerts as you, and raises the
+# (github.com/SebbeJohansson/mimir), at its public HTTPS URL. It runs on the
+# host. It reads and acts on alerts as you, and raises the
 # phone's alerts as `phone`, a sender Gjallar never pushes (GJALLAR_QUIET).
 # Restart Gjallar after the phone's token is added there.
 write saga.env <<EOF

@@ -23,7 +23,7 @@ import (
 //	SAGA_TOKENS          who may call it: owner=… (32+ characters each)
 //	SAGA_DB              the SQLite file (~/.local/state/yggdrasil/saga.db)
 //	SAGA_DEVICE          this machine's name at Mímir (desktop)
-//	MIMIR_URL            Mímir on the VPS, e.g. https://vps.tailnet.ts.net
+//	MIMIR_URL            Mímir on the VPS, e.g. https://mimir.example.com (HTTPS: the token goes along)
 //	MIMIR_TOKEN          this machine's token there
 //	GJALLAR_OWNER_TOKEN  your owner token at Gjallar: Sága reads alerts and acts on them for you
 //	SAGA_GJALLAR_TOKENS  a Gjallar sender token per other device, named after it: phone=…

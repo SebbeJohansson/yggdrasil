@@ -207,7 +207,7 @@ another device's alerts, mirrored by Sága, and that device already told you.
 
 Sága keeps the desktop's and the phone's alerts in step through
 [Mímir](https://github.com/SebbeJohansson/mimir), a small event log on your
-VPS, reached over Tailscale. Either device can be off; the other's side
+VPS, reached at its public HTTPS URL with a token per device. Either device can be off; the other's side
 waits in Mímir until it starts. What each event means is in Mímir's
 `docs/events.md`.
 
