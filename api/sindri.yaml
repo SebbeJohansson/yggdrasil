@@ -126,6 +126,47 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "502": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /v1/claude-login:
+    get:
+      summary: Claude Code's sign-in as the dashboard shows it. "expired" once an agent's turn or a cloud answer failed because the sign-in ran out; "linking" while a started sign-in waits for its code.
+      responses:
+        "200":
+          description: The sign-in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClaudeLogin" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Start `claude auth login` on the host, or return the one already waiting. The answer carries the page to sign in on; that page shows a code for POST /v1/claude-login/code. A started sign-in waits 10 minutes.
+      responses:
+        "200":
+          description: The sign-in, linking with its page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClaudeLogin" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/claude-login/code:
+    post:
+      summary: Hand the code from the sign-in page to the waiting `claude auth login`, and wait up to a minute for it to finish. "ok" is signed in; "error" carries Claude's reason.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, example: "abc123#state" }
+      responses:
+        "200":
+          description: The sign-in after the code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClaudeLogin" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/agents/close-idle:
     post:
       summary: Make room when every slot is taken. Closes the waiting agent quiet the longest; its session stays resumable.
@@ -1667,6 +1708,15 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    ClaudeLogin:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [ok, expired, linking, error] }
+        url: { type: string, description: The page to sign in on, while linking. }
+        error: { type: string, description: Why the last sign-in failed, or what Claude said when it ran out. }
+        expiredAt: { type: integer, description: Unix ms of the last failure for an expired sign-in. }
+        signedInAt: { type: integer, description: Unix ms of the last sign-in finished here. }
     SessionSource:
       type: object
       required: [sessions, from]
@@ -1935,6 +1985,7 @@ components:
         lastError: { type: string }
         merged: { type: boolean }
         usageLimited: { type: boolean }
+        loginExpired: { type: boolean, description: Its last turn failed because Claude Code's sign-in ran out (POST /v1/claude-login signs in again). }
     Review:
       type: object
       required: [repo, path, branch, base, baseCommit, worktreeExists, branchExists, merged, conflicts, commits, files, diff, diffTruncated, uncommitted, checkout]

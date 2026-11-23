@@ -134,11 +134,13 @@ type Agent struct {
 	Notes              []Note        `json:"notes,omitempty"`
 	Queued             []string      `json:"queued,omitempty"`
 	UsageLimited       bool          `json:"usageLimited,omitempty"`
-	Engine             string        `json:"engine,omitempty"`
-	ClaudeSession      bool          `json:"claudeSession,omitempty"`
-	CopilotSession     bool          `json:"copilotSession,omitempty"`
-	PremiumRequests    float64       `json:"premiumRequests,omitempty"`
-	Task               string        `json:"task,omitempty"`
+	// LoginExpired is set when its last turn failed because Claude Code's sign-in ran out.
+	LoginExpired    bool    `json:"loginExpired,omitempty"`
+	Engine          string  `json:"engine,omitempty"`
+	ClaudeSession   bool    `json:"claudeSession,omitempty"`
+	CopilotSession  bool    `json:"copilotSession,omitempty"`
+	PremiumRequests float64 `json:"premiumRequests,omitempty"`
+	Task            string  `json:"task,omitempty"`
 	// Session is the Norn conversation the agent posts into; empty when none.
 	Session string `json:"session,omitempty"`
 	// Herdr is set for an agent running in a herdr pane (Engine "herdr").
@@ -204,7 +206,7 @@ var usageLimit = regexp.MustCompile(`(?i)(?:usage limit|rate limit|weekly limit|
 var loginExpired = regexp.MustCompile(`(?i)(?:failed to authenticate|oauth (?:session|token)[^.]*expired|not logged in|please run /login|invalid api key)`)
 
 // LoginHint is what to do when Claude Code's sign-in has run out.
-const LoginHint = "Claude Code's sign-in has expired. Run `claude` in a terminal, type /login, then press Retry."
+const LoginHint = "Claude Code's sign-in has expired. Press Sign in to Claude below (or run `claude` and type /login), then press Retry."
 
 // turnFailure says why a Claude turn failed, with Claude's own words when
 // it gave any. Claude marks some failures is_error with subtype "success".
@@ -301,6 +303,7 @@ func (a *Agent) applyClaude(event map[string]any, baseCost float64, now int64) {
 		subtype, _ := event["subtype"].(string)
 		failed := event["is_error"] == true || (subtype != "" && subtype != "success")
 		a.UsageLimited = failed && usageLimit.MatchString(subtype+" "+result)
+		a.LoginExpired = failed && !a.UsageLimited && loginExpired.MatchString(result)
 		if failed {
 			a.Status = Failed
 			a.addLog(LogEntry{At: now, Kind: "error", Text: turnFailure(subtype, result, a.UsageLimited)})

@@ -98,11 +98,18 @@ type Manager struct {
 	now      func() time.Time
 	// OnChange is told when an agent changes, so its messages reach Norn soon.
 	OnChange func(id string)
+	// login is Claude Code's sign-in, run from the dashboard (claudelogin.go).
+	login *ClaudeLogin
+}
+
+// Login is Claude Code's sign-in.
+func (m *Manager) Login() *ClaudeLogin {
+	return m.login
 }
 
 // NewManager loads the agents kept at the state path.
 func NewManager(options ManagerOptions, logf func(string, ...any)) (*Manager, error) {
-	m := &Manager{options: options, agents: map[string]*Agent{}, live: map[string]*live{}, checks: map[string]map[string]CheckResult{}, logf: logf, now: time.Now}
+	m := &Manager{options: options, agents: map[string]*Agent{}, live: map[string]*live{}, checks: map[string]map[string]CheckResult{}, logf: logf, now: time.Now, login: NewClaudeLogin(options.ClaudeBin)}
 	for _, root := range options.Roots {
 		real, err := filepath.EvalSymlinks(root)
 		if err != nil {
@@ -526,6 +533,9 @@ func (m *Manager) onEventLocked(a *Agent, process *live, event map[string]any, c
 		a.applyCopilot(event, m.ms())
 	} else {
 		a.applyClaude(event, process.baseCost, m.ms())
+		if a.LoginExpired && event["type"] == "result" {
+			m.login.MarkExpired(a.Result)
+		}
 	}
 	m.addBranchesLocked(a, event)
 	if !copilot && a.Status == Waiting && len(a.Queued) > 0 {
@@ -769,7 +779,7 @@ func (m *Manager) Handoff(id, note, to string) (*Agent, error) {
 	if to == "copilot" {
 		a.Engine = "copilot"
 	}
-	a.UsageLimited, a.Model = false, ""
+	a.UsageLimited, a.LoginExpired, a.Model = false, false, ""
 	a.addLog(LogEntry{At: m.ms(), Kind: "exit", Text: "handed over from " + engineNames[from] + " to " + engineNames[to]})
 	return a, m.beginLocked(a, text, a.ClaudeSession, nil, true)
 }

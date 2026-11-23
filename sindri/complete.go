@@ -105,6 +105,9 @@ func (m *Manager) Complete(ctx context.Context, req CompleteRequest) (CompleteAn
 	var text string
 	if engine == "claude" {
 		text, err = claudeResult(stdout.Bytes())
+		if expired := (*loginExpiredError)(nil); errors.As(err, &expired) {
+			m.login.MarkExpired(expired.text)
+		}
 	} else {
 		text, err = copilotResult(stdout.Bytes())
 	}
@@ -124,6 +127,11 @@ func (m *Manager) Complete(ctx context.Context, req CompleteRequest) (CompleteAn
 	return CompleteAnswer{Text: text, Engine: engine, Model: model}, nil
 }
 
+// loginExpiredError is Claude failing because its sign-in ran out.
+type loginExpiredError struct{ text string }
+
+func (e *loginExpiredError) Error() string { return "claude: " + e.text + " " + LoginHint }
+
 // claudeResult reads `claude -p --output-format json`: one object.
 func claudeResult(out []byte) (string, error) {
 	var body struct {
@@ -135,7 +143,7 @@ func claudeResult(out []byte) (string, error) {
 	}
 	if body.IsError {
 		if loginExpired.MatchString(body.Result) {
-			return "", fmt.Errorf("claude: %s %s", strings.TrimSpace(body.Result), LoginHint)
+			return "", &loginExpiredError{text: strings.TrimSpace(body.Result)}
 		}
 		return "", fmt.Errorf("claude: %s", body.Result)
 	}
