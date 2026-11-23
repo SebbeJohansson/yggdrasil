@@ -75,7 +75,9 @@ and so on. Add those origins to `YGG_CORS_ORIGINS` if a browser tab calls them.
 Add the VPS as a node in `~/.config/yggdrasil/nodes.json` on each machine
 whose widget should see it (my-widget's README, Nodes), with the VPS's owner
 token (`~/.config/yggdrasil/owner.token` there). The widget then lists its
-agents beside this machine's, and its goals page can send goals to it.
+agents and goals beside this machine's, reads its sessions through Sindri
+(`GET /v1/sessions/claude/{id}/transcript`, the owner only), and can send new
+goals to it.
 
 ## Work and personal
 
