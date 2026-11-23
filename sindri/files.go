@@ -550,3 +550,56 @@ func ReadProjectDocs(root, name string) (ProjectDocs, error) {
 	}
 	return docs, nil
 }
+
+// planDoc is a markdown file named like a plan or a task list: plan.md,
+// PLAN.md, 01-plan.md, todo-auth.md, roadmap.md, backlog.md, tasks.md.
+var planDoc = regexp.MustCompile(`(?i)(plan|todo|roadmap|backlog|tasks)[^/]*\.md$`)
+
+// PlanFiles is the project's plan-like markdown files as paths relative to the
+// project: such files in its root (other than TODO.md, which has its own
+// import) and anywhere under docs/, at most three folders deep.
+func PlanFiles(projectPath string) []string {
+	var found []string
+	entries, _ := os.ReadDir(projectPath)
+	for _, entry := range entries {
+		if !entry.IsDir() && planDoc.MatchString(entry.Name()) && !strings.EqualFold(entry.Name(), "TODO.md") {
+			found = append(found, entry.Name())
+		}
+	}
+	docs := filepath.Join(projectPath, "docs")
+	_ = filepath.WalkDir(docs, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(docs, path)
+		if entry.IsDir() {
+			if strings.Count(rel, string(filepath.Separator)) >= 3 {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if planDoc.MatchString(entry.Name()) {
+			found = append(found, filepath.ToSlash(filepath.Join("docs", rel)))
+		}
+		return nil
+	})
+	slices.Sort(found)
+	return found
+}
+
+// PlanCandidates is the open "- [ ]" items of a project's plan files (see
+// PlanFiles), read-only. The file is in each candidate's source.
+func PlanCandidates(root, name string, known map[string]int64) []Candidate {
+	index := slices.IndexFunc(FindProjects(root), func(p Project) bool { return p.Name == name })
+	if index < 0 {
+		return nil
+	}
+	project := FindProjects(root)[index]
+	var found []Candidate
+	for _, file := range PlanFiles(project.Path) {
+		if text := readText(filepath.Join(project.Path, file)); text != nil {
+			found = append(found, todoCandidatesIn(name, file, *text, known)...)
+		}
+	}
+	return found
+}

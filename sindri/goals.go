@@ -526,6 +526,13 @@ var (
 // TodoCandidates is the open "- [ ]" lines of a project's TODO.md, each with
 // the lines indented under it as context.
 func TodoCandidates(repo, todo string, known map[string]int64) []Candidate {
+	return todoCandidatesIn(repo, "", todo, known)
+}
+
+// todoCandidatesIn is TodoCandidates for one file. file is "" for the root
+// TODO.md, whose sources stay "todo:<repo>:<line>"; any other file (a plan in
+// docs/) is part of the source so equal lines in two files stay two goals.
+func todoCandidatesIn(repo, file, todo string, known map[string]int64) []Candidate {
 	lines := strings.Split(todo, "\n")
 	found := []Candidate{}
 	for i, line := range lines {
@@ -546,6 +553,9 @@ func TodoCandidates(repo, todo string, known map[string]int64) []Candidate {
 			context = context[:MaxGoalContext]
 		}
 		source := "todo:" + repo + ":" + strings.TrimSpace(line)
+		if file != "" {
+			source = "todo:" + repo + ":" + file + ":" + strings.TrimSpace(line)
+		}
 		if len(source) > 300 {
 			source = source[:300]
 		}
@@ -1020,13 +1030,14 @@ func (w *Work) candidates(rw http.ResponseWriter, r *http.Request) {
 			fail(rw, err)
 			return
 		}
-		todo := ""
+		found := []Candidate{}
 		for _, file := range docs.Files {
 			if strings.EqualFold(file.File, "TODO.md") && file.Content != nil {
-				todo = *file.Content
+				found = append(found, TodoCandidates(project, *file.Content, known)...)
 			}
 		}
-		part.JSON(rw, http.StatusOK, map[string]any{"from": "todo", "candidates": TodoCandidates(project, todo, known)})
+		found = append(found, PlanCandidates(w.Agents.roots[0], project, known)...)
+		part.JSON(rw, http.StatusOK, map[string]any{"from": "todo", "candidates": found})
 	case "linear":
 		if !w.Linear.On() {
 			part.Error(rw, http.StatusServiceUnavailable, "no LINEAR_KEY in sindri.env")

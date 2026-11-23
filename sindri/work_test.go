@@ -341,3 +341,27 @@ func TestRemoteControlLinkIsKept(t *testing.T) {
 		t.Fatalf("a refusal left link %q and log %+v", b.RemoteURL, b.Log)
 	}
 }
+
+func TestPlanCandidatesReadDocsFolder(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "demo")
+	for path, text := range map[string]string{
+		".git/HEAD":            "",
+		"TODO.md":              "- [ ] Root\n",
+		"PLAN.md":              "- [ ] Top plan\n",
+		"docs/plan.md":         "# Plan\n- [x] done\n- [ ] Build it\n  with care\n",
+		"docs/01-plan-ui.md":   "- [ ] Build it\n",
+		"docs/architecture.md": "- [ ] Not a plan\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(project, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(project, path), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := PlanCandidates(root, "demo", map[string]int64{"todo:demo:docs/plan.md:- [ ] Build it": 3})
+	if len(got) != 3 || got[0].Title != "Top plan" || got[1].Goal != nil || got[2].Context != "with care" || got[2].Goal == nil {
+		t.Fatalf("got %+v", got)
+	}
+}
