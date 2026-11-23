@@ -1878,7 +1878,7 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
   /v1/needs-you:
     get:
-      summary: Everything waiting on you across every conversation, oldest first. An approval or question, a failed or finished result you have not read, a branch ready to review, an agent gone silent.
+      summary: Everything waiting on you across every conversation, oldest first. An approval or question, a failed or finished result you have not read, a branch ready to review, an agent gone silent, a failed release or deploy (Munin's release:<repo> alert) with the run's link.
       responses:
         "200":
           description: The needs.
@@ -1894,7 +1894,7 @@ paths:
                       type: object
                       required: [kind, agent, label, session, text, at]
                       properties:
-                        kind: { type: string, enum: [approval, question, failed, result, stuck, ready] }
+                        kind: { type: string, enum: [approval, question, failed, result, stuck, ready, release] }
                         agent: { type: string }
                         label: { type: string }
                         session: { type: [string, "null"] }
@@ -1905,6 +1905,8 @@ paths:
                         at: { type: integer }
                         overdue: { type: boolean }
                         check: { type: string, enum: [running, passed, failed] }
+                        link: { type: string, description: "kind release: the failed run's page." }
+                        repo: { type: string, description: "kind release: owner/name." }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/needs-you/read:
     post:
