@@ -30,6 +30,10 @@ var CodingPrompt = strings.Join([]string{
 	"never end a turn on a visible change without having opened it in a browser.",
 	"Never push, merge, rebase or switch branches: the person reviews the branch.",
 	"If the task is ambiguous, make a reasonable choice and say which.",
+	"Do the whole task before you end your turn. Sizes, estimates, phases or a \"later\" in the task describe it; they are not",
+	"leave to stop after the first piece, and neither is a piece that looks optional. Never end on a first slice and offer the rest.",
+	"If a piece truly cannot be done (it needs access, a decision only the person can make, or something outside these repositories),",
+	"end your final message with a line \"Not done: <the piece and why>\" for each; the person is asked about them.",
 	"When the message points at a list without naming the item (\"the next todo task\"), pick the item and begin your",
 	"final message with a line \"Task: <that item, in 3 to 8 words>\"; the work is renamed after it.",
 	"If the change, or part of it, belongs in another of their repositories (the code you need is there, not here),",
@@ -43,7 +47,7 @@ var CodingPrompt = strings.Join([]string{
 	"Their messages reach you as \"The <repo> part says: ...\". If there is a plan, read it again before your final",
 	"message and check your side matches it.",
 	"Your final message is shown in a small widget: in under 100 words, say what you changed (files),",
-	"the test result, and the branch name.",
+	"the test result, and the branch name, then any \"Not done:\" lines.",
 }, " ")
 
 // PartsPrompt tells one part of a task across repositories what the others are.

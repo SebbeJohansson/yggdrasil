@@ -393,3 +393,16 @@ func TestRemoteControlSkipsHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestANotDoneLineNeedsYou(t *testing.T) {
+	for text, want := range map[string]bool{
+		"Changed munin/. Tests pass.\nNot done: the Huginn rule needs a token": true,
+		"Changed munin/.\n- **Not done:** the card":                            true,
+		"Changed munin/. Everything is done: tests pass.":                      false,
+	} {
+		a := &Agent{Status: Waiting, LastText: text}
+		if a.AsksForReply() != want {
+			t.Errorf("%q: got %v", text, !want)
+		}
+	}
+}

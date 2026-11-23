@@ -437,6 +437,13 @@ What was sent is kept on the goal: `why` on `GET /v1/goals` is
 was sure of), `unreachable` or `off` (Norn was not asked). Sindri asks with
 its `NORN_TOKEN`; without one it never asks.
 
+### Sindri: finishing a goal
+
+A goal's coding agents are told to do the whole goal: sizes, estimates or
+phases in its text are no reason to stop after the first piece. A piece
+the agent cannot do ends its final message as a line
+`Not done: <the piece and why>`, and the goal then needs you.
+
 ### Veðrfölnir
 
 The same shapes as my-agent's runner, so my-widget's pages read either.

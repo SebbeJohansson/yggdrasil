@@ -423,9 +423,13 @@ func bashCommands(event map[string]any) []string {
 
 var asks = regexp.MustCompile(`(?i)(\?\s*$)|\b(tell me (which|what|how|whether|if)|let me know|which (one|option|do you|would you)|do you want|would you like|should i|want me to|please confirm|confirm (that|whether)|reply with)\b`)
 
-// AsksForReply is whether a stopped agent's last words ask you something.
+// notDone is a final message naming a piece of the task the agent could not do.
+var notDone = regexp.MustCompile(`(?im)^[\s*_-]*not done:`)
+
+// AsksForReply is whether a stopped agent's last words ask you something,
+// or name a piece of its task it could not do.
 func (a *Agent) AsksForReply() bool {
-	return (a.Status == Waiting || a.Status == Done) && a.LastText != "" && asks.MatchString(a.LastText)
+	return (a.Status == Waiting || a.Status == Done) && a.LastText != "" && (asks.MatchString(a.LastText) || notDone.MatchString(a.LastText))
 }
 
 var (
