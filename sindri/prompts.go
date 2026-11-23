@@ -371,6 +371,34 @@ const GoalReachPrompt = "Before you write code, decide which of the person's rep
 	"For each one the goal belongs in that is not already a part, write \"Needs a part in <repo>: <what to change>\" as your instructions describe, " +
 	"and say in your final message which repositories you checked and left out, and why."
 
+// UnfinishedPrompt sends a goal part back for the pieces it left out, once.
+func UnfinishedPrompt(missing []string) string {
+	return "Your turn ended before the goal was done. These pieces of it are still missing:\n- " + strings.Join(missing, "\n- ") +
+		"\n\nDo them on this branch, run the tests and commit. If one truly cannot be done, end with a line \"Not done: <the piece and why>\" for it instead."
+}
+
+// UnfinishedSystem asks a model whether a goal part did the whole goal.
+const UnfinishedSystem = "You check whether a coding agent did everything its goal asks for. " +
+	"You get the goal, the agent's final message, and its commits and changed files. " +
+	"Sizes, estimates, background and ideas marked optional are not pieces of the goal. " +
+	"A piece is missing when the goal asks for it and the message says it was left out, or nothing in the message, commits or files covers it. " +
+	"Answer DONE alone when nothing is missing. Otherwise answer MISSING on the first line, then one line per missing piece, under 15 words each, and nothing else."
+
+// ReadUnfinished reads UnfinishedSystem's answer: the missing pieces, none when done.
+func ReadUnfinished(answer string) []string {
+	lines := strings.Split(strings.TrimSpace(answer), "\n")
+	if len(lines) == 0 || !strings.EqualFold(strings.Trim(strings.TrimSpace(lines[0]), "*:"), "MISSING") {
+		return nil
+	}
+	var missing []string
+	for _, line := range lines[1:] {
+		if line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "-*0123456789. ")); line != "" {
+			missing = append(missing, line)
+		}
+	}
+	return missing[:min(len(missing), 8)]
+}
+
 // RetryPrompt sends failed tests back to the agent, once.
 func RetryPrompt(check *CheckSummary) string {
 	output := strings.TrimSpace(check.Output)

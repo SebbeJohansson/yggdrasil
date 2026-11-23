@@ -101,8 +101,10 @@ type Work struct {
 	// Kinds judges a goal's kind for races; nil guesses from keywords alone.
 	Kinds KindJudge
 	// Why asks Norn why a goal exists, for its agents' prompts (why.go); nil never asks.
-	Why     WhyAsker
-	feeding sync.Mutex
+	Why WhyAsker
+	// complete is one model answer, for follow-through's goal check; nil is Agents.Complete.
+	complete func(context.Context, CompleteRequest) (CompleteAnswer, error)
+	feeding  sync.Mutex
 }
 
 // CodingAgent is the CLI new agents run on.
@@ -690,6 +692,9 @@ func (w *Work) Feed(ctx context.Context) error {
 		if automation.FollowThrough && w.retryFailedCheck(ctx, a, binding.Session) {
 			continue
 		}
+		if automation.FollowThrough {
+			w.checkFinished(&snap, binding.Session)
+		}
 		signature := signatureOf(a)
 		if signature == binding.Seen {
 			continue
@@ -798,6 +803,80 @@ func (w *Work) retryFailedCheck(ctx context.Context, a *Agent, session string) b
 		w.logf("could not post to the conversation: %v", err)
 	}
 	return true
+}
+
+// checkFinished asks a model, once per goal part, whether the turn that just
+// ended did the whole goal, and sends the missing pieces back when it did
+// not. The answer takes seconds, so it runs beside the feed: the part shows
+// done until the agent picks the work up again.
+func (w *Work) checkFinished(snap *snapshot, session string) {
+	a := &snap.agent
+	if a.Worktree == nil || !snap.turnDone || a.AsksForReply() || strings.TrimSpace(a.LastText) == "" || !exists(a.Cwd) || a.Worktree.IsLanded() {
+		return
+	}
+	if a.Check != nil && (a.Check.Status == "running" || a.Check.Status == "failed") {
+		return // the tests go first: retryFailedCheck sends a failure back
+	}
+	task, err := w.Store.TaskOfAgent(a.ID)
+	if err != nil || task == nil || task.GoalID == nil {
+		return
+	}
+	key := fmt.Sprintf("follow-through-finished:%d", task.ID)
+	var seen string
+	if w.Store.Setting(key, &seen) {
+		return
+	}
+	goal, err := w.Store.Goal(*task.GoalID)
+	if err != nil || goal == nil {
+		return
+	}
+	_ = w.Store.SetSetting(key, a.Worktree.Head())
+	complete := w.complete
+	if complete == nil {
+		complete = w.Agents.Complete
+	}
+	prompt := finishedQuestion(goal, a)
+	id, label := a.ID, TaskOf(a.Label)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), CompleteTimeout)
+		defer cancel()
+		answer, err := complete(ctx, CompleteRequest{System: UnfinishedSystem, Prompt: prompt})
+		if err != nil {
+			w.logf("could not check whether a goal part finished: %v", err)
+			return
+		}
+		missing := ReadUnfinished(answer.Text)
+		if len(missing) == 0 {
+			return
+		}
+		if _, err := w.Tell(id, UnfinishedPrompt(missing)); err != nil {
+			w.logf("could not send the missing pieces back: %v", err)
+			return
+		}
+		note := "Stopped before the goal was done; sent it back to finish, once. Missing: " + strings.Join(missing, "; ") + "."
+		if err := w.Norn.Post(ctx, session, id, label, note); err != nil {
+			w.logf("could not post to the conversation: %v", err)
+		}
+	}()
+}
+
+// finishedQuestion is the goal and what a part did, for UnfinishedSystem.
+func finishedQuestion(goal *Goal, a *Agent) string {
+	lines := []string{"Goal: " + goal.Title}
+	if goal.Context != "" {
+		lines = append(lines, goal.Context)
+	}
+	lines = append(lines, "", "Repository of this part: "+a.Cwd, "", "The agent's final message:", strings.TrimSpace(a.LastText), "", "Commits:")
+	wt := a.Worktree
+	for _, c := range wt.commitsIn(wt.Base + ".." + wt.Branch) {
+		lines = append(lines, "- "+c.Subject)
+	}
+	lines = append(lines, "", "Changed files:")
+	for _, f := range wt.numstat(wt.Base + "..." + wt.Branch) {
+		lines = append(lines, "- "+f.Path)
+	}
+	text := strings.Join(lines, "\n")
+	return text[:min(len(text), 12000)]
 }
 
 // retryScheduled starts the tasks waiting for room or for Claude usage, when due.

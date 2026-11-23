@@ -447,6 +447,14 @@ part in each one the goal belongs in. A self-repair goal is not sent to
 other repositories. A piece the agent cannot do ends its final message as a
 line `Not done: <the piece and why>`, and the goal then needs you.
 
+With follow-through on (`automation.followThrough`), when a goal part's turn
+ends without asking you anything and its tests are not failing, Sindri asks
+the one-shot model (`Complete`: Claude Code's haiku, else Copilot CLI) whether
+the goal's text is covered by the agent's final message, commits and
+changed files. When pieces are missing it sends them back to the agent and
+says so in the goal's conversation. This happens once per part, so a part
+that stops early again stays done for you to look at.
+
 ### Veðrfölnir
 
 The same shapes as my-agent's runner, so my-widget's pages read either.

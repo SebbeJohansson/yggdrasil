@@ -394,6 +394,77 @@ func TestRemoteControlSkipsHelpers(t *testing.T) {
 	}
 }
 
+func TestFollowThroughSendsAGoalPartBackForWhatItLeftOutOnce(t *testing.T) {
+	w, norn := newWork(t)
+	var mu sync.Mutex
+	var asked []string
+	w.complete = func(_ context.Context, req CompleteRequest) (CompleteAnswer, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		asked = append(asked, req.Prompt)
+		return CompleteAnswer{Text: "MISSING\n- the dashboard card"}, nil
+	}
+	goal, _ := w.Store.AddGoal("Build the whole thing", []string{"demo"}, "manual", "A check, a rule and a dashboard card.", "goal-1")
+	started, _, err := w.StartGoal(goal.ID, nil)
+	if err != nil || len(started) != 1 {
+		t.Fatalf("got %+v %v", started, err)
+	}
+	feedUntil(t, w, func() bool {
+		for _, p := range norn.said() {
+			if strings.Contains(p.Content, "Missing: the dashboard card.") {
+				return true
+			}
+		}
+		return false
+	})
+	// The agent picks the rest up, and its next turn is not checked again.
+	a := waitFor(t, w.Agents, started[0].AgentID, func(a *Agent) bool { return a.Status == Waiting && strings.Contains(a.LastText, "merge") })
+	for range 5 {
+		_ = w.Feed(context.Background())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(asked) != 1 || !strings.Contains(asked[0], "dashboard card") || !strings.Contains(asked[0], "Build the first piece") || !strings.Contains(asked[0], "Built the first piece.") {
+		t.Fatalf("asked %q", asked)
+	}
+	if !a.AsksForReply() {
+		t.Fatalf("got %+v", a)
+	}
+}
+
+func TestFollowThroughLeavesAFinishedGoalPartAlone(t *testing.T) {
+	w, norn := newWork(t)
+	calls := make(chan struct{}, 4)
+	w.complete = func(context.Context, CompleteRequest) (CompleteAnswer, error) {
+		calls <- struct{}{}
+		return CompleteAnswer{Text: "DONE"}, nil
+	}
+	goal, _ := w.Store.AddGoal("Build the whole thing", []string{"demo"}, "manual", "", "goal-1")
+	started, _, _ := w.StartGoal(goal.ID, nil)
+	waitFor(t, w.Agents, started[0].AgentID, func(a *Agent) bool { return a.Status == Waiting })
+	feedUntil(t, w, func() bool { return len(calls) == 1 })
+	for range 5 {
+		_ = w.Feed(context.Background())
+	}
+	if len(calls) != 1 || must2(w.goalView(goal.ID)).State != "done" {
+		t.Fatalf("checked %d times, state %s", len(calls), must2(w.goalView(goal.ID)).State)
+	}
+	for _, p := range norn.said() {
+		if strings.Contains(p.Content, "Missing:") {
+			t.Fatalf("sent a finished part back: %+v", p)
+		}
+	}
+}
+
+func TestReadUnfinished(t *testing.T) {
+	if got := ReadUnfinished("DONE"); got != nil {
+		t.Fatalf("got %q", got)
+	}
+	if got := ReadUnfinished("**MISSING**\n- the Huginn rule\n2. the dashboard card\n"); len(got) != 2 || got[0] != "the Huginn rule" || got[1] != "the dashboard card" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestANotDoneLineNeedsYou(t *testing.T) {
 	for text, want := range map[string]bool{
 		"Changed munin/. Tests pass.\nNot done: the Huginn rule needs a token": true,

@@ -121,7 +121,7 @@ Moved:
 - **Sindri**: the runner's agents (Claude Code and Copilot CLI, worktrees,
   review, checks, screenshots, merge, pull requests, uploads, projects),
   tasks, goals with pictures, parts across repos, automatic approvals,
-  follow-through on failed tests, waiting for room or for Claude usage, and
+  follow-through on failed tests and unfinished goal parts, waiting for room or for Claude usage, and
   the coding-agent and automation settings, Linear goal candidates and
   moving an issue as its goal moves, `/v1/activity`, and every coding-agent
   session on the machine (`/v1/sessions`: Claude Code's live sessions,

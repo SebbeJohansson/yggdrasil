@@ -15,13 +15,16 @@ import (
 
 // fakeClaude answers each message with one commit in its folder, and asks
 // for permission first when the message says "ask", and changes nothing when
-// it says "Leave it as it is".
+// it says "Leave it as it is", and commits without asking anything when it
+// says "Build the whole thing".
 const fakeClaude = `#!/bin/sh
 echo '{"type":"system","subtype":"init","model":"fake-model"}'
 while read -r line; do
   case "$line" in
     *control_response*) echo '{"type":"result","subtype":"success","result":"Allowed and done.","total_cost_usd":0.02,"num_turns":1}'; continue ;;
     *"Leave it as it is"*) echo '{"type":"result","subtype":"success","result":"Nothing to change.","num_turns":1}'; continue ;;
+    *"Build the whole thing"*) echo first >> work.txt; git add work.txt >/dev/null 2>&1 && git commit -qm "Build the first piece" >/dev/null 2>&1
+      echo '{"type":"result","subtype":"success","result":"Built the first piece.","num_turns":1}'; continue ;;
     *"Take screenshots"*) echo '{"type":"result","subtype":"success","result":"Nothing visible.","num_turns":1}'; continue ;;
     *ask*) echo '{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"rm -rf build"}}}'; continue ;;
   esac
