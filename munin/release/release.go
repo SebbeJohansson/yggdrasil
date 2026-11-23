@@ -115,7 +115,7 @@ func Check(repo string, run *Run, dep *Deployment) watch.Result {
 	case run != nil && Failed(run.Conclusion):
 		result.OK = false
 		result.Title = fmt.Sprintf("%s: %s failed on the default branch", repo, run.Name)
-		result.Detail = run.Conclusion + " " + run.HTMLURL
+		result.Detail, result.Link = run.Conclusion, run.HTMLURL
 	case dep != nil && (dep.State == "failure" || dep.State == "error"):
 		result.OK = false
 		result.Title = fmt.Sprintf("%s: deploy to %s failed", repo, dep.Environment)

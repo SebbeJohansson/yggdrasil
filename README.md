@@ -491,7 +491,7 @@ covers, or whose invite was cancelled (widget only; Norn's
 with the calendar, now `Calendars.ReadWrite`), and, when a meeting ends, what
 you were on before it ("You were on: …" with your last prompt, linking to the
 goal or session; widget only and not held, so the prompt never reaches ntfy),
-a promise you made that is due (below), and the week's plan when Norn made
+a failed release or deploy (`release-failed`: Munin's `release:<repo>` alert, told with the run's link), a promise you made that is due (below), and the week's plan when Norn made
 it (`week-plan`: "The week's plan" with the week's line, linking to the plan;
 widget only and not held). Each reaction goes
 to Hermóðr, with the rule's `hold` so it waits while you are in a meeting. A

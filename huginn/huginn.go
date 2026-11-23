@@ -63,6 +63,8 @@ type Trigger struct {
 	// Organizer (calendar.*) and Key (alert.*) are what learned rules filter on (learn.go).
 	Organizer string `json:"organizer,omitempty"`
 	Key       string `json:"key,omitempty"`
+	// KeyPrefix (alert.*) takes every alert whose key starts so.
+	KeyPrefix string `json:"keyPrefix,omitempty"`
 }
 
 // Action is what a rule does: notify, ask or alert-impact.
@@ -135,6 +137,7 @@ func BuiltIn() []Rule {
 			Action: Action{Kind: "notify", Text: `{inviteOrganizer} cancelled "{inviteSubject}", but your own "{subject}" on {day} at {start} is still there: delete it?`}, Deliver: []string{"widget"}, Hold: true},
 		{ID: "linear-todo", Name: "Linear ticket with no goal", On: Trigger{Event: "linear.todo"},
 			Action: Action{Kind: "notify", Text: "{key} is in {state} and no goal has it: {title}. Add it as a goal?"}, Deliver: both, Hold: true},
+		releaseRule(both),
 		savePointRule,
 		promiseRule(both),
 		weaveRule,
