@@ -110,7 +110,7 @@ func (m *Manager) Complete(ctx context.Context, req CompleteRequest) (CompleteAn
 	}
 	if err != nil || runErr != nil {
 		detail := strings.TrimSpace(stderr.String())
-		if detail == "" && err != nil {
+		if err != nil && (detail == "" || engine == "claude") {
 			detail = err.Error()
 		}
 		if detail == "" {
@@ -134,6 +134,9 @@ func claudeResult(out []byte) (string, error) {
 		return "", fmt.Errorf("unreadable answer: %w", err)
 	}
 	if body.IsError {
+		if loginExpired.MatchString(body.Result) {
+			return "", fmt.Errorf("claude: %s %s", strings.TrimSpace(body.Result), LoginHint)
+		}
 		return "", fmt.Errorf("claude: %s", body.Result)
 	}
 	return body.Result, nil

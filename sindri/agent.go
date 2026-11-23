@@ -200,6 +200,31 @@ func ToolSummary(name string, input map[string]any) string {
 
 var usageLimit = regexp.MustCompile(`(?i)(?:usage limit|rate limit|weekly limit|resets? (?:at|in)|out of (?:extra )?usage|capacity until)`)
 
+// loginExpired matches Claude Code failing because its sign-in ran out.
+var loginExpired = regexp.MustCompile(`(?i)(?:failed to authenticate|oauth (?:session|token)[^.]*expired|not logged in|please run /login|invalid api key)`)
+
+// LoginHint is what to do when Claude Code's sign-in has run out.
+const LoginHint = "Claude Code's sign-in has expired. Run `claude` in a terminal, type /login, then press Retry."
+
+// turnFailure says why a Claude turn failed, with Claude's own words when
+// it gave any. Claude marks some failures is_error with subtype "success".
+func turnFailure(subtype, result string, usageLimited bool) string {
+	why := "turn failed"
+	if subtype != "" && subtype != "success" {
+		why += " (" + subtype + ")"
+	}
+	if text := strings.TrimSpace(result); text != "" {
+		why += ": " + Clip(text, TextLimit)
+	}
+	switch {
+	case usageLimited:
+		why += ". Claude usage limit reached"
+	case loginExpired.MatchString(result):
+		why += ". " + LoginHint
+	}
+	return why
+}
+
 // applyClaude updates an agent from one Claude Code stream-json event.
 // baseCost is what the agent cost before this process started.
 func (a *Agent) applyClaude(event map[string]any, baseCost float64, now int64) {
@@ -278,11 +303,7 @@ func (a *Agent) applyClaude(event map[string]any, baseCost float64, now int64) {
 		a.UsageLimited = failed && usageLimit.MatchString(subtype+" "+result)
 		if failed {
 			a.Status = Failed
-			why := fmt.Sprintf("turn failed (%s)", subtype)
-			if a.UsageLimited {
-				why += ": Claude usage limit reached"
-			}
-			a.addLog(LogEntry{At: now, Kind: "error", Text: why})
+			a.addLog(LogEntry{At: now, Kind: "error", Text: turnFailure(subtype, result, a.UsageLimited)})
 		} else {
 			a.Status = Waiting
 			a.addLog(LogEntry{At: now, Kind: "result", Text: fmt.Sprintf("turn done (≈$%.2f API-equivalent so far)", a.CostUSD)})
