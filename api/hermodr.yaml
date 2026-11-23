@@ -231,6 +231,7 @@ components:
         part: { type: string }
         version: { type: string }
         startedAt: { type: string, format: date-time }
+        work: { type: boolean, description: "Set on a machine that holds work data (YGG_WORK=on): a widget elsewhere refuses to add it as a node." }
         loops:
           type: object
           description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.

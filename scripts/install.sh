@@ -346,6 +346,10 @@ write parts.env <<EOF
 # Your working day, Monday to Friday: Ratatoskr's rhythm and Norn's gap read it.
 #WORK_HOURS=09:00-17:00
 
+# On the machine that holds work data (the work laptop): every part says so on
+# /health, and a widget on another machine refuses to add this one as a node.
+#YGG_WORK=on
+
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
 RATATOSKR_WATCH=$watch
 

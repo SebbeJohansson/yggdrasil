@@ -82,6 +82,14 @@ goals to it.
 ## Work and personal
 
 The work laptop may read the personal nodes; nothing personal reads the work
-laptop. So: the VPS's token never goes on the work laptop's Sindri or Norn,
-and on the work laptop, Sága stays off or points at a work-owned Mímir, since
-it shares that machine's coding sessions with Mímir.
+laptop. So:
+
+- On the work laptop, set `YGG_WORK=on` in `~/.config/yggdrasil/parts.env`
+  and restart the parts. Every part then says `"work": true` on `/health`, and
+  a widget on any other machine refuses to add it as a node, even with its
+  token in `nodes.json`.
+- That is a guard against a slip, not a lock: the real line is that the work
+  laptop's owner token and SSH access never go on a personal machine.
+- The VPS's token never goes on the work laptop's Sindri or Norn.
+- On the work laptop, Sága stays off or points at a work-owned Mímir, since it
+  shares that machine's coding sessions with Mímir.
