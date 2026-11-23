@@ -29,6 +29,7 @@ type Agent struct {
 	Task         string `json:"task"`
 	LastActivity int64  `json:"lastActivity"`
 	AsksYou      bool   `json:"asksYou"`
+	Session      string `json:"session"` // the conversation Sindri started it for
 	Resumable    bool   `json:"resumable"`
 	Merged       bool   `json:"merged"`
 	LastError    string `json:"lastError"`

@@ -75,6 +75,17 @@ func (n *Norn) chat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Started for this conversation but not yet bound: Norn binds an agent
+	// on its first message, which a goal part posts only when its turn ends.
+	for _, a := range all {
+		if a.Session != session || slices.Contains(own, a.ID) {
+			continue
+		}
+		if bound, _ := n.Store.SessionOf(r.Context(), a.ID); bound == "" || bound == session {
+			own = append(own, a.ID)
+			participants = append(participants, participant(a))
+		}
+	}
 	for _, a := range RecentAgents(all, time.Now()) {
 		if a.AsksYou && !slices.Contains(own, a.ID) {
 			participants = append(participants, participant(a))

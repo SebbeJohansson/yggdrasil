@@ -369,3 +369,32 @@ func TestALocalQuestionAboutStatusIsTheModelsToAnswer(t *testing.T) {
 		t.Fatalf("got %q via %q", response.Answer, response.Via)
 	}
 }
+
+// A goal part is in its goal's conversation from its start, before its first
+// message binds it, so its session can be read while it works.
+func TestChatListsAnAgentStartedForItBeforeItSpeaks(t *testing.T) {
+	n, p := newNorn(t)
+	sindri := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/agents" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"id":"a1","label":"Fix","cwd":"/w/a1","status":"working","session":"goal-1"},
+			{"id":"a2","label":"Moved","cwd":"/w/a2","status":"working","session":"goal-1"},
+			{"id":"a3","label":"Other","cwd":"/w/a3","status":"working","session":"goal-2"}]`))
+	}))
+	defer sindri.Close()
+	n.Sindri.URL = sindri.URL
+	_ = n.Store.BindAgent(context.Background(), "s-elsewhere", "a2")
+	status, body := call(t, p, "GET", "/v1/chat?session=goal-1&after=0", nil)
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %v", status, body)
+	}
+	ids := []string{}
+	for _, entry := range body.(map[string]any)["participants"].([]any) {
+		ids = append(ids, entry.(map[string]any)["id"].(string))
+	}
+	if strings.Join(ids, ",") != "a1" {
+		t.Fatalf("participants %v, want only a1", ids)
+	}
+}
