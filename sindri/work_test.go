@@ -346,13 +346,14 @@ func TestPlanCandidatesReadDocsFolder(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "demo")
 	for path, text := range map[string]string{
-		".git/HEAD":          "",
-		"TODO.md":            "- [ ] Root\n",
-		"PLAN.md":            "- [ ] Top plan\n",
-		"docs/plan.md":       "# Plan\n- [x] done\n- [ ] Build it\n  with care\n",
-		"docs/01-plan-ui.md": "- [ ] Build it\n",
-		"docs/ideas.md":      "# Ideas\nintro\n## 1. First idea\nBody one\n\n## 2) Second **idea**\n",
-		"docs/README.md":     "## Skip me\n",
+		".git/HEAD":            "",
+		"TODO.md":              "- [ ] Root\n",
+		"PLAN.md":              "- [ ] Top plan\n",
+		"docs/plan.md":         "# Plan\n- [x] done\n- [ ] Build it\n  with care\n",
+		"docs/01-plan-ui.md":   "- [ ] Build it\n",
+		"docs/ideas.md":        "# Ideas\nintro\n## 1. First idea\nBody one\n\n## 2) Second **idea**\n",
+		"docs/architecture.md": "## Not a task\n",
+		"docs/README.md":       "## Skip me\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(project, path)), 0o755); err != nil {
 			t.Fatal(err)

@@ -556,6 +556,10 @@ func ReadProjectDocs(root, name string) (ProjectDocs, error) {
 // docs.json or under docs/) are candidates whatever their name, except READMEs.
 var planDoc = regexp.MustCompile(`(?i)(plan|todo|roadmap|backlog|tasks)[^/]*\.md$`)
 
+// ideaDoc is a file whose "## heading" sections are goals when it has no
+// checkboxes: plan-like names plus ideas, wishlist and similar.
+var ideaDoc = regexp.MustCompile(`(?i)(plan|todo|roadmap|backlog|tasks|ideas?|wish|suggestion|proposal)[^/]*\.md$`)
+
 var readmeDoc = regexp.MustCompile(`(?i)(^|/)readme[^/]*\.md$`)
 
 // PlanFiles is the project's markdown files that can hold goals, as paths
@@ -629,7 +633,9 @@ func PlanCandidates(root, name string, known map[string]int64) ([]Candidate, err
 			label = ""
 		}
 		if label != "" && !anyCheckbox.MatchString(*text) {
-			found = append(found, sectionCandidates(name, label, *text, known)...)
+			if ideaDoc.MatchString(file) {
+				found = append(found, sectionCandidates(name, label, *text, known)...)
+			}
 			continue
 		}
 		found = append(found, todoCandidatesIn(name, label, *text, known)...)
