@@ -440,9 +440,12 @@ its `NORN_TOKEN`; without one it never asks.
 ### Sindri: finishing a goal
 
 A goal's coding agents are told to do the whole goal: sizes, estimates or
-phases in its text are no reason to stop after the first piece. A piece
-the agent cannot do ends its final message as a line
-`Not done: <the piece and why>`, and the goal then needs you.
+phases in its text are no reason to stop after the first piece. Before
+writing code, each one looks in your other repositories, including the apps
+that show what it builds (`yggdrasil-mobile`, `my-widget`), and asks for a
+part in each one the goal belongs in. A self-repair goal is not sent to
+other repositories. A piece the agent cannot do ends its final message as a
+line `Not done: <the piece and why>`, and the goal then needs you.
 
 ### Veðrfölnir
 

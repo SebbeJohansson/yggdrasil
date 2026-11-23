@@ -357,9 +357,13 @@ func (w *Work) startPartsOn(goal *Goal, repos []string, lane string) ([]Started,
 	}
 	if brief := SelfRepairBrief(goal); brief != "" {
 		parts = append(parts, brief)
-	} else if why := w.goalWhy(goal); why != "" {
+	} else {
 		// A self-repair goal's why is its alert, above; any other asks Norn.
-		parts = append(parts, why)
+		if why := w.goalWhy(goal); why != "" {
+			parts = append(parts, why)
+		}
+		// A self-repair goal is about its own repositories; any other may reach further.
+		parts = append(parts, GoalReachPrompt)
 	}
 	parts = append(parts, fmt.Sprintf("(From goal %d, source: %s.)", goal.ID, goal.Source))
 	request := CodeRequest{Session: goal.Session, Prompt: strings.Join(parts, "\n\n"), Name: ShortTask(goal.Title, 50), Projects: repos, GoalID: &goal.ID, Goal: goal.Title}

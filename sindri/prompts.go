@@ -363,6 +363,14 @@ func AutoAllowRule(tool string, input map[string]any, folders []string) string {
 	return "read"
 }
 
+// GoalReachPrompt tells a goal's parts to look for the rest of the goal in
+// the person's other repositories before writing code.
+const GoalReachPrompt = "Before you write code, decide which of the person's repositories this goal belongs in. " +
+	"Not only where code you need lives: also the apps and clients that show or use what you build (a phone app, a widget, a dashboard). " +
+	"Open each repository that might be one and look at what it reads today. " +
+	"For each one the goal belongs in that is not already a part, write \"Needs a part in <repo>: <what to change>\" as your instructions describe, " +
+	"and say in your final message which repositories you checked and left out, and why."
+
 // RetryPrompt sends failed tests back to the agent, once.
 func RetryPrompt(check *CheckSummary) string {
 	output := strings.TrimSpace(check.Output)
