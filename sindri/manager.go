@@ -711,6 +711,31 @@ func (m *Manager) Prompt(id, text string, images []string, queue bool) (*Agent, 
 	return a, nil
 }
 
+// SetPermissionMode changes the permission mode an agent runs its next turns
+// in. A running Claude process is switched in place; any other agent takes it
+// on its next launch (a herdr pane keeps the mode it opened with).
+func (m *Manager) SetPermissionMode(id, mode string) error {
+	if !slices.Contains(PermissionModes, mode) {
+		return httpErr(400, "`permissionMode` must be one of %s", strings.Join(PermissionModes, ", "))
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, err := m.getLocked(id)
+	if err != nil {
+		return err
+	}
+	if a.PermissionMode == mode || a.NoTools {
+		return nil
+	}
+	a.PermissionMode = mode
+	if process, running := m.live[id]; running && a.Engine != "copilot" {
+		m.writeLocked(process, map[string]any{"type": "control_request", "request_id": newID(),
+			"request": map[string]any{"subtype": "set_permission_mode", "mode": mode}})
+	}
+	m.touchLocked(a)
+	return nil
+}
+
 // ResumeScheduled resumes an agent parked after a Claude usage limit.
 func (m *Manager) ResumeScheduled(id, text string) (*Agent, error) {
 	m.mu.Lock()

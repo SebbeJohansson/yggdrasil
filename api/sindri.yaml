@@ -638,7 +638,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/work/ask:
     post:
-      summary: Hand a question that needs tools to a read-only question agent across every project, or follow up the conversation's own when it is settled.
+      summary: Hand a question that needs tools to a question agent across every project, or follow up the conversation's own when it is settled.
       requestBody:
         required: true
         content:
@@ -651,7 +651,7 @@ paths:
                 prompt: { type: string }
                 name: { type: string }
                 communication: { type: string, enum: [concise, detailed, verbose] }
-                mode: { type: string, enum: [auto, manual] }
+                mode: { type: string, enum: [auto, manual], description: "auto runs the question agent in Claude's auto permission mode, so it does not stop to ask about tool calls (git writes stay denied). Otherwise it asks you for anything not allowed up front. Applied to follow-ups too." }
                 agent: { type: string, description: The conversation's question agent, to follow up. }
                 followUp: { type: string, description: What it is sent when followed up. }
                 goal: { type: string }
@@ -677,7 +677,7 @@ paths:
                 text: { type: string }
                 images: { type: array, items: { type: string } }
                 communication: { type: string, enum: [concise, detailed, verbose] }
-                mode: { type: string, enum: [auto, manual] }
+                mode: { type: string, enum: [auto, manual], description: "For a question agent, also its permission mode, as in /v1/work/ask." }
       responses:
         "200": { $ref: "#/components/responses/Agent" }
         "400": { $ref: "#/components/responses/Error" }

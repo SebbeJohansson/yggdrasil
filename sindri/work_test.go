@@ -289,3 +289,34 @@ func TestResumingAGoalMakesItsParkedPartsDueNow(t *testing.T) {
 		t.Fatalf("got %+v", tasks)
 	}
 }
+
+func TestAskAgentFollowsTheConversationsMode(t *testing.T) {
+	w, _ := newWork(t)
+	a, err := w.Ask(AskRequest{Session: "s", Prompt: "check something", Name: "check", Mode: "auto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.PermissionMode != "auto" {
+		t.Fatalf("auto conversation started the question agent in %q", a.PermissionMode)
+	}
+	// The fake Claude stops on a tool whenever its text says "ask", as the auto rule does.
+	waitFor(t, w.Agents, a.ID, func(a *Agent) bool { return a.Status == NeedsApproval })
+	if _, err := w.Agents.Answer(a.ID, "r1", true, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, w.Agents, a.ID, func(a *Agent) bool { return settled(a.Status) })
+	again, err := w.Ask(AskRequest{Session: "s", Prompt: "and this", Name: "check", Mode: "manual", Agent: a.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != a.ID || again.PermissionMode != "default" {
+		t.Fatalf("manual follow-up: agent %s in %q, want %s in default", again.ID, again.PermissionMode, a.ID)
+	}
+	plain, err := w.Ask(AskRequest{Session: "t", Prompt: "check", Name: "check"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.PermissionMode != "default" {
+		t.Fatalf("a conversation with no mode started in %q", plain.PermissionMode)
+	}
+}

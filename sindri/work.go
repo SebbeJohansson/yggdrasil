@@ -331,6 +331,20 @@ type AskRequest struct {
 	NoTools bool `json:"noTools,omitempty"`
 }
 
+// AskLabelPrefix starts every question agent's label.
+const AskLabelPrefix = "ask: "
+
+// AskPermissionMode is the permission mode a question agent runs in for the
+// conversation's mode: auto lets Claude's auto mode decide each tool call
+// (git writes stay denied), anything else asks you for whatever is not
+// allowed up front.
+func AskPermissionMode(mode string) string {
+	if mode == "auto" {
+		return "auto"
+	}
+	return "default"
+}
+
 func settled(status string) bool {
 	return status == Waiting || status == Done || status == Failed || status == Aborted
 }
@@ -348,6 +362,9 @@ func (w *Work) Ask(request AskRequest) (*Agent, error) {
 			if rules != "" {
 				text += "\n\n(Norn: " + rules + ")"
 			}
+			if err := w.Agents.SetPermissionMode(existing.ID, AskPermissionMode(request.Mode)); err != nil {
+				return nil, err
+			}
 			a, err := w.Agents.Prompt(existing.ID, text, nil, false)
 			if err == nil {
 				_ = w.Store.Bind(a.ID, request.Session, request.Communication, request.Mode, "")
@@ -361,8 +378,8 @@ func (w *Work) Ask(request AskRequest) (*Agent, error) {
 		prompt += "\n\n" + rules
 	}
 	start := StartRequest{
-		Cwd: w.AskCwd, Prompt: prompt, Label: "ask: " + request.Name, Model: w.Model, AddRoots: true,
-		AllowedTools: w.askAllowed(), DisallowedTools: AskDenied, Session: request.Session,
+		Cwd: w.AskCwd, Prompt: prompt, Label: AskLabelPrefix + request.Name, Model: w.Model, AddRoots: true,
+		PermissionMode: AskPermissionMode(request.Mode), AllowedTools: w.askAllowed(), DisallowedTools: AskDenied, Session: request.Session,
 	}
 	if request.NoTools {
 		start.AddRoots, start.AllowedTools, start.NoTools = false, nil, true
@@ -391,6 +408,11 @@ func (w *Work) Reply(session, agentID, text string, images []string, communicati
 			return nil, httpErr(409, "That agent is waiting for your yes or no on a tool; reply yes or no.")
 		}
 		return nil, httpErr(409, "That agent is still working.")
+	}
+	if strings.HasPrefix(a.Label, AskLabelPrefix) {
+		if err := w.Agents.SetPermissionMode(agentID, AskPermissionMode(mode)); err != nil {
+			return nil, err
+		}
 	}
 	if rules := Rules(communication, mode); rules != "" {
 		text += "\n\n(Norn: " + rules + ")"
