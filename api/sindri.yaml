@@ -72,6 +72,7 @@ paths:
                 allowedTools: { type: array, maxItems: 150, items: { type: string } }
                 disallowedTools: { type: array, maxItems: 150, items: { type: string } }
                 noTools: { type: boolean }
+                noRemote: { type: boolean, description: "Keep this helper off Remote Control (SINDRI_REMOTE_CONTROL), so claude.ai/code lists only agents worth following. POST /v1/agents/{id}/remote still joins it." }
                 appendSystemPrompt: { type: string, maxLength: 8000 }
                 engine: { type: string, enum: [claude, copilot, opencode], description: "opencode runs it as a session of the `opencode serve` at OPENCODE_URL." }
                 session: { type: string, description: The Norn conversation the agent posts into. }
@@ -303,6 +304,17 @@ paths:
         "200": { $ref: "#/components/responses/Agent" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/remote:
+    post:
+      summary: Join the agent's Claude session to Remote Control, to follow it on claude.ai/code. A finished agent is resumed with no prompt and waits; its link arrives as remoteUrl.
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200": { $ref: "#/components/responses/Agent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/agents/{id}/fix-conflicts:
     post:
       summary: Ask the agent to rebase its branch onto its base and resolve the conflicts.
@@ -2099,7 +2111,7 @@ components:
         lastError: { type: string }
         merged: { type: boolean }
         usageLimited: { type: boolean }
-        remoteUrl: { type: string, description: "Its session on claude.ai/code through Remote Control (SINDRI_REMOTE_CONTROL), to follow and steer it from the web or the Claude app." }
+        remoteUrl: { type: string, description: "Its session on claude.ai/code through Remote Control (SINDRI_REMOTE_CONTROL, or POST /v1/agents/{id}/remote for a helper), to follow and steer it from the web or the Claude app." }
         loginExpired: { type: boolean, description: Its last turn failed because Claude Code's sign-in ran out (POST /v1/claude-login signs in again). }
     Review:
       type: object

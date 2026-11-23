@@ -117,6 +117,7 @@ type Agent struct {
 	AllowedTools       []string      `json:"allowedTools,omitempty"`
 	DisallowedTools    []string      `json:"disallowedTools,omitempty"`
 	NoTools            bool          `json:"noTools,omitempty"`
+	NoRemote           bool          `json:"noRemote,omitempty"`
 	AppendSystemPrompt string        `json:"appendSystemPrompt,omitempty"`
 	Status             string        `json:"status"`
 	Tool               string        `json:"tool,omitempty"`

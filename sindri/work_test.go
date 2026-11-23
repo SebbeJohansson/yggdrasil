@@ -369,3 +369,26 @@ func TestPlanCandidatesReadDocsFolder(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestRemoteControlSkipsHelpers(t *testing.T) {
+	on := &Manager{options: ManagerOptions{RemoteControl: true}}
+	off := &Manager{options: ManagerOptions{}}
+	cases := []struct {
+		name  string
+		m     *Manager
+		a     *Agent
+		joins bool
+	}{
+		{"coding agent", on, &Agent{}, true},
+		{"helper", on, &Agent{NoRemote: true}, false},
+		{"helper joined by hand", on, &Agent{NoRemote: true, RemoteURL: "https://claude.ai/code/x"}, true},
+		{"no tools", on, &Agent{NoTools: true, RemoteURL: "https://claude.ai/code/x"}, false},
+		{"turned off", off, &Agent{}, false},
+		{"turned off, joined by hand", off, &Agent{RemoteURL: "https://claude.ai/code/x"}, true},
+	}
+	for _, c := range cases {
+		if got := c.m.remoteLocked(c.a); got != c.joins {
+			t.Errorf("%s: joins %v, want %v", c.name, got, c.joins)
+		}
+	}
+}

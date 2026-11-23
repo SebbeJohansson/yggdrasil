@@ -37,19 +37,22 @@ const (
 
 // StartRequest is POST /v1/agents.
 type StartRequest struct {
-	Cwd                string   `json:"cwd"`
-	Prompt             string   `json:"prompt"`
-	Label              string   `json:"label,omitempty"`
-	PermissionMode     string   `json:"permissionMode,omitempty"`
-	Model              string   `json:"model,omitempty"`
-	AddRoots           bool     `json:"addRoots,omitempty"`
-	Worktree           bool     `json:"worktree,omitempty"`
-	Slug               string   `json:"slug,omitempty"`
-	AllowedTools       []string `json:"allowedTools,omitempty"`
-	DisallowedTools    []string `json:"disallowedTools,omitempty"`
-	NoTools            bool     `json:"noTools,omitempty"`
-	AppendSystemPrompt string   `json:"appendSystemPrompt,omitempty"`
-	Engine             string   `json:"engine,omitempty"`
+	Cwd             string   `json:"cwd"`
+	Prompt          string   `json:"prompt"`
+	Label           string   `json:"label,omitempty"`
+	PermissionMode  string   `json:"permissionMode,omitempty"`
+	Model           string   `json:"model,omitempty"`
+	AddRoots        bool     `json:"addRoots,omitempty"`
+	Worktree        bool     `json:"worktree,omitempty"`
+	Slug            string   `json:"slug,omitempty"`
+	AllowedTools    []string `json:"allowedTools,omitempty"`
+	DisallowedTools []string `json:"disallowedTools,omitempty"`
+	NoTools         bool     `json:"noTools,omitempty"`
+	// NoRemote keeps a helper agent off Remote Control, so claude.ai/code
+	// lists only the agents worth following; POST .../remote still joins it.
+	NoRemote           bool   `json:"noRemote,omitempty"`
+	AppendSystemPrompt string `json:"appendSystemPrompt,omitempty"`
+	Engine             string `json:"engine,omitempty"`
 	// Session is the Norn conversation the agent posts what it says into.
 	Session string `json:"session,omitempty"`
 }
@@ -62,8 +65,8 @@ type ManagerOptions struct {
 	MaxRunning            int
 	Idle                  time.Duration
 	// RemoteControl turns on Remote Control for every Claude process Sindri
-	// starts, so its sessions can be followed and steered from claude.ai/code
-	// and the Claude app.
+	// starts, except helpers started with NoRemote, so its sessions can be
+	// followed and steered from claude.ai/code and the Claude app.
 	RemoteControl bool
 }
 
@@ -327,7 +330,7 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	a := &Agent{
 		ID: newID(), Label: label, Cwd: cwd, PermissionMode: mode, Model: request.Model, AddRoots: request.AddRoots,
 		Worktree: worktree, AllowedTools: allowed, DisallowedTools: request.DisallowedTools, NoTools: request.NoTools,
-		AppendSystemPrompt: system, Task: prompt[:min(len(prompt), taskChars)], Status: Starting, Pending: []Pending{},
+		NoRemote: request.NoRemote, AppendSystemPrompt: system, Task: prompt[:min(len(prompt), taskChars)], Status: Starting, Pending: []Pending{},
 		StartedAt: now, LastActivity: now, Log: []LogEntry{}, Session: request.Session,
 	}
 	if engine == "copilot" {
@@ -400,10 +403,63 @@ func (m *Manager) launchClaudeLocked(a *Agent, resume bool) error {
 	if err := m.watchLocked(a, m.options.ClaudeBin, args, false); err != nil {
 		return err
 	}
-	if m.options.RemoteControl && !a.NoTools {
+	if m.remoteLocked(a) {
 		m.writeLocked(m.live[a.ID], RemoteControlRequest())
 	}
 	return nil
+}
+
+// remoteLocked says whether a Claude process joins Remote Control when it
+// starts: every agent but helpers, when it is on, and any agent that was
+// joined by hand before, so a resumed session keeps its claude.ai link.
+func (m *Manager) remoteLocked(a *Agent) bool {
+	if a.NoTools {
+		return false
+	}
+	return a.RemoteURL != "" || (m.options.RemoteControl && !a.NoRemote)
+}
+
+// Remote joins an agent's Claude session to Remote Control on demand. A
+// finished agent's process is resumed, with no prompt, and waits; the link
+// arrives as remoteUrl once Claude has connected.
+func (m *Manager) Remote(id string) (*Agent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, err := m.getLocked(id)
+	if err != nil {
+		return nil, err
+	}
+	if a.NoTools || a.Herdr != nil || a.Opencode != nil || a.Engine == "copilot" {
+		return nil, httpErr(409, "only a Claude agent with tools that Sindri runs itself can join Remote Control")
+	}
+	if process, running := m.live[id]; running {
+		m.writeLocked(process, RemoteControlRequest())
+		return a, nil
+	}
+	if !m.ClaudeOn() {
+		return nil, httpErr(409, "Claude is off here (CLAUDE_BIN=off)")
+	}
+	if !a.ClaudeSession {
+		return nil, httpErr(409, "agent has no Claude session to resume yet")
+	}
+	if !exists(a.Cwd) {
+		return nil, httpErr(410, "its folder %s is gone (the worktree was removed), so it cannot be resumed", a.Cwd)
+	}
+	if err := m.ensureCapacityLocked(); err != nil {
+		return nil, err
+	}
+	if err := m.launchClaudeLocked(a, true); err != nil {
+		return nil, err
+	}
+	if !m.remoteLocked(a) {
+		m.writeLocked(m.live[id], RemoteControlRequest())
+	}
+	// No turn runs: the process waits for a message, from here or claude.ai,
+	// and is closed when idle like any other.
+	a.Status = Waiting
+	a.addLog(LogEntry{At: m.ms(), Kind: "remote", Text: "resumed to join Remote Control"})
+	m.touchLocked(a)
+	return a, nil
 }
 
 // remoteControlID marks the control request that turns Remote Control on,
@@ -1056,7 +1112,7 @@ func (m *Manager) photographLocked(a *Agent) {
 	}
 	a.ScreenshotHead = head
 	started, err := m.startLocked(StartRequest{Cwd: w.Path, Label: Clip("screenshots: "+a.Label, 60), Prompt: ScreenshotPrompt(w.Branch, w.Base, dir),
-		PermissionMode: "auto", AllowedTools: []string{"Write(/" + dir + "/**)"},
+		PermissionMode: "auto", NoRemote: true, AllowedTools: []string{"Write(/" + dir + "/**)"},
 		DisallowedTools: []string{"Edit", "Bash(git commit:*)", "Bash(git add:*)", "Bash(git push:*)", "Bash(git checkout:*)", "Bash(git reset:*)"}})
 	if err != nil {
 		m.logf("no screenshot agent for %s: %v", a.ID, err)

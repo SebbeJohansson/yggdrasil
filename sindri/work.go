@@ -380,6 +380,7 @@ func (w *Work) Ask(request AskRequest) (*Agent, error) {
 	start := StartRequest{
 		Cwd: w.AskCwd, Prompt: prompt, Label: AskLabelPrefix + request.Name, Model: w.Model, AddRoots: true,
 		PermissionMode: AskPermissionMode(request.Mode), AllowedTools: w.askAllowed(), DisallowedTools: AskDenied, Session: request.Session,
+		NoRemote: true,
 	}
 	if request.NoTools {
 		start.AddRoots, start.AllowedTools, start.NoTools = false, nil, true

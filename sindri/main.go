@@ -25,7 +25,7 @@ import (
 //	SINDRI_STATE        where the agents are kept (~/.local/state/yggdrasil/sindri-agents.json)
 //	SINDRI_MAX_RUNNING  how many agent processes at once (4)
 //	SINDRI_IDLE         how long an idle agent's process is kept (30m)
-//	SINDRI_REMOTE_CONTROL  Claude agents join Remote Control, to follow them on claude.ai/code (true)
+//	SINDRI_REMOTE_CONTROL  coding agents join Remote Control, to follow them on claude.ai/code; screenshot and question agents only on POST .../remote (true)
 //	CLAUDE_BIN          Claude Code (~/.local/bin/claude); off turns it off
 //	CLAUDE_DIR          Claude Code's state (~/.claude); CLAUDE_SOCKET_DIR its live sockets
 //	OPENCODE_URL        a running `opencode serve` (http://127.0.0.1:4096); off turns it off

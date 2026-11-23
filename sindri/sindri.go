@@ -66,6 +66,7 @@ func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("POST /v1/agents/{id}/label", s.label)
 	p.Handle("POST /v1/agents/{id}/permissions/{requestId}", s.answer)
 	p.Handle("POST /v1/agents/{id}/abort", s.agent(func(id string) (*Agent, error) { return s.Agents.Abort(id) }))
+	p.Handle("POST /v1/agents/{id}/remote", s.agent(func(id string) (*Agent, error) { return s.Agents.Remote(id) }))
 	p.Handle("POST /v1/agents/{id}/fix-conflicts", s.agent(func(id string) (*Agent, error) { return s.Agents.FixConflicts(id) }))
 	p.Handle("GET /v1/agents/{id}/review", func(w http.ResponseWriter, r *http.Request) {
 		answer(w)(s.Agents.Review(r.PathValue("id"), r.URL.Query().Get("commit")))
