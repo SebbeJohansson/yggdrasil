@@ -529,6 +529,54 @@ func TodoCandidates(repo, todo string, known map[string]int64) []Candidate {
 	return todoCandidatesIn(repo, "", todo, known)
 }
 
+var (
+	anyCheckbox = regexp.MustCompile(`(?m)^\s*[-*]\s+\[[ xX]\]\s`)
+	sectionHead = regexp.MustCompile(`^##\s+(.+?)\s*#*\s*$`)
+	headNumber  = regexp.MustCompile(`^\d+[.):]\s+`)
+)
+
+// sectionCandidates is a document with no checkboxes (an ideas list) read as
+// one candidate per "## heading": the heading without its number is the
+// title, the text under it the context.
+func sectionCandidates(repo, file, text string, known map[string]int64) []Candidate {
+	lines := strings.Split(text, "\n")
+	found := []Candidate{}
+	for i, line := range lines {
+		match := sectionHead.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		var below []string
+		for _, next := range lines[i+1:] {
+			if strings.HasPrefix(next, "# ") || strings.HasPrefix(next, "## ") {
+				break
+			}
+			below = append(below, next)
+		}
+		context := strings.TrimSpace(strings.Join(below, "\n"))
+		if len(context) > MaxGoalContext {
+			context = context[:MaxGoalContext]
+		}
+		source := "todo:" + repo + ":" + file + ":" + strings.TrimSpace(line)
+		if len(source) > 300 {
+			source = source[:300]
+		}
+		title := strings.TrimSpace(mdLink.ReplaceAllString(emphasis.ReplaceAllString(headNumber.ReplaceAllString(match[1], ""), ""), "$1"))
+		if runes := []rune(title); len(runes) > 200 {
+			title = string(runes[:200])
+		}
+		if title == "" {
+			continue
+		}
+		candidate := Candidate{Source: source, Title: title, Context: context, Repos: []string{repo}}
+		if id, ok := known[source]; ok {
+			candidate.Goal = &id
+		}
+		found = append(found, candidate)
+	}
+	return found
+}
+
 // todoCandidatesIn is TodoCandidates for one file. file is "" for the root
 // TODO.md, whose sources stay "todo:<repo>:<line>"; any other file (a plan in
 // docs/) is part of the source so equal lines in two files stay two goals.

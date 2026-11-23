@@ -346,12 +346,13 @@ func TestPlanCandidatesReadDocsFolder(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "demo")
 	for path, text := range map[string]string{
-		".git/HEAD":            "",
-		"TODO.md":              "- [ ] Root\n",
-		"PLAN.md":              "- [ ] Top plan\n",
-		"docs/plan.md":         "# Plan\n- [x] done\n- [ ] Build it\n  with care\n",
-		"docs/01-plan-ui.md":   "- [ ] Build it\n",
-		"docs/architecture.md": "- [ ] Not a plan\n",
+		".git/HEAD":          "",
+		"TODO.md":            "- [ ] Root\n",
+		"PLAN.md":            "- [ ] Top plan\n",
+		"docs/plan.md":       "# Plan\n- [x] done\n- [ ] Build it\n  with care\n",
+		"docs/01-plan-ui.md": "- [ ] Build it\n",
+		"docs/ideas.md":      "# Ideas\nintro\n## 1. First idea\nBody one\n\n## 2) Second **idea**\n",
+		"docs/README.md":     "## Skip me\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(project, path)), 0o755); err != nil {
 			t.Fatal(err)
@@ -364,7 +365,7 @@ func TestPlanCandidatesReadDocsFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 4 || got[0].Title != "Top plan" || got[1].Source != "todo:demo:- [ ] Root" || got[2].Source != "todo:demo:docs/01-plan-ui.md:- [ ] Build it" || got[3].Context != "with care" || got[3].Goal == nil {
+	if len(got) != 6 || got[0].Title != "Top plan" || got[1].Source != "todo:demo:- [ ] Root" || got[2].Source != "todo:demo:docs/01-plan-ui.md:- [ ] Build it" || got[3].Title != "First idea" || got[3].Context != "Body one" || got[4].Title != "Second idea" || got[5].Context != "with care" || got[5].Goal == nil {
 		t.Fatalf("got %+v", got)
 	}
 }

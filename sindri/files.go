@@ -551,14 +551,18 @@ func ReadProjectDocs(root, name string) (ProjectDocs, error) {
 	return docs, nil
 }
 
-// planDoc is a markdown file named like a plan or a task list: plan.md,
-// PLAN.md, 01-plan.md, todo-auth.md, roadmap.md, backlog.md, tasks.md.
+// planDoc is a root markdown file named like a plan or a task list: plan.md,
+// PLAN.md, todo-auth.md, roadmap.md, backlog.md, tasks.md. Documents (listed in
+// docs.json or under docs/) are candidates whatever their name, except READMEs.
 var planDoc = regexp.MustCompile(`(?i)(plan|todo|roadmap|backlog|tasks)[^/]*\.md$`)
 
-// PlanFiles is the project's plan-like markdown files as paths relative to the
-// project: the ones its documents list (ReadProjectDocs: docs/docs.json, else
-// the root README.md and TODO.md), plus any in its root and anywhere under
-// docs/, at most three folders deep, whether or not docs.json lists them.
+var readmeDoc = regexp.MustCompile(`(?i)(^|/)readme[^/]*\.md$`)
+
+// PlanFiles is the project's markdown files that can hold goals, as paths
+// relative to the project: the documents ReadProjectDocs lists (docs/docs.json,
+// else the root TODO.md), every markdown file under docs/ (at most three
+// folders deep) whether or not docs.json lists it, and plan-like files in the
+// root. READMEs are left out.
 func PlanFiles(projectPath string, docs ProjectDocs) []string {
 	seen := map[string]bool{}
 	var found []string
@@ -569,7 +573,7 @@ func PlanFiles(projectPath string, docs ProjectDocs) []string {
 		}
 	}
 	for _, doc := range docs.Files {
-		if doc.Content == nil || !planDoc.MatchString(doc.File) {
+		if doc.Content == nil || readmeDoc.MatchString(doc.File) {
 			continue
 		}
 		if exists(filepath.Join(projectPath, doc.File)) && !exists(filepath.Join(projectPath, "docs", "docs.json")) {
@@ -596,7 +600,7 @@ func PlanFiles(projectPath string, docs ProjectDocs) []string {
 			}
 			return nil
 		}
-		if planDoc.MatchString(entry.Name()) {
+		if strings.HasSuffix(strings.ToLower(entry.Name()), ".md") && !readmeDoc.MatchString(entry.Name()) {
 			add(filepath.ToSlash(filepath.Join("docs", rel)))
 		}
 		return nil
@@ -623,6 +627,10 @@ func PlanCandidates(root, name string, known map[string]int64) ([]Candidate, err
 		label := file
 		if file == "TODO.md" {
 			label = ""
+		}
+		if label != "" && !anyCheckbox.MatchString(*text) {
+			found = append(found, sectionCandidates(name, label, *text, known)...)
+			continue
 		}
 		found = append(found, todoCandidatesIn(name, label, *text, known)...)
 	}
