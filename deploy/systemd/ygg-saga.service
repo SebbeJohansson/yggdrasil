@@ -1,0 +1,14 @@
+[Unit]
+Description=Sága: syncs alerts with your other devices through Mímir (Yggdrasil)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/ygg saga
+# Where every part lives; a replaced part is pointed at here.
+EnvironmentFile=-%h/.config/yggdrasil/parts.env
+EnvironmentFile=%h/.config/yggdrasil/saga.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

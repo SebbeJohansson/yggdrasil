@@ -21,6 +21,7 @@ import (
 //	GJALLAR_DB          the SQLite file (data/gjallar.db)
 //	GJALLAR_HEARTBEATS  senders that must beat, and their allowance: ratatoskr=3m
 //	GJALLAR_LIMITED     senders that may not send critical: glim
+//	GJALLAR_QUIET       senders never pushed, the other devices Sága mirrors: phone
 //	YGG_HERMODR_URL     Hermóðr, which carries critical alerts to you; HERMODR_TOKEN is Gjallar's token there
 //	NTFY_URL, NTFY_TOKEN  a phone push used only when Hermóðr can't take one; unset is off
 //	DASHBOARD_URL       where a push links to
@@ -61,6 +62,13 @@ func Main(ctx context.Context) error {
 	}
 	for _, name := range limited {
 		g.LimitedSources[name] = true
+	}
+	quiet := env.List("GJALLAR_QUIET")
+	if len(quiet) == 0 {
+		quiet = []string{"phone"}
+	}
+	for _, name := range quiet {
+		g.QuietSources[name] = true
 	}
 
 	p := part.New(Name, tokens, env.List("YGG_CORS_ORIGINS"))

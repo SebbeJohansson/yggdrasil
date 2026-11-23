@@ -33,6 +33,8 @@ type Sindri struct {
 	Work *Work
 	// PromptsKeep is how long your indexed prompts are kept (sessionprompts.go); 0 is forever.
 	PromptsKeep time.Duration
+	// Cloud is the cloud sessions started here (cloud.go); nil is off.
+	Cloud *Cloud
 }
 
 // Mount adds Sindri's routes and loops to the part.
@@ -132,6 +134,7 @@ func (s *Sindri) Mount(p *part.Part) {
 	}
 	{
 		s.mountSessions(p)
+		s.mountCloud(p)
 		if s.Sessions.Opencode != nil {
 			p.Loop("opencode", 3*time.Second, s.Sessions.ReadOpencode)
 		}

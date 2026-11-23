@@ -31,6 +31,7 @@ import (
 	"yggdrasil/munin"
 	"yggdrasil/norn"
 	"yggdrasil/ratatoskr"
+	"yggdrasil/saga"
 	"yggdrasil/sindri"
 	"yggdrasil/vedrfolnir"
 )
@@ -50,6 +51,7 @@ var parts = map[string]struct {
 	"hermodr":    {"carries every message for you to the widget and your phone", hermodr.Main},
 	"loki":       {"tests the watchers: blind spots, and short tricks to see who notices", loki.Main},
 	"heimdall":   {"the security watchman: vulnerable packages, open ports, leaked keys, loose files", heimdall.Main},
+	"saga":       {"keeps the story the same on every device: syncs alerts with the phone through Mímir", saga.Main},
 }
 
 func usage() {
@@ -166,7 +168,7 @@ func migrateCommand(args []string) int {
 	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	myAgent := flags.String("my-agent", filepath.Join(home, "projects/my-agent"), "my-agent's checkout (its data/ folder holds agent.db and the sign-ins)")
 	runner := flags.String("runner", filepath.Join(home, ".local/state/my-agent-runner/agents.json"), "the runner's agents")
-	ygg := flags.String("yggdrasil", filepath.Join(home, "projects/yggdrasil"), "Yggdrasil's checkout (its data/ folder holds norn.db and the sign-ins)")
+	ygg := flags.String("yggdrasil", filepath.Join(home, "projects/yggdrasil/yggdrasil-desktop"), "Yggdrasil's checkout (its data/ folder holds norn.db and the sign-ins)")
 	state := flags.String("state", filepath.Join(home, ".local/state/yggdrasil"), "where Sindri keeps sindri.db and its agents")
 	replace := flags.Bool("replace", false, "empty what the target already holds first (it is backed up)")
 	if err := flags.Parse(args[1:]); err != nil {

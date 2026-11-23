@@ -1,0 +1,269 @@
+openapi: 3.1.0
+info:
+  title: Sága
+  version: "1"
+  description: |
+    Keeps the story the same on every device. Sága syncs this machine's
+    Gjallar alerts with the other devices (the phone) through Mímir, the event
+    log on the VPS (github.com/SebbeJohansson/mimir; its docs/events.md says
+    what each event means). Any program that serves this contract and passes
+    `ygg check saga <url>` can replace the built-in one
+    (docs/replacing-a-part.md).
+
+    Rules a replacement must keep:
+    - Send each of this machine's alerts to Mímir as `gjallar.alert` whenever
+      anything about it changes, but not each time it is only seen again.
+    - Keep another device's alerts in Gjallar as mirrors: raised with a
+      Gjallar sender token named after the device, keyed `<source>/<key>`,
+      and resolved, acknowledged, snoozed and muted as the device says.
+      Gjallar never pushes them (GJALLAR_QUIET).
+    - Acknowledging, snoozing or muting a mirror in Gjallar asks the device
+      that owns it to do the same (`gjallar.alert.ack|snooze|mute`), once
+      until it answers. Never act on a mirror's device's behalf otherwise.
+    - Do what other devices ask of this machine's alerts in Gjallar, as the
+      owner. A snooze is at most 30 days; a resolved alert is left alone.
+    - Write each event to its own outbox first and keep it until Mímir has
+      it, so nothing is lost while Mímir or this machine is down.
+    - Talk to Gjallar over its API only.
+
+    Coding sessions (with SINDRI_TOKEN set):
+    - Send this machine's coding sessions, read from its Sindri, to Mímir as
+      `sindri.sessions` whenever they change, and at least every 5 minutes.
+    - Keep each other device's newest `sindri.sessions`, and list them.
+    - A thing asked of another device's session goes to Mímir as a request
+      (`sindri.session.prompt|choose|resume`, `sindri.cloud.start|message|teleport`)
+      with that device as `origin`. Only the origin carries it out, through
+      its own Sindri, and only for the devices in its SAGA_DRIVE_FROM; it
+      answers each with `sindri.request.done`, once. A request older than
+      30 minutes when it arrives is answered as not done.
+    - Without GJALLAR_OWNER_TOKEN no alerts are synced: a laptop may share
+      only its sessions.
+servers:
+  - url: http://127.0.0.1:8782
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      summary: Alive, and when the sync loop last ran (every 30 s).
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /openapi.yaml:
+    get:
+      summary: This contract.
+      security: []
+      responses:
+        "200":
+          description: The spec.
+          content:
+            application/yaml: {}
+  /v1/status:
+    get:
+      summary: How syncing goes.
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/sync:
+    post:
+      summary: Sync now, and say how it went. Owner only.
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/sessions:
+    get:
+      summary: Every other device's coding sessions as it last sent them, and what this machine asked of them in the last day.
+      responses:
+        "200":
+          description: The devices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device, devices, asked]
+                properties:
+                  device: { type: string, description: This machine's name at Mímir. }
+                  devices: { type: array, items: { $ref: "#/components/schemas/DeviceView" } }
+                  asked: { type: array, items: { $ref: "#/components/schemas/Asked" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/sessions/{device}/requests:
+    post:
+      summary: Ask a thing of another device's session; it goes with the next sync, and the device answers when it is on. Owner only.
+      parameters:
+        - { name: device, in: path, required: true, schema: { type: string }, description: The device that owns the session. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              description: |
+                What each kind needs: `session.prompt` session and text;
+                `session.choose` session, question, key and label as the dialog
+                was read; `session.resume` session and cwd; `cloud.start` cwd
+                (a project on that device) and task; `cloud.message` session
+                and text; `cloud.teleport` session.
+              properties:
+                kind:
+                  type: string
+                  enum: [session.prompt, session.choose, session.resume, cloud.start, cloud.message, cloud.teleport,
+                    sindri.session.prompt, sindri.session.choose, sindri.session.resume, sindri.cloud.start, sindri.cloud.message, sindri.cloud.teleport]
+                session: { type: string }
+                text: { type: string }
+                question: { type: string }
+                key: { type: string }
+                label: { type: string }
+                cwd: { type: string }
+                task: { type: string }
+      responses:
+        "202":
+          description: Waiting to go.
+          content:
+            application/json:
+              schema: { type: object, required: [asked], properties: { asked: { $ref: "#/components/schemas/Asked" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: The request is missing something.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Only the owner may do this.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Status:
+      description: How syncing goes.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [device, mimirUrl, read, waiting, mirrors]
+            properties:
+              device: { type: string, description: This machine's name at Mímir. }
+              mimirUrl: { type: string }
+              lastSyncAt: { type: string, format: date-time }
+              lastError: { type: string, description: Why the last sync failed; absent when it worked. }
+              read: { type: integer, description: The last Mímir position applied. }
+              waiting: { type: integer, description: Events not yet taken by Mímir. }
+              mirrors: { type: integer, description: Other devices' alerts not resolved. }
+              alerts: { type: boolean, description: Whether Gjallar's alerts are synced here. }
+              sessions: { type: boolean, description: Whether Sindri's coding sessions are synced here. }
+              driveFrom: { type: array, items: { type: string }, description: The devices whose requests to this machine's sessions are carried out. }
+  schemas:
+    DeviceView:
+      type: object
+      required: [device, heardAt, sessions, drivable]
+      properties:
+        device: { type: string }
+        heardAt: { type: integer, description: When it last sent its sessions, epoch millis. It sends them at least every 5 minutes while on. }
+        drivable: { type: boolean, description: Whether that device carries out this machine's requests. }
+        sessions: { $ref: "#/components/schemas/DeviceSessions" }
+    DeviceSessions:
+      type: object
+      description: The body of `sindri.sessions` (Mímir's docs/events.md).
+      required: [at, sessions, cloud, projects, driveFrom, herdr]
+      properties:
+        at: { type: integer }
+        herdr: { type: boolean, description: Whether its sessions can be typed into, resumed and brought home. }
+        driveFrom: { type: array, items: { type: string } }
+        errors: { type: object, additionalProperties: { type: string } }
+        projects:
+          type: array
+          items: { type: object, required: [name, path], properties: { name: { type: string }, path: { type: string } } }
+        sessions:
+          type: array
+          items:
+            type: object
+            required: [id, kind, name, lastActivity]
+            properties:
+              id: { type: string, description: "Claude Code's session id, or herdr:<pane>." }
+              kind: { type: string }
+              name: { type: string }
+              directory: { type: string }
+              startedAt: { type: integer }
+              lastActivity: { type: integer }
+              phase: { type: string, description: busy, turn-ended or blocked. }
+              tool: { type: string }
+              lastText: { type: string, description: Claude's last words, cut to 600 characters. }
+              permission: { type: string, description: The tool a permission prompt waits on. }
+              bridgeSessionId: { type: string, description: "Set when Remote Control is on: https://claude.ai/code/<it> opens the session." }
+              pane: { type: string, description: Its herdr pane. Only a session in one can be typed into. }
+              dialog:
+                type: object
+                required: [question, choices]
+                properties:
+                  question: { type: string }
+                  detail: { type: string }
+                  choices:
+                    type: array
+                    items: { type: object, required: [key, label], properties: { key: { type: string }, label: { type: string } } }
+        cloud:
+          type: array
+          items:
+            type: object
+            required: [id, at, cwd, task, url]
+            properties:
+              id: { type: string }
+              at: { type: integer }
+              cwd: { type: string }
+              task: { type: string }
+              url: { type: string }
+              lastSentAt: { type: integer }
+              lastError: { type: string }
+              teleportedAt: { type: integer }
+    Asked:
+      type: object
+      required: [id, device, kind, request, at, state]
+      properties:
+        id: { type: string }
+        device: { type: string }
+        kind: { type: string }
+        request: { type: object }
+        at: { type: integer }
+        state: { type: string, enum: [waiting, done, failed] }
+        error: { type: string }
+        url: { type: string, description: A cloud session's link, when one was started. }
+        doneAt: { type: integer }
+    Health:
+      type: object
+      required: [ok, part, version, startedAt, loops]
+      properties:
+        ok: { type: boolean }
+        part: { type: string }
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        loops:
+          type: object
+          description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.
+          additionalProperties:
+            type: object
+            required: [everySeconds]
+            properties:
+              everySeconds: { type: integer }
+              lastRunAt: { type: string, format: date-time }
+              lastError: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }

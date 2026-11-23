@@ -22,6 +22,8 @@ info:
       an urgent message through Hermóðr (straight to ntfy when Hermóðr can't
       take it), at most once per alert per 15 minutes, never while muted or
       snoozed.
+    - Senders named in its "quiet" list (phone) are never pushed: they are
+      another device's alerts, mirrored by Sága, and that device already told you.
     - Gjallar never acts on an alert.
 servers:
   - url: http://127.0.0.1:8774

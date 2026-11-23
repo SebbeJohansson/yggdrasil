@@ -23,7 +23,8 @@ import (
 //	HEIMDALL_TOKENS  who may call it: owner=…
 //	HEIMDALL_STATE   where findings and settings are kept (~/.local/state/yggdrasil/heimdall.json)
 //	HEIMDALL_SINDRI_REPOS  on: also every repo Sindri knows (off)
-//	HEIMDALL_REPOS   the repos, comma separated (~/projects/yggdrasil,~/projects/my-widget),
+//	HEIMDALL_REPOS   the repos, comma separated (~/projects/yggdrasil/yggdrasil-desktop,
+//	                 ~/projects/yggdrasil/mimir,~/projects/my-widget),
 //	                 until PATCH /v1/settings sets them; Sindri's projects are added
 //	HEIMDALL_FILES   more files to check the mode and age of, globs (none)
 //	HEIMDALL_OSV_URL osv.dev's API (https://api.osv.dev)
@@ -46,7 +47,7 @@ func Main(ctx context.Context) error {
 		repos = append(repos, expandHome(repo, home))
 	}
 	if len(repos) == 0 {
-		repos = []string{filepath.Join(home, "projects/yggdrasil"), filepath.Join(home, "projects/my-widget")}
+		repos = []string{filepath.Join(home, "projects/yggdrasil/yggdrasil-desktop"), filepath.Join(home, "projects/yggdrasil/mimir"), filepath.Join(home, "projects/my-widget")}
 	}
 	zone, err := time.LoadLocation(env.String("TIME_ZONE", "Europe/Stockholm"))
 	if err != nil {

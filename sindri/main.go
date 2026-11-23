@@ -120,6 +120,13 @@ func Main(ctx context.Context) error {
 		PromptsKeep:    env.Duration("SINDRI_PROMPTS_KEEP", 0),
 		Sessions:       NewAgentSessions(ClaudeRoot{ClaudeDir: claudeDir, SocketDir: socketDir}, opencode, herdr)}
 	s.Sessions.Agents = agents
+	cli := &ClaudeCloud{Bin: env.String("CLAUDE_BIN", filepath.Join(home, ".local/bin/claude")), StartWait: env.Duration("SINDRI_CLOUD_START_WAIT", 90*time.Second)}
+	if herdr != nil {
+		cli.Herdr = herdr
+	}
+	if s.Cloud, err = NewCloud(store, cli); err != nil {
+		return err
+	}
 	s.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }
