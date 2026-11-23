@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,6 +35,7 @@ var tellCommands = map[string]struct {
 	"alerts":   {"Gjallar's open alerts, the most recent first", alerts},
 	"gossip":   {"the parts' latest gossip in Huginn [n exchanges, default 3]", gossip},
 	"findings": {"Heimdall's open findings with their fixes [--all for the small ones too]", findings},
+	"usage":    {"Claude usage by day, goal and caller [--since 2026-11-01, default 7 days]", usageCommand},
 	"agents":   {"Sindri's agents that are not done, and the Claude Code sessions running", agents},
 	"strikes":  {"Loki's last strikes and who noticed", strikes},
 	"strike":   {"have Loki trick a part: ygg strike <part> [health|loop|slow|...] [--loop name] [--minutes n] [--yes]", strike},
@@ -668,4 +670,73 @@ func strike(args []string) int {
 	}
 	fmt.Fprintf(out, "Loki strikes %s until %s. Watch who notices: ygg strikes\n", part, started.EndsAt.Local().Format("15:04:05"))
 	return 0
+}
+
+// usageCommand prints Sindri's Claude usage ledger.
+func usageCommand(args []string) int {
+	set := flag.NewFlagSet("usage", flag.ContinueOnError)
+	asJSON := set.Bool("json", false, "print what Sindri answered")
+	since := set.String("since", "", "a date or RFC 3339 time (default 7 days ago)")
+	if _, err := flags(set, args); err != nil {
+		return failed("usage", err)
+	}
+	path := "/v1/usage"
+	if *since != "" {
+		path += "?since=" + url.QueryEscape(*since)
+	}
+	var report struct {
+		Total    usageTotal   `json:"total"`
+		ByDay    []usageTotal `json:"byDay"`
+		ByGoal   []usageTotal `json:"byGoal"`
+		ByCaller []usageTotal `json:"byCaller"`
+		Window   struct {
+			Hours  float64 `json:"hours"`
+			Tokens int64   `json:"tokens"`
+			Budget int64   `json:"budget"`
+			Share  float64 `json:"share"`
+		} `json:"window"`
+	}
+	if err := read("sindri", path, &report); err != nil {
+		return failed("usage", err)
+	}
+	if *asJSON {
+		return printJSON(report)
+	}
+	line := func(t usageTotal, key string) {
+		fmt.Fprintf(out, "  %-18s %5d calls  %9d in  %8d out  ≈$%.2f\n", key, t.Calls, t.TokensIn, t.TokensOut, t.CostUSD)
+	}
+	fmt.Fprintln(out, "Claude usage")
+	line(report.Total, "total")
+	if report.Window.Budget > 0 {
+		fmt.Fprintf(out, "  last %gh: %d of %d tokens (%.0f%%)\n", report.Window.Hours, report.Window.Tokens, report.Window.Budget, report.Window.Share*100)
+	} else {
+		fmt.Fprintf(out, "  last %gh: %d tokens (no budget set: SINDRI_USAGE_BUDGET)\n", report.Window.Hours, report.Window.Tokens)
+	}
+	for _, group := range []struct {
+		title string
+		rows  []usageTotal
+	}{{"By day", report.ByDay}, {"By goal", report.ByGoal}, {"By caller", report.ByCaller}} {
+		fmt.Fprintln(out, group.title)
+		if len(group.rows) == 0 {
+			fmt.Fprintln(out, "  nothing yet")
+		}
+		for _, row := range group.rows {
+			key := row.Key
+			if key == "" {
+				key = "no goal"
+			} else if group.title == "By goal" {
+				key = "goal " + key
+			}
+			line(row, key)
+		}
+	}
+	return 0
+}
+
+type usageTotal struct {
+	Key       string  `json:"key"`
+	Calls     int     `json:"calls"`
+	TokensIn  int64   `json:"tokensIn"`
+	TokensOut int64   `json:"tokensOut"`
+	CostUSD   float64 `json:"costUsd"`
 }

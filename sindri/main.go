@@ -10,6 +10,7 @@ import (
 	"time"
 	"yggdrasil/internal/linear"
 
+	"yggdrasil/internal/alert"
 	"yggdrasil/internal/call"
 	"yggdrasil/internal/env"
 	"yggdrasil/internal/part"
@@ -41,6 +42,8 @@ import (
 //	TIME_ZONE           the night shift's times are in this zone (Europe/Stockholm)
 //	SINDRI_SELF_REPAIR  on: draft goals for Yggdrasil's own alerts and dispatch corrections each night (off)
 //	YGG_GJALLAR_URL     Gjallar, whose alerts self-repair reads; GJALLAR_TOKEN is Sindri's token there
+//	SINDRI_USAGE_BUDGET tokens the plan allows per window; the usage ledger raises claude-usage at 80% of it (0: no alert)
+//	SINDRI_USAGE_WINDOW the plan's window (5h)
 //	SINDRI_WHY_TIMEOUT  how long a goal's start waits for Norn's why before going without it (30s)
 func Main(ctx context.Context) error {
 	tokens, err := env.Tokens("SINDRI_TOKENS")
@@ -129,6 +132,11 @@ func Main(ctx context.Context) error {
 	if s.Cloud, err = NewCloud(store, cli); err != nil {
 		return err
 	}
+	s.Usage = &Usage{Store: store, Budget: int64(env.Int("SINDRI_USAGE_BUDGET", 0)), Window: env.Duration("SINDRI_USAGE_WINDOW", 5*time.Hour), Logf: p.Logf}
+	if url, token := where.URL("gjallar"), env.String("GJALLAR_TOKEN", ""); url != "" && token != "" {
+		s.Usage.Gjallar = alert.NewClient(url, token)
+	}
+	agents.OnUsage = s.Usage.Record
 	s.Mount(p)
 	return p.Run(ctx, where.Addr(Name))
 }

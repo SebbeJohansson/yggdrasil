@@ -83,6 +83,36 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
+  /v1/usage:
+    get:
+      summary: Claude usage from `since` on (default 7 days), totalled by day, goal and caller, with the share of the plan's window used. Every agent turn and every /v1/complete call is in the ledger.
+      parameters:
+        - { name: since, in: query, schema: { type: string }, description: "A date (2026-11-01), an RFC 3339 time or milliseconds." }
+      responses:
+        "200":
+          description: The totals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [since, total, byDay, byGoal, byCaller, window]
+                properties:
+                  since: { type: integer }
+                  total: { $ref: "#/components/schemas/UsageTotal" }
+                  byDay: { type: array, items: { $ref: "#/components/schemas/UsageTotal" } }
+                  byGoal: { type: array, items: { $ref: "#/components/schemas/UsageTotal" }, description: 'key is the goal id; "" is work with no goal.' }
+                  byCaller: { type: array, items: { $ref: "#/components/schemas/UsageTotal" }, description: 'key is "agent", or the part that asked for answers ("norn"), with ":feature" when it said.' }
+                  window:
+                    type: object
+                    required: [hours, tokens, share]
+                    properties:
+                      hours: { type: number }
+                      tokens: { type: integer }
+                      budget: { type: integer }
+                      share: { type: number }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/complete:
     get:
       summary: Which engine a one-shot answer runs on now (claude, copilot, or "" when neither is installed and on).
@@ -111,6 +141,7 @@ paths:
                 system: { type: string }
                 prompt: { type: string }
                 model: { type: string }
+                feature: { type: string, description: What asked, for the usage ledger. }
       responses:
         "200":
           description: The answer.
@@ -1820,6 +1851,15 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    UsageTotal:
+      type: object
+      required: [key, calls, tokensIn, tokensOut, costUsd]
+      properties:
+        key: { type: string }
+        calls: { type: integer }
+        tokensIn: { type: integer }
+        tokensOut: { type: integer }
+        costUsd: { type: number }
     ClaudeLogin:
       type: object
       required: [state]

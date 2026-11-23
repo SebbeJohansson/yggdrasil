@@ -51,6 +51,7 @@ ygg alerts             # Gjallar's open alerts, the most recent first
 ygg gossip [n]         # the last n exchanges of the parts' gossip (default 3)
 ygg findings [--all]   # Heimdall's open findings with their fixes, the small ones with --all
 ygg agents             # Sindri's agents that are not done, and the Claude Code sessions running
+ygg usage              # Claude usage by day, goal and caller, and the share of the plan's window used [--since 2026-11-01]
 ygg strikes            # Loki's last strikes and who noticed
 ygg strike norn [loop] [--loop calendar] [--minutes 3] [--yes]   # have Loki trick a part
 ```
