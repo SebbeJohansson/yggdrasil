@@ -320,3 +320,24 @@ func TestAskAgentFollowsTheConversationsMode(t *testing.T) {
 		t.Fatalf("a conversation with no mode started in %q", plain.PermissionMode)
 	}
 }
+
+func TestRemoteControlLinkIsKept(t *testing.T) {
+	a := &Agent{Status: Working}
+	link := "https://claude.ai/code/session_01Abc"
+	a.applyClaude(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": "other",
+		"response": map[string]any{"session_url": "https://claude.ai/code/elsewhere"}}}, 0, 1)
+	if a.RemoteURL != "" {
+		t.Fatalf("another request's answer set the link to %q", a.RemoteURL)
+	}
+	a.applyClaude(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": remoteControlID,
+		"response": map[string]any{"session_url": link}}}, 0, 2)
+	if a.RemoteURL != link || a.Status != Working {
+		t.Fatalf("link %q status %s, want %q working", a.RemoteURL, a.Status, link)
+	}
+	b := &Agent{Status: Working}
+	b.applyClaude(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "error", "request_id": remoteControlID,
+		"error": "Remote Control is not enabled for this account"}}, 0, 3)
+	if b.RemoteURL != "" || len(b.Log) != 1 || !strings.Contains(b.Log[0].Text, "not enabled") {
+		t.Fatalf("a refusal left link %q and log %+v", b.RemoteURL, b.Log)
+	}
+}

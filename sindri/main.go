@@ -25,6 +25,7 @@ import (
 //	SINDRI_STATE        where the agents are kept (~/.local/state/yggdrasil/sindri-agents.json)
 //	SINDRI_MAX_RUNNING  how many agent processes at once (4)
 //	SINDRI_IDLE         how long an idle agent's process is kept (30m)
+//	SINDRI_REMOTE_CONTROL  Claude agents join Remote Control, to follow them on claude.ai/code (true)
 //	CLAUDE_BIN          Claude Code (~/.local/bin/claude); off turns it off
 //	CLAUDE_DIR          Claude Code's state (~/.claude); CLAUDE_SOCKET_DIR its live sockets
 //	OPENCODE_URL        a running `opencode serve` (http://127.0.0.1:4096); off turns it off
@@ -54,12 +55,13 @@ func Main(ctx context.Context) error {
 	home, _ := os.UserHomeDir()
 	roots := strings.Split(env.String("SINDRI_ROOTS", filepath.Join(home, "projects")), ":")
 	agents, err := NewManager(ManagerOptions{
-		ClaudeBin:  env.String("CLAUDE_BIN", filepath.Join(home, ".local/bin/claude")),
-		CopilotBin: env.String("COPILOT_BIN", filepath.Join(home, ".local/bin/copilot")),
-		Roots:      roots,
-		StatePath:  env.String("SINDRI_STATE", filepath.Join(home, ".local/state/yggdrasil/sindri-agents.json")),
-		MaxRunning: env.Int("SINDRI_MAX_RUNNING", 4),
-		Idle:       env.Duration("SINDRI_IDLE", 30*time.Minute),
+		ClaudeBin:     env.String("CLAUDE_BIN", filepath.Join(home, ".local/bin/claude")),
+		CopilotBin:    env.String("COPILOT_BIN", filepath.Join(home, ".local/bin/copilot")),
+		Roots:         roots,
+		StatePath:     env.String("SINDRI_STATE", filepath.Join(home, ".local/state/yggdrasil/sindri-agents.json")),
+		MaxRunning:    env.Int("SINDRI_MAX_RUNNING", 4),
+		Idle:          env.Duration("SINDRI_IDLE", 30*time.Minute),
+		RemoteControl: env.String("SINDRI_REMOTE_CONTROL", "true") == "true",
 	}, p.Logf)
 	if err != nil {
 		return err

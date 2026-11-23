@@ -61,6 +61,10 @@ type ManagerOptions struct {
 	StatePath             string
 	MaxRunning            int
 	Idle                  time.Duration
+	// RemoteControl turns on Remote Control for every Claude process Sindri
+	// starts, so its sessions can be followed and steered from claude.ai/code
+	// and the Claude app.
+	RemoteControl bool
 }
 
 type live struct {
@@ -393,7 +397,24 @@ func (m *Manager) launchClaudeLocked(a *Agent, resume bool) error {
 	if a.Model != "" {
 		args = append(args, "--model", a.Model)
 	}
-	return m.watchLocked(a, m.options.ClaudeBin, args, false)
+	if err := m.watchLocked(a, m.options.ClaudeBin, args, false); err != nil {
+		return err
+	}
+	if m.options.RemoteControl && !a.NoTools {
+		m.writeLocked(m.live[a.ID], RemoteControlRequest())
+	}
+	return nil
+}
+
+// remoteControlID marks the control request that turns Remote Control on,
+// so its answer is told from others.
+const remoteControlID = "remote-control"
+
+// RemoteControlRequest asks a headless Claude process to connect to Remote
+// Control; it answers with the session's claude.ai link.
+func RemoteControlRequest() map[string]any {
+	return map[string]any{"type": "control_request", "request_id": remoteControlID,
+		"request": map[string]any{"subtype": "remote_control", "enabled": true}}
 }
 
 func (m *Manager) launchCopilotLocked(a *Agent, text string) error {

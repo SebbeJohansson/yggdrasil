@@ -2045,7 +2045,7 @@ components:
       required: [at, kind, text]
       properties:
         at: { type: integer }
-        kind: { type: string, enum: [prompt, text, tool, permission, result, error, exit] }
+        kind: { type: string, enum: [prompt, text, tool, permission, result, error, exit, remote] }
         text: { type: string }
     Agent:
       type: object
@@ -2099,6 +2099,7 @@ components:
         lastError: { type: string }
         merged: { type: boolean }
         usageLimited: { type: boolean }
+        remoteUrl: { type: string, description: "Its session on claude.ai/code through Remote Control (SINDRI_REMOTE_CONTROL), to follow and steer it from the web or the Claude app." }
         loginExpired: { type: boolean, description: Its last turn failed because Claude Code's sign-in ran out (POST /v1/claude-login signs in again). }
     Review:
       type: object

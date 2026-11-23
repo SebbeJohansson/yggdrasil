@@ -49,7 +49,7 @@ type Pending struct {
 // LogEntry is one line of an agent's log.
 type LogEntry struct {
 	At   int64  `json:"at"`
-	Kind string `json:"kind"` // prompt, text, tool, permission, result, error, exit
+	Kind string `json:"kind"` // prompt, text, tool, permission, result, error, exit, remote
 	Text string `json:"text"`
 }
 
@@ -147,6 +147,9 @@ type Agent struct {
 	Herdr *HerdrPlace `json:"herdr,omitempty"`
 	// Opencode is set for an agent running as an OpenCode session (Engine "opencode").
 	Opencode *OpencodePlace `json:"opencode,omitempty"`
+	// RemoteURL is the session on claude.ai/code that Remote Control mirrors,
+	// set once the process has connected.
+	RemoteURL string `json:"remoteUrl,omitempty"`
 }
 
 // Limits on what an agent keeps.
@@ -270,6 +273,21 @@ func (a *Agent) applyClaude(event map[string]any, baseCost float64, now int64) {
 	case "user":
 		if len(a.Pending) == 0 {
 			a.Status = Working
+		}
+	case "control_response":
+		response, _ := event["response"].(map[string]any)
+		if response["request_id"] != remoteControlID {
+			return
+		}
+		if response["subtype"] != "success" {
+			text, _ := response["error"].(string)
+			a.addLog(LogEntry{At: now, Kind: "remote", Text: "Remote Control did not start: " + text})
+			return
+		}
+		body, _ := response["response"].(map[string]any)
+		if link, ok := body["session_url"].(string); ok && link != "" && link != a.RemoteURL {
+			a.RemoteURL = link
+			a.addLog(LogEntry{At: now, Kind: "remote", Text: "Remote Control on: " + link})
 		}
 	case "control_request":
 		request, _ := event["request"].(map[string]any)
