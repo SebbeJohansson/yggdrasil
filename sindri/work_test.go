@@ -360,8 +360,11 @@ func TestPlanCandidatesReadDocsFolder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got := PlanCandidates(root, "demo", map[string]int64{"todo:demo:docs/plan.md:- [ ] Build it": 3})
-	if len(got) != 3 || got[0].Title != "Top plan" || got[1].Goal != nil || got[2].Context != "with care" || got[2].Goal == nil {
+	got, err := PlanCandidates(root, "demo", map[string]int64{"todo:demo:docs/plan.md:- [ ] Build it": 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 4 || got[0].Title != "Top plan" || got[1].Source != "todo:demo:- [ ] Root" || got[2].Source != "todo:demo:docs/01-plan-ui.md:- [ ] Build it" || got[3].Context != "with care" || got[3].Goal == nil {
 		t.Fatalf("got %+v", got)
 	}
 }

@@ -556,22 +556,40 @@ func ReadProjectDocs(root, name string) (ProjectDocs, error) {
 var planDoc = regexp.MustCompile(`(?i)(plan|todo|roadmap|backlog|tasks)[^/]*\.md$`)
 
 // PlanFiles is the project's plan-like markdown files as paths relative to the
-// project: such files in its root (other than TODO.md, which has its own
-// import) and anywhere under docs/, at most three folders deep.
-func PlanFiles(projectPath string) []string {
+// project: the ones its documents list (ReadProjectDocs: docs/docs.json, else
+// the root README.md and TODO.md), plus any in its root and anywhere under
+// docs/, at most three folders deep, whether or not docs.json lists them.
+func PlanFiles(projectPath string, docs ProjectDocs) []string {
+	seen := map[string]bool{}
 	var found []string
-	entries, _ := os.ReadDir(projectPath)
-	for _, entry := range entries {
-		if !entry.IsDir() && planDoc.MatchString(entry.Name()) && !strings.EqualFold(entry.Name(), "TODO.md") {
-			found = append(found, entry.Name())
+	add := func(path string) {
+		if !seen[path] {
+			seen[path] = true
+			found = append(found, path)
 		}
 	}
-	docs := filepath.Join(projectPath, "docs")
-	_ = filepath.WalkDir(docs, func(path string, entry os.DirEntry, err error) error {
+	for _, doc := range docs.Files {
+		if doc.Content == nil || !planDoc.MatchString(doc.File) {
+			continue
+		}
+		if exists(filepath.Join(projectPath, doc.File)) && !exists(filepath.Join(projectPath, "docs", "docs.json")) {
+			add(doc.File)
+		} else {
+			add("docs/" + doc.File)
+		}
+	}
+	entries, _ := os.ReadDir(projectPath)
+	for _, entry := range entries {
+		if !entry.IsDir() && planDoc.MatchString(entry.Name()) {
+			add(entry.Name())
+		}
+	}
+	docsDir := filepath.Join(projectPath, "docs")
+	_ = filepath.WalkDir(docsDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		rel, _ := filepath.Rel(docs, path)
+		rel, _ := filepath.Rel(docsDir, path)
 		if entry.IsDir() {
 			if strings.Count(rel, string(filepath.Separator)) >= 3 {
 				return filepath.SkipDir
@@ -579,7 +597,7 @@ func PlanFiles(projectPath string) []string {
 			return nil
 		}
 		if planDoc.MatchString(entry.Name()) {
-			found = append(found, filepath.ToSlash(filepath.Join("docs", rel)))
+			add(filepath.ToSlash(filepath.Join("docs", rel)))
 		}
 		return nil
 	})
@@ -588,18 +606,25 @@ func PlanFiles(projectPath string) []string {
 }
 
 // PlanCandidates is the open "- [ ]" items of a project's plan files (see
-// PlanFiles), read-only. The file is in each candidate's source.
-func PlanCandidates(root, name string, known map[string]int64) []Candidate {
-	index := slices.IndexFunc(FindProjects(root), func(p Project) bool { return p.Name == name })
-	if index < 0 {
-		return nil
+// PlanFiles), read-only. Root TODO.md keeps its plain source; for any other
+// file the path is in each candidate's source.
+func PlanCandidates(root, name string, known map[string]int64) ([]Candidate, error) {
+	docs, err := ReadProjectDocs(root, name)
+	if err != nil {
+		return nil, err
 	}
-	project := FindProjects(root)[index]
-	var found []Candidate
-	for _, file := range PlanFiles(project.Path) {
-		if text := readText(filepath.Join(project.Path, file)); text != nil {
-			found = append(found, todoCandidatesIn(name, file, *text, known)...)
+	project := FindProjects(root)[slices.IndexFunc(FindProjects(root), func(p Project) bool { return p.Name == name })]
+	found := []Candidate{}
+	for _, file := range PlanFiles(project.Path, docs) {
+		text := readText(filepath.Join(project.Path, file))
+		if text == nil {
+			continue
 		}
+		label := file
+		if file == "TODO.md" {
+			label = ""
+		}
+		found = append(found, todoCandidatesIn(name, label, *text, known)...)
 	}
-	return found
+	return found, nil
 }

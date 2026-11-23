@@ -1025,18 +1025,11 @@ func (w *Work) candidates(rw http.ResponseWriter, r *http.Request) {
 			part.Error(rw, http.StatusBadRequest, "`project` is required for todo")
 			return
 		}
-		docs, err := ReadProjectDocs(w.Agents.roots[0], project)
+		found, err := PlanCandidates(w.Agents.roots[0], project, known)
 		if err != nil {
 			fail(rw, err)
 			return
 		}
-		found := []Candidate{}
-		for _, file := range docs.Files {
-			if strings.EqualFold(file.File, "TODO.md") && file.Content != nil {
-				found = append(found, TodoCandidates(project, *file.Content, known)...)
-			}
-		}
-		found = append(found, PlanCandidates(w.Agents.roots[0], project, known)...)
 		part.JSON(rw, http.StatusOK, map[string]any{"from": "todo", "candidates": found})
 	case "linear":
 		if !w.Linear.On() {
