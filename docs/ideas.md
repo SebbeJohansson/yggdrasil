@@ -1,8 +1,9 @@
-# Three ideas for Yggdrasil
+# Ideas for Yggdrasil
 
 Each fits the rules in [architecture.md](architecture.md): one job, its own
 API and spec in `api/`, talks to the others over HTTP only, and tells you
-through Gjallar and Hermóðr. None is built yet.
+through Gjallar and Hermóðr. 2 and 3 are built; the rest are not. The order
+to build them in is at the end.
 
 ## 1. Backups of every part's state
 
@@ -23,7 +24,7 @@ modes of the folder.
 
 **Size:** about 30 minutes of agent time.
 
-## 2. Release and deploy watch
+## 2. Release and deploy watch (built)
 
 **Gap:** Munin checks the systems Yggdrasil depends on, Heimdall your repos'
 security. Nothing tells you that a deploy or the release build of one of
@@ -43,7 +44,7 @@ agent view can offer to start a Sindri agent on the failing log.
 **Size:** about 20 minutes of agent time for the check, 20 more for the
 Huginn rule and dashboard card.
 
-## 3. A Claude usage ledger
+## 3. A Claude usage ledger (built)
 
 **Done:** the ledger (in `sindri.db`), `GET /v1/usage?since=`, the `claude-usage` alert
 (needs `SINDRI_USAGE_BUDGET`, tokens per `SINDRI_USAGE_WINDOW`, default 5h) and
@@ -64,11 +65,6 @@ low-priority agents until it clears. `ygg usage` prints the same in plain
 lines next to `ygg agents`.
 
 **Size:** about 25 minutes of agent time.
-
-## Order
-
-Do 2 first: it catches the incidents you care about most. Then 1, because it
-protects everything else. Then 3.
 
 # Security hardening
 
@@ -129,7 +125,9 @@ the requests. The phone keeps its key in the Android Keystore.
 
 **Size:** about 45 minutes of agent time, both repos.
 
-## Smaller ones
+## 7. Three small fixes
+
+Low risk each, cheap together: about 20 minutes of agent time.
 
 - A "yes" answers the first pending request of the most recent agent
   (`norn/ask.go`): bind each approval to its `requestId`.
@@ -138,3 +136,31 @@ the requests. The phone keeps its key in the Android Keystore.
   any `Host` but `127.0.0.1:<port>` and `localhost:<port>`.
 - Question agents may `cat`, `head`, `tail`, `grep` and `rg` any file
   (`sindri/prompts.go`): limit them to `Read(<roots>/**)`.
+
+# Cleanup
+
+## 8. Old local branches
+
+**Gap:** the repo was made public on 2026-11-24 with a rewritten history.
+Local branches made before that (`feature/*`, `agent/*`, `message-trace`)
+still carry the old history, with real names and work details in it; pushing
+one puts it back on GitHub. The old history is kept in the private
+`yggdrasil-private-archive`.
+
+**Shape:** delete them locally. One that still holds unmerged work is
+rebuilt on the new `main` first: its commits cherry-picked, with the same
+name replacements the rewrite used.
+
+**Size:** about 10 minutes of agent time, plus about 2 minutes of yours to
+say which branches still matter.
+
+# Order
+
+1. **7, the three small fixes:** quick, and each closes a real gap.
+2. **5, a token per device:** a lost phone or leaked `nodes.json` stops
+   controlling every machine.
+3. **1, backups:** memory, promises and sign-ins live on one disk.
+4. **4, coding agents in a sandbox:** the largest gain, and the most work.
+5. **6, signed requests through Mímir:** only once `SAGA_DRIVE_FROM` is on.
+
+8 can be done any time; before anything else is pushed from an old branch.
