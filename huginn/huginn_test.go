@@ -273,3 +273,17 @@ func TestMarksOutliveARestart(t *testing.T) {
 		t.Fatalf("got %q", id)
 	}
 }
+
+func TestReleaseRuleMatchesOnlyReleaseAlerts(t *testing.T) {
+	rule := releaseRule([]string{"phone"})
+	opened := func(key string) Fired {
+		return Fired{Kind: "alert.opened", Alert: &Alert{Source: "munin", Key: key, Severity: "warning"}}
+	}
+	now := time.Now()
+	if !rule.On.Matches(opened("release:a/b"), now) {
+		t.Fatal("a failed release should match")
+	}
+	if rule.On.Matches(opened("github"), now) {
+		t.Fatal("another munin alert should not match")
+	}
+}

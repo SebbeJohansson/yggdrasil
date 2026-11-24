@@ -26,6 +26,8 @@ type Result struct {
 	// Title says what is wrong, for the alert. Detail is the error.
 	Title  string
 	Detail string
+	// Link is the page that explains it, for the alert.
+	Link string
 	// Skip leaves the check as it was: it was not run this round (for
 	// Munin, an internet check while the internet is down).
 	Skip bool
@@ -38,6 +40,7 @@ type State struct {
 	Severity  alert.Severity `json:"severity,omitempty"`
 	Title     string         `json:"title,omitempty"`
 	Detail    string         `json:"detail,omitempty"`
+	Link      string         `json:"link,omitempty"`
 	Fails     int            `json:"fails"`
 	Passes    int            `json:"passes"`
 	Since     time.Time      `json:"since"`
@@ -94,7 +97,7 @@ func (w *Watch) Observe(results []Result) {
 		}
 		state.Passes = 0
 		state.Fails++
-		state.Severity, state.Title, state.Detail = result.Severity, result.Title, result.Detail
+		state.Severity, state.Title, state.Detail, state.Link = result.Severity, result.Title, result.Detail, result.Link
 		if !state.Down && state.Fails >= w.FailAfter {
 			state.Down = true
 			state.Since = now
@@ -159,7 +162,7 @@ func (w *Watch) Sync(ctx context.Context, client *alert.Client) error {
 		var err error
 		switch {
 		case state.Down && !state.Raised:
-			err = client.Raise(ctx, alert.Raise{Key: state.Key, Severity: state.Severity, Title: state.Title, Detail: state.Detail})
+			err = client.Raise(ctx, alert.Raise{Key: state.Key, Severity: state.Severity, Title: state.Title, Detail: state.Detail, Link: state.Link})
 		case !state.Down && state.Raised:
 			err = client.Resolve(ctx, state.Key)
 		default:

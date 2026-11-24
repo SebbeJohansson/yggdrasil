@@ -14,6 +14,8 @@ import (
 
 	"yggdrasil/internal/alert"
 	"yggdrasil/internal/watch"
+	"yggdrasil/munin/prod"
+	"yggdrasil/munin/release"
 	"yggdrasil/munin/source"
 	"yggdrasil/munin/tcgpriser"
 )
@@ -21,6 +23,8 @@ import (
 // Sources is every source Munin can run, by the name MUNIN_SOURCES uses.
 var Sources = map[string]source.Factory{
 	tcgpriser.Name: tcgpriser.New,
+	release.Name:   release.New,
+	prod.Name:      prod.New,
 }
 
 // SourceNames is the names in Sources, sorted.

@@ -144,3 +144,44 @@ func (c *Client) post(ctx context.Context, path string, body any) error {
 	}
 	return nil
 }
+
+// Seen is an alert as Gjallar lists it, less its history.
+type Seen struct {
+	Source      string    `json:"source"`
+	Key         string    `json:"key"`
+	Severity    Severity  `json:"severity"`
+	Title       string    `json:"title"`
+	Detail      string    `json:"detail,omitempty"`
+	Link        string    `json:"link,omitempty"`
+	State       string    `json:"state"`
+	Muted       bool      `json:"muted"`
+	FirstSeenAt time.Time `json:"firstSeenAt"`
+}
+
+// Active is every open or acknowledged alert, whoever raised it.
+func (c *Client) Active(ctx context.Context) ([]Seen, error) {
+	if c == nil || c.URL == "" {
+		return nil, ErrOff
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL+"/v1/alerts?state=active&limit=1000", nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+c.Token)
+	response, err := c.HTTP.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 300 {
+		text, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+		return nil, fmt.Errorf("gjallar answered %d: %s", response.StatusCode, strings.TrimSpace(string(text)))
+	}
+	var body struct {
+		Alerts []Seen `json:"alerts"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	return body.Alerts, nil
+}

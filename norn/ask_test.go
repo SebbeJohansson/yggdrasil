@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"yggdrasil/internal/alert"
 	"yggdrasil/internal/contract/contracttest"
 	"yggdrasil/internal/llm"
 	"yggdrasil/internal/part"
@@ -396,5 +397,23 @@ func TestChatListsAnAgentStartedForItBeforeItSpeaks(t *testing.T) {
 	}
 	if strings.Join(ids, ",") != "a1" {
 		t.Fatalf("participants %v, want only a1", ids)
+	}
+}
+
+func TestNeedsYouListsAFailedRelease(t *testing.T) {
+	gjallar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"alerts":[
+			{"source":"munin","key":"release:a/b","title":"a/b: ci failed on the default branch","detail":"failure","link":"http://run/1","state":"open","firstSeenAt":"2026-11-23T10:00:00Z"},
+			{"source":"munin","key":"github","title":"GitHub is down","state":"open","firstSeenAt":"2026-11-23T10:00:00Z"}]}`))
+	}))
+	defer gjallar.Close()
+	n, _ := newNorn(t)
+	n.Gjallar = alert.NewClient(gjallar.URL, "t")
+	needs, err := n.NeedsYou(context.Background(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(needs) != 1 || needs[0].Kind != "release" || needs[0].Repo != "a/b" || needs[0].Link != "http://run/1" {
+		t.Fatalf("got %+v", needs)
 	}
 }

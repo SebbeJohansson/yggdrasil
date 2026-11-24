@@ -151,7 +151,7 @@ func (n *Norn) agentTurn(w http.ResponseWriter, r *http.Request) {
 
 // Need is something waiting on you.
 type Need struct {
-	Kind       string            `json:"kind"` // approval, question, failed, result, stuck, ready
+	Kind       string            `json:"kind"` // approval, question, failed, result, stuck, ready, release
 	Agent      string            `json:"agent"`
 	Label      string            `json:"label"`
 	Session    *string           `json:"session"`
@@ -162,6 +162,9 @@ type Need struct {
 	At         int64             `json:"at"`
 	Overdue    bool              `json:"overdue,omitempty"`
 	Check      string            `json:"check,omitempty"`
+	// Link and Repo are a failed release's run and repository (kind release).
+	Link string `json:"link,omitempty"`
+	Repo string `json:"repo,omitempty"`
 }
 
 // How long before an approval or question is overdue, and a silent agent stuck.
@@ -278,6 +281,7 @@ func (n *Norn) NeedsYou(ctx context.Context, now time.Time) ([]Need, error) {
 		}
 		needs = append(needs, need)
 	}
+	needs = append(needs, n.releaseNeeds(ctx)...)
 	slices.SortStableFunc(needs, func(a, b Need) int { return int(a.At - b.At) })
 	return needs, nil
 }
@@ -452,4 +456,26 @@ func (n *Norn) mountChat(p *part.Part) {
 func stringOf(value any) string {
 	text, _ := value.(string)
 	return text
+}
+
+// releaseNeeds is a failed release or deploy Munin has open on Gjallar: one
+// need per repo, with the failed run's link. It goes when the next run passes.
+func (n *Norn) releaseNeeds(ctx context.Context) []Need {
+	alerts, err := n.Gjallar.Active(ctx)
+	if err != nil {
+		return nil
+	}
+	var needs []Need
+	for _, a := range alerts {
+		repo, ok := strings.CutPrefix(a.Key, "release:")
+		if a.Source != "munin" || !ok || a.Muted {
+			continue
+		}
+		text := a.Detail
+		if text == "" {
+			text = a.Title
+		}
+		needs = append(needs, Need{Kind: "release", Label: a.Title, Repo: repo, Link: a.Link, Text: clipNeed(text), At: a.FirstSeenAt.UnixMilli()})
+	}
+	return needs
 }

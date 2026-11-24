@@ -212,6 +212,9 @@ func learnedFilters(t Trigger, f Fired) bool {
 	if t.Key != "" && (f.Alert == nil || t.Key != f.Alert.Key) {
 		return false
 	}
+	if t.KeyPrefix != "" && (f.Alert == nil || !strings.HasPrefix(f.Alert.Key, t.KeyPrefix)) {
+		return false
+	}
 	return true
 }
 
