@@ -1089,3 +1089,7 @@ at or above its `<CHANNEL>_MIN`. Slack and Discord were left out on
 purpose: nothing from your inbox should land where others in a workspace or
 server could read it. A channel failing 3 sends in a row is
 `channel:<name>` (warning).
+
+## License
+
+MIT, see [LICENSE](LICENSE). Report security problems as [SECURITY.md](SECURITY.md) says.
