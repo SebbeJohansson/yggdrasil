@@ -135,6 +135,7 @@ func (s *Sindri) Mount(p *part.Part) {
 	}
 	{
 		s.mountSessions(p)
+		s.mountTranscripts(p)
 		s.mountCloud(p)
 		if s.Sessions.Opencode != nil {
 			p.Loop("opencode", 3*time.Second, s.Sessions.ReadOpencode)

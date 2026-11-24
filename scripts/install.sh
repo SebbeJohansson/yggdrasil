@@ -3,14 +3,41 @@
 # keeping every token already there), and installs and starts the host parts
 # as systemd user units. Safe to run again: nothing you set is overwritten.
 #
-#   scripts/install.sh
-#   docker compose up -d --build     # then the container parts
+#   scripts/install.sh                  # every part (the full profile)
+#   scripts/install.sh --profile dev    # the coding parts only, for a VPS
+#   docker compose up -d --build        # then the container parts
+#
+# Profiles (docs/vps.md):
+#   full  every part: Norn, the inbox, calendars, local models. Your desktop.
+#   dev   Sindri, Ratatoskr, Gjallar, Dellingr and Heimdall: an always-on
+#         machine for coding agents, with no inbox, calendar or model.
+# The profile is remembered in ~/.config/yggdrasil/profile, so running it
+# again keeps the one you picked. YGG_PROFILE works as well as --profile.
 #
 # Settings live in ~/.config/yggdrasil/<part>.env, readable by you only.
 set -eu
 cd "$(dirname "$0")/.."
 config="$HOME/.config/yggdrasil"
 origins="http://localhost:17420,http://127.0.0.1:17420"
+
+profile="${YGG_PROFILE:-}"
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--profile) profile="${2:-}"; shift 2 ;;
+	--profile=*) profile="${1#--profile=}"; shift ;;
+	*) echo "install.sh: unknown argument $1 (try --profile full|dev)" >&2; exit 2 ;;
+	esac
+done
+[ -n "$profile" ] || profile=$(cat "$config/profile" 2>/dev/null || echo full)
+case "$profile" in
+full | dev) ;;
+*) echo "install.sh: the profile is full or dev, not $profile" >&2; exit 2 ;;
+esac
+# full: whether this machine runs every part.
+full() {
+	[ "$profile" = full ]
+}
+echo "Profile: $profile"
 
 echo "Building ygg..."
 scripts/go build -trimpath -ldflags "-s -w -X yggdrasil/internal/part.Version=$(git describe --always --dirty 2>/dev/null || echo dev)" -o bin/ygg ./cmd/ygg
@@ -25,6 +52,7 @@ mkdir -p "$config"
 chmod 700 "$config"
 umask 077
 
+echo "$profile" >"$config/profile"
 [ -s "$config/owner.token" ] || token >"$config/owner.token"
 owner=$(cat "$config/owner.token")
 
@@ -58,7 +86,12 @@ part_token() {
 gjallar_token() {
 	part_token gjallar "$1"
 }
-for part in munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki heimdall phone; do
+if full; then
+	senders="munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki heimdall phone"
+else
+	senders="ratatoskr sindri dellingr heimdall"
+fi
+for part in $senders; do
 	gjallar_token "$part" >/dev/null
 done
 
@@ -72,7 +105,17 @@ write() {
 	echo "  wrote $1"
 }
 
-write munin.env <<EOF
+# ensure <file> <name> <value>: adds name=value to a settings file that
+# lacks it, keeping everything else.
+ensure() {
+	[ -e "$config/$1" ] || return 0
+	grep -q "^$2=" "$config/$1" && return 0
+	printf '%s=%s\n' "$2" "$3" >>"$config/$1"
+	echo "  added $2 to $1"
+}
+
+if full; then
+	write munin.env <<EOF
 MUNIN_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token munin)
 YGG_CORS_ORIGINS=$origins
@@ -80,11 +123,12 @@ YGG_CORS_ORIGINS=$origins
 MUNIN_SOURCES=
 # MUNIN_TCGPRISER_TOKEN=
 EOF
-write vedrfolnir.env <<EOF
+	write vedrfolnir.env <<EOF
 VEDRFOLNIR_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token vedrfolnir)
 YGG_CORS_ORIGINS=$origins
 EOF
+fi
 write ratatoskr.env <<EOF
 RATATOSKR_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token ratatoskr)
@@ -94,8 +138,21 @@ NTFY_TOKEN=
 YGG_CORS_ORIGINS=$origins
 EOF
 
+# The dev profile has no calendar to watch you by (Ratatoskr's rhythm).
+full || ensure ratatoskr.env RATATOSKR_YOU off
+
+# The dev profile runs Sindri alone: no Norn to post to or ask, so no
+# NORN_TOKEN, which turns those calls off (sindri/main.go).
+if ! full; then
+	write sindri.env <<EOF
+SINDRI_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token sindri)
+YGG_CORS_ORIGINS=$origins
+EOF
+fi
+
 # Norn and Sindri call each other, so they are written together.
-if [ ! -e "$config/norn.env" ] || [ ! -e "$config/sindri.env" ]; then
+if full && { [ ! -e "$config/norn.env" ] || [ ! -e "$config/sindri.env" ]; }; then
 	norn_at_sindri=$(token)
 	sindri_at_norn=$(token)
 	rm -f "$config/norn.env" "$config/sindri.env"
@@ -140,8 +197,9 @@ fi
 
 # Hermóðr carries every message for you: into the widget, and to your phone
 # when NTFY_URL is set. It reads your calendars from Norn, to hold messages
-# through a meeting.
-write hermodr.env <<EOF
+# through a meeting. Hermóðr, Huginn, Loki and Sága are the full profile's.
+if full; then
+	write hermodr.env <<EOF
 HERMODR_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token hermodr)
 NORN_TOKEN=$(part_token norn hermodr)
@@ -156,27 +214,21 @@ QUIET_HOURS=
 YGG_CORS_ORIGINS=$origins
 EOF
 
-# ensure <file> <name> <value>: adds name=value to a settings file that
-# lacks it, keeping everything else.
-ensure() {
-	[ -e "$config/$1" ] || return 0
-	grep -q "^$2=" "$config/$1" && return 0
-	printf '%s=%s\n' "$2" "$3" >>"$config/$1"
-	echo "  added $2 to $1"
-}
-for part in gjallar ratatoskr huginn dellingr sindri; do
-	ensure "$part.env" HERMODR_TOKEN "$(part_token hermodr "$part")"
-done
-# Ratatoskr also watches your own rhythm: your work calendar from Norn, your
-# sessions and agents from Sindri (README, Ratatoskr). RATATOSKR_YOU=off stops it.
-ensure ratatoskr.env NORN_TOKEN "$(part_token norn ratatoskr)"
+	for part in gjallar ratatoskr huginn dellingr sindri; do
+		ensure "$part.env" HERMODR_TOKEN "$(part_token hermodr "$part")"
+	done
+	# Ratatoskr also watches your own rhythm: your work calendar from Norn, your
+	# sessions and agents from Sindri (README, Ratatoskr). RATATOSKR_YOU=off stops it.
+	ensure ratatoskr.env NORN_TOKEN "$(part_token norn ratatoskr)"
+fi
 ensure ratatoskr.env SINDRI_TOKEN "$(part_token sindri ratatoskr)"
 ensure ratatoskr.env TIME_ZONE Europe/Stockholm
 
 # Huginn and Dellingr call Norn and Sindri with tokens of their own. After a
 # token is added there, restart Norn and Sindri (docker compose up -d, and
 # systemctl --user restart ygg-sindri).
-write huginn.env <<EOF
+if full; then
+	write huginn.env <<EOF
 HUGINN_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token huginn)
 NORN_TOKEN=$(part_token norn huginn)
@@ -185,7 +237,7 @@ HERMODR_TOKEN=$(part_token hermodr huginn)
 TIME_ZONE=Europe/Stockholm
 YGG_CORS_ORIGINS=$origins
 EOF
-write dellingr.env <<EOF
+	write dellingr.env <<EOF
 DELLINGR_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token dellingr)
 NORN_TOKEN=$(part_token norn dellingr)
@@ -194,6 +246,16 @@ HERMODR_TOKEN=$(part_token hermodr dellingr)
 TIME_ZONE=Europe/Stockholm
 YGG_CORS_ORIGINS=$origins
 EOF
+else
+	# Dev: jobs that run agents through Sindri; no Norn to ask, no Hermóðr to tell.
+	write dellingr.env <<EOF
+DELLINGR_TOKENS=owner=$owner
+GJALLAR_TOKEN=$(gjallar_token dellingr)
+SINDRI_TOKEN=$(part_token sindri dellingr)
+TIME_ZONE=Europe/Stockholm
+YGG_CORS_ORIGINS=$origins
+EOF
+fi
 
 # Heimdall, the security watchman, runs on the host: it reads the host's
 # listening sockets, your repos and this folder. It asks Norn which sign-ins
@@ -201,7 +263,7 @@ EOF
 write heimdall.env <<EOF
 HEIMDALL_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token heimdall)
-NORN_TOKEN=$(part_token norn heimdall)
+$(full && echo "NORN_TOKEN=$(part_token norn heimdall)" || echo "# No Norn on the dev profile: the sign-ins check is skipped.")
 SINDRI_TOKEN=$(part_token sindri heimdall)
 TIME_ZONE=Europe/Stockholm
 # The repos to check, comma separated; Sindri's projects are added. Empty: ~/projects/yggdrasil/yggdrasil-desktop, ~/projects/yggdrasil/mimir and ~/projects/my-widget.
@@ -214,6 +276,7 @@ EOF
 # It reads Ratatoskr's status, Gjallar's alerts and Hermóðr's channels, and
 # tricks every part, each with a token of its own there. After a token is
 # added at a part, restart that part.
+if full; then
 loki_env="LOKI_TOKENS=owner=$owner
 GJALLAR_TOKEN=$(gjallar_token loki)"
 for part in norn sindri vedrfolnir ratatoskr munin huginn dellingr hermodr heimdall; do
@@ -253,12 +316,20 @@ EOF
 # SAGA_DRIVE_FROM is look only. Restart Sindri after its token is added.
 ensure saga.env SINDRI_TOKEN "$(part_token sindri saga)"
 ensure saga.env SAGA_DRIVE_FROM "phone"
+fi
 
-write parts.env <<'EOF'
+# The parts Ratatoskr watches: the ones this profile runs.
+if full; then
+	watch=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr,loki,heimdall
+else
+	watch=sindri,gjallar,dellingr,heimdall
+fi
+
+write parts.env <<EOF
 # Where every part lives, read by every part. Leave a line commented to use
 # the built-in part on its default port. To replace a part with your own
 # program, set its URL here, stop the built-in one, and run
-# `ygg check <part>` (docs/replacing-a-part.md).
+# \`ygg check <part>\` (docs/replacing-a-part.md).
 #YGG_NORN_URL=http://127.0.0.1:8771
 #YGG_SINDRI_URL=http://127.0.0.1:8772
 #YGG_VEDRFOLNIR_URL=http://127.0.0.1:8773
@@ -275,29 +346,33 @@ write parts.env <<'EOF'
 # Your working day, Monday to Friday: Ratatoskr's rhythm and Norn's gap read it.
 #WORK_HOURS=09:00-17:00
 
+# On the machine that holds work data (the work laptop): every part says so on
+# /health, and a widget on another machine refuses to add this one as a node.
+#YGG_WORK=on
+
 # The parts Ratatoskr watches. Leave out the ones this machine doesn't run.
-RATATOSKR_WATCH=norn,sindri,vedrfolnir,gjallar,munin,huginn,dellingr,hermodr,loki,heimdall
+RATATOSKR_WATCH=$watch
 
 # Lets Loki trick the parts for a few minutes, to test the watchers. Dev mode
 # only, never on a machine you rely on. Unset, the trick switch is not there.
 #LOKI=on
 EOF
-if ! grep -q '^RATATOSKR_WATCH=.*hermodr' "$config/parts.env"; then
+if full && ! grep -q '^RATATOSKR_WATCH=.*hermodr' "$config/parts.env"; then
 	echo "  Note: add huginn,dellingr,hermodr to RATATOSKR_WATCH in $config/parts.env if this machine runs them"
 fi
-if ! grep -q '^RATATOSKR_WATCH=.*loki' "$config/parts.env"; then
+if full && ! grep -q '^RATATOSKR_WATCH=.*loki' "$config/parts.env"; then
 	echo "  Note: add loki to RATATOSKR_WATCH in $config/parts.env if this machine runs it"
 fi
-if ! grep -q '^RATATOSKR_WATCH=.*heimdall' "$config/parts.env"; then
+if full && ! grep -q '^RATATOSKR_WATCH=.*heimdall' "$config/parts.env"; then
 	echo "  Note: add heimdall to RATATOSKR_WATCH in $config/parts.env"
 fi
-if ! grep -q '^RATATOSKR_WATCH=.*saga' "$config/parts.env"; then
+if full && ! grep -q '^RATATOSKR_WATCH=.*saga' "$config/parts.env"; then
 	echo "  Note: once Sága is set up (MIMIR_URL in saga.env), add saga to RATATOSKR_WATCH in $config/parts.env"
 fi
 
 umask 022
 mkdir -p profile data
-if [ ! -e profile/profile.md ] && [ -e ../my-agent/profile/profile.md ]; then
+if full && [ ! -e profile/profile.md ] && [ -e ../my-agent/profile/profile.md ]; then
 	cp ../my-agent/profile/profile.md profile/profile.md
 	echo "  copied your profile from my-agent"
 fi
@@ -307,10 +382,26 @@ mkdir -p "$HOME/.config/systemd/user"
 for unit in deploy/systemd/*.service; do
 	install -m 0644 "$unit" "$HOME/.config/systemd/user/"
 done
+if full; then
+	units="ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service ygg-saga.service"
+	containers=norn,gjallar,munin,huginn,dellingr,hermodr,loki,languagetool,embeddings
+else
+	units="ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service"
+	containers=gjallar,dellingr
+fi
 systemctl --user daemon-reload
-systemctl --user enable ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service ygg-saga.service
-systemctl --user restart ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service ygg-saga.service
+# shellcheck disable=SC2086 # a list of units
+systemctl --user enable $units
+# shellcheck disable=SC2086
+systemctl --user restart $units
 
 echo
 echo "Done. Your owner token (for the widget and curl) is in $config/owner.token."
-echo "Next: docker compose up -d --build"
+if [ ! -e .env ]; then
+	echo "Next: echo COMPOSE_PROFILES=$containers >.env && docker compose up -d --build"
+else
+	echo "Next: docker compose up -d --build (COMPOSE_PROFILES in .env: $containers for the $profile profile)"
+fi
+if ! full; then
+	echo "On a VPS, keep the user units running after you log out: loginctl enable-linger $(id -un)"
+fi
