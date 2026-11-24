@@ -162,8 +162,11 @@ func TestTheCloudLinkIsFoundInWhatTheCLIPrints(t *testing.T) {
 func TestClaudeCloudReadsTheCLIsAnswer(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "claude")
+	// The text must come last, right after "--", so it is never an option.
 	script := `#!/bin/sh
-case "$2" in
+for a; do prev=$last; last=$a; done
+[ "$prev" = "--" ] || { echo '{"ok":false,"error":"text not after --"}'; exit 0; }
+case "$last" in
   fail) echo '{"ok":false,"session_id":"session_1","error":"session is archived"}' ;;
   *) echo '{"ok":true,"session_id":"session_1","url":"https://claude.ai/code/session_1"}' ;;
 esac
@@ -174,6 +177,9 @@ esac
 	cli := &ClaudeCloud{Bin: bin}
 	if err := cli.Send(context.Background(), dir, "session_1", "hello"); err != nil {
 		t.Fatalf("ok answer: %v", err)
+	}
+	if err := cli.Send(context.Background(), dir, "session_1", "--settings={}"); err != nil {
+		t.Fatalf("text starting with a dash: %v", err)
 	}
 	err := cli.Send(context.Background(), dir, "session_1", "fail")
 	if err == nil || !strings.Contains(err.Error(), "archived") {
@@ -187,7 +193,7 @@ esac
 func TestClaudeCloudStartsWithoutHerdr(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "claude")
-	script := "#!/bin/sh\necho 'Creating cloud session...'\necho \"Task: $2\"\necho 'View: https://claude.ai/code/session_42abc'\nsleep 30\n"
+	script := "#!/bin/sh\necho 'Creating cloud session...'\necho \"Task: $1\"\necho 'View: https://claude.ai/code/session_42abc'\nsleep 30\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

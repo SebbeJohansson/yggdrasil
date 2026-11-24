@@ -84,11 +84,13 @@ func (m *Manager) Complete(ctx context.Context, req CompleteRequest) (CompleteAn
 		if model == "" {
 			model = "haiku"
 		}
-		args := []string{"-p", req.Prompt, "--output-format", "json", "--tools", "", "--no-session-persistence",
+		args := []string{"-p", "--output-format", "json", "--tools", "", "--no-session-persistence",
 			"--setting-sources", "", "--model", model}
 		if req.System != "" {
 			args = append(args, "--system-prompt", req.System)
 		}
+		// After "--", so a prompt starting with "-" is never read as an option.
+		args = append(args, "--", req.Prompt)
 		command = exec.CommandContext(ctx, m.options.ClaudeBin, args...)
 	} else {
 		prompt := req.Prompt

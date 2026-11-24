@@ -265,14 +265,16 @@ func (c *ClaudeCloud) Start(ctx context.Context, cwd, task string) (CloudStarted
 // --cloud without a terminal, so it gets one from util-linux's `script`
 // (-e: its exit status, -f: output as it comes); it prints the session's link
 // and exits by itself.
+// Every task and text goes in as "--cloud=<task>" or after "--", never as
+// its own argument, so text starting with "-" is never read as an option.
 func (c *ClaudeCloud) startHere(ctx context.Context, cwd, task string) (CloudStarted, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.wait())
 	defer cancel()
 	var cmd *exec.Cmd
 	if script, err := exec.LookPath("script"); err == nil {
-		cmd = exec.CommandContext(ctx, script, "-qfec", shellQuote(c.Bin)+" --cloud "+shellQuote(task), "/dev/null")
+		cmd = exec.CommandContext(ctx, script, "-qfec", shellQuote(c.Bin)+" "+shellQuote("--cloud="+task), "/dev/null")
 	} else {
-		cmd = exec.CommandContext(ctx, c.Bin, "--cloud", task)
+		cmd = exec.CommandContext(ctx, c.Bin, "--cloud="+task)
 	}
 	cmd.Dir = cwd
 	// An open stdin: `script` ends when its input does.
@@ -308,7 +310,7 @@ func (c *ClaudeCloud) startHere(ctx context.Context, cwd, task string) (CloudSta
 }
 
 func (c *ClaudeCloud) startInHerdr(ctx context.Context, cwd, task string) (CloudStarted, error) {
-	agent, err := c.Herdr.Start(ctx, HerdrStart{Kind: "claude", Cwd: cwd, Name: "cloud " + HerdrAgentName(cwd), Args: []string{"--cloud", task}})
+	agent, err := c.Herdr.Start(ctx, HerdrStart{Kind: "claude", Cwd: cwd, Name: "cloud " + HerdrAgentName(cwd), Args: []string{"--cloud=" + task}})
 	if err != nil {
 		var down *HerdrDown
 		if errors.As(err, &down) {
@@ -349,7 +351,7 @@ func (c *ClaudeCloud) Send(ctx context.Context, cwd, id, text string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.Bin, "-p", text, "--cloud", id, "--output-format", "json")
+	cmd := exec.CommandContext(ctx, c.Bin, "-p", "--cloud="+id, "--output-format", "json", "--", text)
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	var sent cloudSent
