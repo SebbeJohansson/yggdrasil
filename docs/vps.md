@@ -17,21 +17,21 @@ the sign-ins check, Dellingr runs no ask jobs. Ratatoskr's rhythm
 
 ## Install
 
-On the VPS, as the user the agents should run as (not root):
+The VPS runs a release, a fixed version, not a checkout: install and upgrade
+it as [docs/releases.md](releases.md) says, with `--profile dev`, as the user
+the agents should run as (not root). In short:
 
 ```sh
-# Docker, git, and Claude Code (or OpenCode) logged in: Sindri runs them.
-git clone https://github.com/SebbeJohansson/yggdrasil.git ~/projects/yggdrasil/yggdrasil-desktop
-cd ~/projects/yggdrasil/yggdrasil-desktop
-scripts/install.sh --profile dev
-echo COMPOSE_PROFILES=gjallar,dellingr >.env
-docker compose up -d --build
+# Docker, and Claude Code (or OpenCode) logged in: Sindri runs them.
+# Download and unpack the bundle into ~/.local/share/yggdrasil (releases.md), then:
+~/.local/share/yggdrasil/scripts/install.sh --profile dev
 loginctl enable-linger "$USER"     # keep the host units up after you log out
 ygg status
+ygg upgrade latest                 # later: the next release
 ```
 
-The profile is remembered in `~/.config/yggdrasil/profile`; running
-`scripts/install.sh` again keeps it. Personal repos for Sindri go anywhere
+The profile is remembered in `~/.config/yggdrasil/profile`; `ygg upgrade` and
+`install.sh` keep it. Personal repos for Sindri go anywhere
 you like; add them as projects from the widget or `POST /v1/projects`.
 
 Only personal repos and personal accounts belong here. Work stays on the work

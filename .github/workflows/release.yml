@@ -1,0 +1,66 @@
+# A release, from a version tag: `git tag v0.2.0 && git push origin v0.2.0`
+# (docs/releases.md). Tests first; then for amd64 and arm64 the bundle a
+# machine installs (scripts/release-bundle.sh) and SHA256SUMS over both, the
+# parts' image on ghcr.io for both, and a GitHub release holding the files.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.ref_name }}
+      IMAGE: ghcr.io/sebbejohansson/yggdrasil
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Bundles
+        run: |
+          for arch in amd64 arm64; do scripts/release-bundle.sh "$VERSION" "$arch" dist; done
+          (cd dist && sha256sum *.tar.gz > SHA256SUMS && cat SHA256SUMS)
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ env.VERSION }}
+          tags: ${{ env.IMAGE }}:${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          push: true
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A tag with a suffix (v0.2.0-rc.1) is a prerelease, never "latest".
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$VERSION" dist/*.tar.gz dist/SHA256SUMS \
+            --verify-tag --generate-notes --title "Yggdrasil $VERSION" $prerelease

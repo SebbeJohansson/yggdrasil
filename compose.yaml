@@ -12,9 +12,12 @@
 # yggdrasil/yggdrasil-desktop, so compose finds the containers it already runs.
 name: yggdrasil
 
+# From a checkout the parts' image is built here (`yggdrasil`); a release
+# bundle has no `build` and runs the release's image instead, which its
+# install.sh names in .env (YGG_IMAGE, docs/releases.md).
 x-part: &part
   build: .
-  image: yggdrasil
+  image: ${YGG_IMAGE:-yggdrasil}
   restart: unless-stopped
   network_mode: host
 
