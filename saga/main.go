@@ -35,6 +35,11 @@ import (
 // Without GJALLAR_OWNER_TOKEN Sága syncs no alerts: a laptop that only shares
 // its coding sessions runs Sindri and Sága, and nothing else.
 func Main(ctx context.Context) error {
+	// Sága carries this machine's alerts and coding sessions to Mímir, for the
+	// other machines: never from a work machine (docs/tailscale.md).
+	if part.Work() {
+		return fmt.Errorf("Sága does not run on a work machine (YGG_WORK=on): it would share this machine's sessions with Mímir")
+	}
 	tokens, err := env.Tokens("SAGA_TOKENS")
 	if err != nil {
 		return err

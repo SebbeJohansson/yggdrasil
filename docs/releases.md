@@ -53,8 +53,10 @@ ygg status
 `scripts/get.sh` downloads the newest release's bundle for this machine
 (amd64 or arm64) and its `SHA256SUMS`, checks the one against the other,
 unpacks the bundle into `~/.local/share/yggdrasil` and runs its `install.sh`.
-`--version v0.1.0` installs a given release, `--profile full` every part.
-Running it again reinstalls.
+`--version v0.1.0` installs a given release, `--profile full` every part,
+`--tailscale` publishes the parts on your tailnet, and `--work` makes it a
+work machine that never shares with your personal ones
+([tailscale.md](tailscale.md)). Running it again reinstalls.
 
 The install lives in `~/.local/share/yggdrasil` (`--home` or `YGG_HOME` to
 move it): the bundle's files, plus `data/`, `profile/` and `.env`, which no
