@@ -23,12 +23,14 @@ the agents should run as (not root). In short:
 
 ```sh
 # Docker, and Claude Code (or OpenCode) logged in: Sindri runs them.
-# Download and unpack the bundle into ~/.local/share/yggdrasil (releases.md), then:
-~/.local/share/yggdrasil/scripts/install.sh --profile dev
+curl -fsSL https://raw.githubusercontent.com/SebbeJohansson/yggdrasil/main/scripts/get.sh | sh -s -- --profile dev
 loginctl enable-linger "$USER"     # keep the host units up after you log out
 ygg status
 ygg upgrade latest                 # later: the next release
 ```
+
+A VPS that ran from a checkout adds `--from-checkout <its folder>`, which
+stops it and moves its data into the install (releases.md).
 
 The profile is remembered in `~/.config/yggdrasil/profile`; `ygg upgrade` and
 `install.sh` keep it. Personal repos for Sindri go anywhere
