@@ -41,28 +41,42 @@ To try the bundle before tagging: `scripts/release-bundle.sh v0.2.0 amd64 dist/`
 
 ## Installing a machine
 
-The install lives in `~/.local/share/yggdrasil` (`YGG_HOME` to move it): the
-bundle's files, plus `data/`, `profile/` and `.env`, which no release touches.
+One command, as the user the parts should run as (not root), with Docker
+installed, and for the dev profile Claude Code (or OpenCode) logged in:
 
 ```sh
-# Docker, and for the dev profile Claude Code (or OpenCode) logged in.
-version=v0.2.0
+curl -fsSL https://raw.githubusercontent.com/SebbeJohansson/yggdrasil/main/scripts/get.sh | sh -s -- --profile dev
+loginctl enable-linger "$USER"          # keep the parts up after you log out
+ygg status
+```
+
+`scripts/get.sh` downloads the newest release's bundle for this machine
+(amd64 or arm64) and its `SHA256SUMS`, checks the one against the other,
+unpacks the bundle into `~/.local/share/yggdrasil` and runs its `install.sh`.
+`--version v0.1.0` installs a given release, `--profile full` every part.
+Running it again reinstalls.
+
+The install lives in `~/.local/share/yggdrasil` (`--home` or `YGG_HOME` to
+move it): the bundle's files, plus `data/`, `profile/` and `.env`, which no
+release touches. `install.sh` sees the bundle (a `VERSION` and a built
+`bin/ygg`, no source), builds nothing, writes
+`YGG_IMAGE=ghcr.io/sebbejohansson/yggdrasil:<version>` and `COMPOSE_PROFILES`
+into `.env`, and pulls and starts the container parts. LanguageTool is built
+from a sibling checkout, so a release leaves it out of the full profile's
+containers.
+
+By hand, the same steps:
+
+```sh
+version=v0.1.0
 arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 mkdir -p ~/.local/share/yggdrasil && cd ~/.local/share/yggdrasil
 curl -fLO "https://github.com/SebbeJohansson/yggdrasil/releases/download/$version/yggdrasil-$version-linux-$arch.tar.gz"
 curl -fLO "https://github.com/SebbeJohansson/yggdrasil/releases/download/$version/SHA256SUMS"
 sha256sum --check --ignore-missing SHA256SUMS
 tar -xzf "yggdrasil-$version-linux-$arch.tar.gz" --strip-components=1
-scripts/install.sh --profile dev        # or full
-loginctl enable-linger "$USER"          # keep the parts up after you log out
-ygg status
+scripts/install.sh --profile dev
 ```
-
-`install.sh` sees the bundle (a `VERSION` and a built `bin/ygg`, no source),
-builds nothing, writes `YGG_IMAGE=ghcr.io/sebbejohansson/yggdrasil:<version>`
-and `COMPOSE_PROFILES` into `.env`, and pulls and starts the container parts.
-LanguageTool is built from a sibling checkout, so a release leaves it out of
-the full profile's containers.
 
 ## Upgrading, and going back
 
@@ -88,16 +102,16 @@ ygg upgrade v0.3.0 --from ~/yggdrasil-v0.3.0-linux-amd64.tar.gz   # SHA256SUMS b
 
 ## From a checkout to a release
 
-A machine that ran from a checkout (the VPS, before releases) keeps its
-settings in `~/.config/yggdrasil`; only the checkout's `data/`, `profile/` and
-`.env` move:
+A machine that ran from a checkout (the VPS, before releases) moves over in
+the same command: `--from-checkout` stops the parts the checkout runs and
+moves its `data/`, `profile/` and `.env` into the install first.
 
 ```sh
-cd ~/projects/yggdrasil/yggdrasil-desktop && docker compose down
-mkdir -p ~/.local/share/yggdrasil
-mv data profile .env ~/.local/share/yggdrasil/
+curl -fsSL https://raw.githubusercontent.com/SebbeJohansson/yggdrasil/main/scripts/get.sh \
+  | sh -s -- --profile dev --from-checkout ~/projects/yggdrasil/yggdrasil-desktop
 ```
 
-then install the release as above. The host parts keep their own state in
-`~/.local/state/yggdrasil` (Sindri's goals, tasks and agents), which neither
-a checkout nor a release holds, so it carries over as it is.
+Settings and tokens in `~/.config/yggdrasil` stay where they are, and so does
+the host parts' own state in `~/.local/state/yggdrasil` (Sindri's goals, tasks
+and agents). The checkout itself is left in place; remove it once the release
+runs.

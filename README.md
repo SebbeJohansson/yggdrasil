@@ -75,8 +75,12 @@ An always-on VPS runs only the coding parts: `scripts/install.sh --profile dev`,
 and `scripts/tunnel.sh <host>` reaches it from another machine
 ([docs/vps.md](docs/vps.md)).
 A machine that should run a fixed version installs a release instead of a
-checkout, and moves between versions with `ygg upgrade <version>`
-([docs/releases.md](docs/releases.md)).
+checkout, with one command, and moves between versions with
+`ygg upgrade <version>` ([docs/releases.md](docs/releases.md)):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/SebbeJohansson/yggdrasil/main/scripts/get.sh | sh -s -- --profile dev
+```
 
 Settings and tokens are in `~/.config/yggdrasil/<part>.env`. Norn's models
 run on XeStrata (`CHAT_URL`). `OLLAMA_URL=off` in `norn.env` keeps Ollama out
