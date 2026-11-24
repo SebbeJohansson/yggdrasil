@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"yggdrasil/internal/part"
@@ -63,11 +64,11 @@ func (s *Sindri) Mount(p *part.Part) {
 		part.JSON(w, http.StatusOK, Summarise(a))
 	})
 	p.Handle("GET /v1/agents/{id}", s.get)
-	p.Handle("POST /v1/agents/{id}/prompt", s.prompt)
-	p.Handle("POST /v1/agents/{id}/handoff", s.handoff)
+	p.Handle("POST /v1/agents/{id}/prompt", only(s.prompt))
+	p.Handle("POST /v1/agents/{id}/handoff", only(s.handoff))
 	p.Handle("POST /v1/agents/{id}/resume-scheduled", s.resumeScheduled)
 	p.Handle("POST /v1/agents/{id}/label", s.label)
-	p.Handle("POST /v1/agents/{id}/permissions/{requestId}", s.answer)
+	p.Handle("POST /v1/agents/{id}/permissions/{requestId}", only(s.answer, "norn"))
 	p.Handle("POST /v1/agents/{id}/abort", s.agent(func(id string) (*Agent, error) { return s.Agents.Abort(id) }))
 	p.Handle("POST /v1/agents/{id}/remote", s.agent(func(id string) (*Agent, error) { return s.Agents.Remote(id) }))
 	p.Handle("POST /v1/agents/{id}/fix-conflicts", s.agent(func(id string) (*Agent, error) { return s.Agents.FixConflicts(id) }))
@@ -218,6 +219,10 @@ func (s *Sindri) start(w http.ResponseWriter, r *http.Request) {
 		part.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if part.Caller(r) != part.Owner && !HelperOnly(body) {
+		part.Error(w, http.StatusForbidden, "only you start an agent with tools, a folder or a mode; another part asks for one with `noTools`")
+		return
+	}
 	// No folder: a plain agent (a rewrite, a question) runs where question agents do.
 	if body.Cwd == "" && s.Work != nil {
 		body.Cwd = s.Work.AskCwd
@@ -231,6 +236,25 @@ func (s *Sindri) start(w http.ResponseWriter, r *http.Request) {
 	summary := Summarise(a)
 	s.Agents.mu.Unlock()
 	part.JSON(w, http.StatusCreated, summary)
+}
+
+// HelperOnly is an agent another part may start: no tools, no folder of its
+// own, no worktree and the default mode, like Norn's rewrite. A part's
+// token, leaked or misused, then never gets a shell on this machine.
+func HelperOnly(body StartRequest) bool {
+	return body.NoTools && len(body.AllowedTools) == 0 && body.Cwd == "" && !body.AddRoots && !body.Worktree &&
+		(body.PermissionMode == "" || body.PermissionMode == "default")
+}
+
+// only lets you call a route, and the parts named beside you.
+func only(handler http.HandlerFunc, parts ...string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if caller := part.Caller(r); caller != part.Owner && !slices.Contains(parts, caller) {
+			part.Error(w, http.StatusForbidden, "only you can do that")
+			return
+		}
+		handler(w, r)
+	}
 }
 
 func (s *Sindri) get(w http.ResponseWriter, r *http.Request) {

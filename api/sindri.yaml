@@ -52,7 +52,7 @@ paths:
               schema: { type: array, items: { $ref: "#/components/schemas/Agent" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
     post:
-      summary: Start an agent. With worktree, it works on a new branch agent/<slug> cut from the repo's checked-out branch.
+      summary: Start an agent. With worktree, it works on a new branch agent/<slug> cut from the repo's checked-out branch. Another part may start only a helper (noTools, no cwd, allowedTools, addRoots or worktree, default mode); anything more is a 403.
       requestBody:
         required: true
         content:
@@ -230,7 +230,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
   /v1/agents/{id}/prompt:
     post:
-      summary: A follow-up. A finished session resumes. With queue, a busy turn is waited out instead of refused.
+      summary: A follow-up. A finished session resumes. With queue, a busy turn is waited out instead of refused. You only; another part gets a 403.
       parameters: [{ $ref: "#/components/parameters/ID" }]
       requestBody:
         required: true
@@ -252,7 +252,7 @@ paths:
         "410": { $ref: "#/components/responses/Error" }
   /v1/agents/{id}/handoff:
     post:
-      summary: A stopped agent carries on in the other CLI, same id and folder. Only when asked.
+      summary: A stopped agent carries on in the other CLI, same id and folder. Only when asked, and by you only; another part gets a 403.
       parameters: [{ $ref: "#/components/parameters/ID" }]
       requestBody:
         content:
@@ -308,7 +308,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
   /v1/agents/{id}/permissions/{requestId}:
     post:
-      summary: Allow or deny a tool call the agent is waiting on.
+      summary: Allow or deny a tool call the agent is waiting on. You and Norn only; another part gets a 403.
       parameters:
         - { $ref: "#/components/parameters/ID" }
         - { name: requestId, in: path, required: true, schema: { type: string } }

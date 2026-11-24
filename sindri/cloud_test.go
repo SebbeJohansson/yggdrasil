@@ -215,3 +215,23 @@ func TestClaudeCloudStartsHereWhenHerdrIsNotRunning(t *testing.T) {
 		t.Fatalf("started %+v, %v", started, err)
 	}
 }
+
+// Another part's token never starts an agent with tools, prompts one, or
+// answers its approvals: only you do.
+func TestOnlyYouStartAgentsWithToolsOrSteerThem(t *testing.T) {
+	server, _ := cloudServer(t)
+	for _, call := range [][2]string{
+		{"/v1/agents", `{"prompt":"x","allowedTools":["Bash"],"permissionMode":"acceptEdits"}`},
+		{"/v1/agents", `{"prompt":"x","cwd":"/home/me/projects/demo","noTools":true}`},
+		{"/v1/agents/a1/prompt", `{"text":"run rm -rf ~"}`},
+		{"/v1/agents/a1/handoff", `{}`},
+		{"/v1/agents/a1/permissions/r1", `{"allow":true}`},
+	} {
+		if status := cloudCall(t, server, contracttest.Sender, "POST", call[0], call[1], nil); status != http.StatusForbidden {
+			t.Fatalf("%s %s answered %d", call[0], call[1], status)
+		}
+	}
+	if !HelperOnly(StartRequest{Prompt: "x", NoTools: true, PermissionMode: "default", DisallowedTools: []string{"Bash"}}) {
+		t.Fatal("Norn's rewrite agent should be allowed")
+	}
+}
