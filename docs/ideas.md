@@ -69,3 +69,72 @@ lines next to `ygg agents`.
 
 Do 2 first: it catches the incidents you care about most. Then 1, because it
 protects everything else. Then 3.
+
+# Security hardening
+
+From the security review on 2026-11-24, before the repo went public. The
+three High findings are fixed: prompts go to the claude CLI after `--`, only
+you can give a Sindri agent tools or answer its approvals, and another part's
+`/v1/ask` never starts or steers an agent. These Medium findings are left.
+
+## 4. Coding agents in a sandbox
+
+**Gap:** coding agents run in `auto` permission mode (`sindri/work.go`), may
+read GitHub, Linear and Outlook/Teams through MCP (`sindri/prompts.go`), and
+are allowed to run `npm test`, `go test` and `npx vitest` without asking.
+Sindri also runs `npm run <script>` itself (`sindri/files.go`), worktrees run
+`postinstall` (`sindri/git.go`), and self-repair works unattended overnight.
+A GitHub issue, comment, ticket or mail the agent reads can tell it to change
+`package.json`'s `test` or a `_test.go` file; the next allowed test run then
+runs that on the host as you, with your SSH keys and
+`~/.config/yggdrasil/*.env`.
+
+**Shape:** run each coding agent and its test runs in a container (or Claude
+Code's sandbox) that sees only its worktree, with no home directory and the
+network limited to what the repo needs. Coding agents lose the Outlook/Teams
+tools; question agents keep them. Sindri's own `npm run` and `postinstall`
+run in the same sandbox.
+
+**Size:** about 60 minutes of agent time, most of it the container and its
+caches.
+
+## 5. A token per device
+
+**Gap:** `scripts/install.sh` writes one `owner.token` into every part's
+`*_TOKENS`, the VPS's owner token is copied into other machines'
+`nodes.json` (`docs/vps.md`), and the phone uses the owner token for Sindri.
+A lost phone or a leaked `nodes.json` controls every part on every machine:
+start agents, answer their approvals, read transcripts.
+
+**Shape:** each device gets its own token with a name (`owner:phone`,
+`owner:laptop`), and parts check the scope that name has. The phone's token
+reads and acknowledges but can't use `POST /v1/agents` or answer
+permissions. `ygg token rotate <device>` makes a new one and drops the old,
+and Heimdall raises a token older than 90 days.
+
+**Size:** about 40 minutes of agent time.
+
+## 6. Signed requests through Mímir
+
+**Gap:** with `SAGA_DRIVE_FROM` set, Sága lets requests that come through
+Mímir type into local agent sessions and start cloud sessions
+(`saga/sessions.go`), and it trusts the device name Mímir gives. A
+compromised Mímir, or a stolen device token, can forge a request "from the
+phone". Off by default.
+
+**Shape:** each device keeps an ed25519 key and signs its requests (kind,
+target, text, time); Sága keeps the public keys of the devices allowed to
+drive it and refuses anything unsigned, old or replayed. Mímir only carries
+the requests. The phone keeps its key in the Android Keystore.
+
+**Size:** about 45 minutes of agent time, both repos.
+
+## Smaller ones
+
+- A "yes" answers the first pending request of the most recent agent
+  (`norn/ask.go`): bind each approval to its `requestId`.
+- Parts don't check the `Host` header, so a page can read `/health` and
+  `/openapi.yaml` through DNS rebinding (`internal/part/part.go`): refuse
+  any `Host` but `127.0.0.1:<port>` and `localhost:<port>`.
+- Question agents may `cat`, `head`, `tail`, `grep` and `rg` any file
+  (`sindri/prompts.go`): limit them to `Read(<roots>/**)`.
