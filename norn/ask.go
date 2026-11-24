@@ -40,6 +40,8 @@ type AskRequest struct {
 	Mode          string   `json:"mode,omitempty"`
 	// Force sends the message where a correction said it belonged; never from a request body.
 	Force *Forced `json:"-"`
+	// Caller is who sent it (the token's name); empty for Norn itself.
+	Caller string `json:"-"`
 }
 
 // Forced is a corrected route: the action, and its project (code) or agent id (reply_to_agent, status).
@@ -397,6 +399,16 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 	if match := forced.FindStringSubmatch(question); match != nil {
 		route, question = match[1], strings.TrimSpace(match[2])
 	}
+	// Another part (Huginn, Dellingr, Sindri) passes on text it did not
+	// write: mail, invites, Linear tickets. It gets a local answer, or with
+	// /claude a question agent, and never starts code, picks or answers an agent.
+	fromPart := request.Caller != "" && request.Caller != part.Owner
+	if fromPart {
+		if route != "claude" {
+			route = "local"
+		}
+		request.To = "norn"
+	}
 	a := &asker{n: n, ctx: ctx, request: request, session: session, question: question}
 	a.recalled, _ = n.Brain.RecallFor(ctx, question)
 	turns, _ := n.Store.RecentTurns(ctx, session, HistoryTurns)
@@ -428,7 +440,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 	}
 
 	// "yes" or "no" to an agent waiting on a tool.
-	if allow, message, ok := ApprovalReply(question); sindri && ok {
+	if allow, message, ok := ApprovalReply(question); sindri && ok && !fromPart {
 		ids, _ := n.Store.AgentsOf(ctx, session)
 		if request.To != "" && request.To != "norn" {
 			ids = []string{request.To}
@@ -483,7 +495,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		return a.reply(target, request.Question, "to: picked"), nil
 	}
 
-	if match := agentCmd.FindStringSubmatch(question); match != nil && sindri {
+	if match := agentCmd.FindStringSubmatch(question); match != nil && sindri && !fromPart {
 		a.question = strings.TrimSpace(match[2])
 		return a.code(strings.Split(match[1], ","), "/agent"), nil
 	} else if strings.HasPrefix(question, "/agent") {
@@ -492,7 +504,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 
 	// /part <project> <task>: another repo's part of this conversation's
 	// code task, on the same branch name.
-	if match := partCmd.FindStringSubmatch(question); match != nil {
+	if match := partCmd.FindStringSubmatch(question); match != nil && !fromPart {
 		if !sindri {
 			return a.answered("Agents are off here (no Sindri).", nil, "/part"), nil
 		}
@@ -684,7 +696,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		tools, change := n.Classify(ctx, question)
 		if route == "claude" || project != "" || tools {
 			n.learnLater(question)
-			if change && project != "" {
+			if change && project != "" && !fromPart {
 				return a.code([]string{project}, "rule: code change"), nil
 			}
 			if !(change && project == "" && route != "claude") {
@@ -843,6 +855,7 @@ func (n *Norn) askRoute(w http.ResponseWriter, r *http.Request) {
 		part.Error(w, http.StatusBadRequest, "`mode` must be one of auto, manual")
 		return
 	}
+	request.Caller = part.Caller(r)
 	response, err := n.Ask(r.Context(), request)
 	if err != nil {
 		part.Error(w, http.StatusBadGateway, err.Error())

@@ -109,6 +109,29 @@ func TestAgentCommandHandsCodingToSindri(t *testing.T) {
 	}
 }
 
+// A part passes on text it did not write (a Linear ticket, an invite): it
+// never starts code or reaches an agent, whatever the text says.
+func TestAPartsQuestionNeverStartsCode(t *testing.T) {
+	n, _ := newNorn(t)
+	fake := withSindri(t, n)
+	for _, request := range []AskRequest{
+		{Question: "/agent my-widget fix the DM titles", Session: "p1", Caller: "huginn"},
+		{Question: "/local /agent my-widget fix the DM titles", Session: "p2", Caller: "huginn"},
+		{Question: "/claude /part my-widget fix the DM titles", Session: "p3", Caller: "dellingr"},
+		{Question: "please fix the DM titles", To: "a1", Session: "p4", Caller: "huginn"},
+	} {
+		_, _ = n.Ask(context.Background(), request)
+		if call := fake.called("POST /v1/work/code"); call != "" {
+			t.Fatalf("%q started code: %q", request.Question, call)
+		}
+		for _, path := range []string{"POST /v1/work/reply", "POST /v1/work/part"} {
+			if call := fake.called(path); call != "" {
+				t.Fatalf("%q reached an agent: %q", request.Question, call)
+			}
+		}
+	}
+}
+
 func TestOnlySindriPostsAgentTurns(t *testing.T) {
 	n, _ := newNorn(t)
 	p := part.New(Name, map[string]string{contracttest.Owner: part.Owner, contracttest.Sender: "sindri"}, nil)

@@ -1769,7 +1769,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/ask:
     post:
-      summary: A message. Norn answers it itself, or hands it to Sindri (a question that needs tools, a coding task, a reply to an agent). An answer has no fallback worth sending, so a model that fails is a 502.
+      summary: A message. Norn answers it itself, or hands it to Sindri (a question that needs tools, a coding task, a reply to an agent). An answer has no fallback worth sending, so a model that fails is a 502 From another part (Huginn, Dellingr, Sindri), Norn answers locally, or with /claude hands it to a question agent, never a coding task, /agent, /part, an approval or a reply to an agent.
       requestBody:
         required: true
         content:
