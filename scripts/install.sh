@@ -121,7 +121,9 @@ gjallar_token() {
 	part_token gjallar "$1"
 }
 if full; then
-	senders="munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki heimdall phone"
+	senders="munin vedrfolnir ratatoskr norn sindri huginn dellingr hermodr loki heimdall"
+	# The phone's alerts come in through Sága, which a work machine never runs.
+	[ -n "$work" ] || senders="$senders phone"
 else
 	senders="ratatoskr sindri dellingr heimdall"
 fi
@@ -333,7 +335,9 @@ ensure huginn.env DELLINGR_TOKEN "$(part_token dellingr huginn)"
 # (github.com/SebbeJohansson/mimir), at its public HTTPS URL. It runs on the
 # host. It reads and acts on alerts as you, and raises the
 # phone's alerts as `phone`, a sender Gjallar never pushes (GJALLAR_QUIET).
-# Restart Gjallar after the phone's token is added there.
+# Restart Gjallar after the phone's token is added there. A work machine
+# never runs Sága, so it gets none of its settings or tokens.
+if [ -z "$work" ]; then
 write saga.env <<EOF
 SAGA_TOKENS=owner=$owner
 GJALLAR_OWNER_TOKEN=$owner
@@ -350,6 +354,7 @@ EOF
 # SAGA_DRIVE_FROM is look only. Restart Sindri after its token is added.
 ensure saga.env SINDRI_TOKEN "$(part_token sindri saga)"
 ensure saga.env SAGA_DRIVE_FROM "phone"
+fi
 fi
 
 # The parts Ratatoskr watches: the ones this profile runs.
@@ -400,7 +405,7 @@ fi
 if full && ! grep -q '^RATATOSKR_WATCH=.*heimdall' "$config/parts.env"; then
 	echo "  Note: add heimdall to RATATOSKR_WATCH in $config/parts.env"
 fi
-if full && ! grep -q '^RATATOSKR_WATCH=.*saga' "$config/parts.env"; then
+if full && [ -z "$work" ] && ! grep -q '^RATATOSKR_WATCH=.*saga' "$config/parts.env"; then
 	echo "  Note: once Sága is set up (MIMIR_URL in saga.env), add saga to RATATOSKR_WATCH in $config/parts.env"
 fi
 
@@ -431,8 +436,11 @@ if full; then
 		systemctl --user disable --now ygg-saga.service 2>/dev/null || true
 	fi
 	containers=norn,gjallar,munin,huginn,dellingr,hermodr,loki,languagetool,embeddings
-	# LanguageTool is built from a sibling checkout, which a release does not have.
-	[ -z "$release" ] || containers=norn,gjallar,munin,huginn,dellingr,hermodr,loki,embeddings
+	# LanguageTool is built from a sibling checkout, which a release does not
+	# have: a release starts it only when its image was built here already.
+	if [ -n "$release" ] && ! docker image inspect pennvass-languagetool >/dev/null 2>&1; then
+		containers=norn,gjallar,munin,huginn,dellingr,hermodr,loki,embeddings
+	fi
 else
 	units="ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service"
 	containers=gjallar,dellingr
@@ -458,7 +466,13 @@ if [ -n "$release" ]; then
 	set_env YGG_IMAGE "$image:$release"
 	if command -v docker >/dev/null 2>&1; then
 		echo "Starting the container parts ($image:$release)..."
-		docker compose pull --quiet
+		# Images built on this machine (LanguageTool) are not on a registry:
+		# pull only the others, so a local build is kept, not a failed pull.
+		if docker compose pull --help 2>/dev/null | grep -q -- --ignore-buildable; then
+			docker compose pull --quiet --ignore-buildable
+		else
+			docker compose pull --quiet --ignore-pull-failures
+		fi
 		docker compose up -d --remove-orphans
 	else
 		echo "  No docker here: start the container parts with docker compose up -d once it is."
