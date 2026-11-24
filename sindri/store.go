@@ -115,6 +115,10 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("sindri why schema: %w", err)
 	}
+	if _, err := db.Exec(usageSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("sindri usage schema: %w", err)
+	}
 	if _, err := db.Exec(mergedSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("sindri merged schema: %w", err)

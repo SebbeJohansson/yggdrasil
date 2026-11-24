@@ -45,6 +45,11 @@ Huginn rule and dashboard card.
 
 ## 3. A Claude usage ledger
 
+**Done:** the ledger (in `sindri.db`), `GET /v1/usage?since=`, the `claude-usage` alert
+(needs `SINDRI_USAGE_BUDGET`, tokens per `SINDRI_USAGE_WINDOW`, default 5h) and
+`ygg usage`. **Left:** Dellingr's job that pauses low-priority agents, and Norn
+sending a `feature` with each `/v1/complete` call (the ledger has the caller).
+
 **Gap:** Sindri starts many Claude Code agents, and cloud mode sends every
 model call to Claude through `POST /v1/complete`. Sindri waits when usage
 runs out, but you can't see what used it, so you only learn a limit is near

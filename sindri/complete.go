@@ -32,6 +32,8 @@ type CompleteRequest struct {
 	Prompt string `json:"prompt"`
 	// Model is the CLI's model (claude: haiku unless set; copilot: its default).
 	Model string `json:"model"`
+	// Feature is what asked, e.g. the Norn feature, for the usage ledger.
+	Feature string `json:"feature"`
 }
 
 // CompleteAnswer is the answer, and who gave it.
@@ -39,6 +41,8 @@ type CompleteAnswer struct {
 	Text   string `json:"text"`
 	Engine string `json:"engine"`
 	Model  string `json:"model"`
+	// used is what the call cost, for the usage ledger.
+	used UsageEntry
 }
 
 // CompleteEngine is which engine answers now, "" when neither can.
@@ -103,7 +107,9 @@ func (m *Manager) Complete(ctx context.Context, req CompleteRequest) (CompleteAn
 	command.Stdout, command.Stderr = &stdout, &stderr
 	runErr := command.Run()
 	var text string
+	var used UsageEntry
 	if engine == "claude" {
+		used.Model, used.TokensIn, used.TokensOut, used.CostUSD = claudeTokens(stdout.Bytes())
 		text, err = claudeResult(stdout.Bytes())
 		if expired := (*loginExpiredError)(nil); errors.As(err, &expired) {
 			m.login.MarkExpired(expired.text)
@@ -124,7 +130,10 @@ func (m *Manager) Complete(ctx context.Context, req CompleteRequest) (CompleteAn
 		}
 		return CompleteAnswer{}, fmt.Errorf("%s did not answer: %s", engine, detail)
 	}
-	return CompleteAnswer{Text: text, Engine: engine, Model: model}, nil
+	if used.Model == "" {
+		used.Model = model
+	}
+	return CompleteAnswer{Text: text, Engine: engine, Model: model, used: used}, nil
 }
 
 // loginExpiredError is Claude failing because its sign-in ran out.
@@ -190,6 +199,11 @@ func (s *Sindri) complete(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		part.Error(w, http.StatusBadGateway, err.Error())
 		return
+	}
+	if answer.Engine == "claude" {
+		e := answer.used
+		e.Source, e.Caller, e.Feature = "complete", part.Caller(r), req.Feature
+		s.Usage.Record(e)
 	}
 	part.JSON(w, http.StatusOK, answer)
 }

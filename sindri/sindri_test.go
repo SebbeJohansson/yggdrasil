@@ -207,7 +207,7 @@ func TestMeetsItsContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := part.New(Name, contracttest.Tokens(), nil)
-	(&Sindri{Agents: m, Root: m.roots[0], Work: work}).Mount(p)
+	(&Sindri{Agents: m, Root: m.roots[0], Work: work, Usage: &Usage{Store: store}}).Mount(p)
 	contracttest.Run(t, p)
 }
 

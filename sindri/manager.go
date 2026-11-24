@@ -84,6 +84,9 @@ type Manager struct {
 	options ManagerOptions
 	roots   []string
 
+	// OnUsage is told each finished Claude turn, for the usage ledger; nil is off.
+	OnUsage func(UsageEntry)
+
 	mu     sync.Mutex
 	agents map[string]*Agent
 	live   map[string]*live
@@ -609,7 +612,16 @@ func (m *Manager) onEventLocked(a *Agent, process *live, event map[string]any, c
 	if copilot {
 		a.applyCopilot(event, m.ms())
 	} else {
+		costBefore := a.CostUSD
 		a.applyClaude(event, process.baseCost, m.ms())
+		if m.OnUsage != nil && event["type"] == "result" {
+			in, out := agentUsage(event)
+			model := a.Model
+			if model == "" {
+				model = "default"
+			}
+			m.OnUsage(UsageEntry{Source: "agent", Agent: a.ID, Model: model, TokensIn: in, TokensOut: out, CostUSD: max(0, a.CostUSD-costBefore)})
+		}
 		if a.LoginExpired && event["type"] == "result" {
 			m.login.MarkExpired(a.Result)
 		}

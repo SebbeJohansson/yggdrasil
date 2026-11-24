@@ -35,6 +35,8 @@ type Sindri struct {
 	PromptsKeep time.Duration
 	// Cloud is the cloud sessions started here (cloud.go); nil is off.
 	Cloud *Cloud
+	// Usage is the Claude usage ledger (usage.go); nil is off.
+	Usage *Usage
 }
 
 // Mount adds Sindri's routes and loops to the part.
@@ -42,6 +44,7 @@ func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("GET /v1/agents", s.list)
 	p.Handle("GET /v1/complete", s.completeEngine)
 	p.Handle("POST /v1/complete", s.complete)
+	p.Handle("GET /v1/usage", s.usage)
 	p.Handle("GET /v1/claude-login", s.claudeLoginState)
 	p.Handle("POST /v1/claude-login", s.claudeLoginStart)
 	p.Handle("POST /v1/claude-login/code", s.claudeLoginCode)
