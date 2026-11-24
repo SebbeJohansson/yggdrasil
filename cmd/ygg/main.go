@@ -59,6 +59,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "       ygg check <part> [url]   check a running part, built-in or not, against its contract")
 	fmt.Fprintln(os.Stderr, "       ygg migrate from-my-agent|to-my-agent [--replace]   move your data between my-agent and Yggdrasil")
 	fmt.Fprintln(os.Stderr, "       ygg version")
+	fmt.Fprintln(os.Stderr, "       ygg upgrade <version>|latest [--from bundle.tar.gz]   this machine to a release (docs/releases.md)")
 	fmt.Fprintln(os.Stderr, "\nasking the running parts (--json for what they answered):")
 	commands := make([]string, 0, len(tellCommands))
 	for name := range tellCommands {
@@ -82,6 +83,9 @@ func usage() {
 func main() {
 	if len(os.Args) >= 3 && os.Args[1] == "migrate" {
 		os.Exit(migrateCommand(os.Args[2:]))
+	}
+	if len(os.Args) >= 2 && os.Args[1] == "upgrade" {
+		os.Exit(upgradeCommand(os.Args[2:]))
 	}
 	if len(os.Args) >= 3 && os.Args[1] == "check" {
 		os.Exit(check(os.Args[2:]))
