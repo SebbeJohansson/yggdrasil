@@ -64,8 +64,9 @@ release touches. `install.sh` sees the bundle (a `VERSION` and a built
 `bin/ygg`, no source), builds nothing, writes
 `YGG_IMAGE=ghcr.io/sebbejohansson/yggdrasil:<version>` and `COMPOSE_PROFILES`
 into `.env`, and pulls and starts the container parts. LanguageTool is built
-from a sibling checkout, so a release leaves it out of the full profile's
-containers.
+from a sibling checkout, so a release starts it only when its image
+(`pennvass-languagetool`) was built on that machine already, and never tries
+to download it.
 
 By hand, the same steps:
 
