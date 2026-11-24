@@ -14,6 +14,12 @@
 # The profile is remembered in ~/.config/yggdrasil/profile, so running it
 # again keeps the one you picked. YGG_PROFILE works as well as --profile.
 #
+# From a release bundle (docs/releases.md: a VERSION file and a built
+# bin/ygg beside this script, no source) nothing is built: the bundled ygg is
+# installed, the container parts run the release's image from ghcr.io, and
+# they are pulled and started here. The version is kept in
+# ~/.config/yggdrasil/version.
+#
 # Settings live in ~/.config/yggdrasil/<part>.env, readable by you only.
 set -eu
 cd "$(dirname "$0")/.."
@@ -39,10 +45,23 @@ full() {
 }
 echo "Profile: $profile"
 
-echo "Building ygg..."
-scripts/go build -trimpath -ldflags "-s -w -X yggdrasil/internal/part.Version=$(git describe --always --dirty 2>/dev/null || echo dev)" -o bin/ygg ./cmd/ygg
+# A release bundle: built already, and no source to build from.
+release=""
+if [ -s VERSION ] && [ -x bin/ygg ] && [ ! -e go.mod ]; then
+	release=$(cat VERSION)
+fi
+image="ghcr.io/sebbejohansson/yggdrasil"
+
+if [ -n "$release" ]; then
+	echo "Release $release: installing the bundled ygg..."
+else
+	echo "Building ygg..."
+	scripts/go build -trimpath -ldflags "-s -w -X yggdrasil/internal/part.Version=$(git describe --always --dirty 2>/dev/null || echo dev)" -o bin/ygg ./cmd/ygg
+fi
 mkdir -p "$HOME/.local/bin"
-install -m 0755 bin/ygg "$HOME/.local/bin/ygg"
+# Beside the running one, then renamed over it: a running ygg (ygg upgrade) keeps its file.
+install -m 0755 bin/ygg "$HOME/.local/bin/ygg.new"
+mv "$HOME/.local/bin/ygg.new" "$HOME/.local/bin/ygg"
 
 token() {
 	head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48
@@ -53,6 +72,11 @@ chmod 700 "$config"
 umask 077
 
 echo "$profile" >"$config/profile"
+if [ -n "$release" ]; then
+	echo "$release" >"$config/version"
+else
+	rm -f "$config/version"
+fi
 [ -s "$config/owner.token" ] || token >"$config/owner.token"
 owner=$(cat "$config/owner.token")
 
@@ -385,6 +409,8 @@ done
 if full; then
 	units="ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service ygg-saga.service"
 	containers=norn,gjallar,munin,huginn,dellingr,hermodr,loki,languagetool,embeddings
+	# LanguageTool is built from a sibling checkout, which a release does not have.
+	[ -z "$release" ] || containers=norn,gjallar,munin,huginn,dellingr,hermodr,loki,embeddings
 else
 	units="ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service"
 	containers=gjallar,dellingr
@@ -395,12 +421,34 @@ systemctl --user enable $units
 # shellcheck disable=SC2086
 systemctl --user restart $units
 
+# set_env <name> <value>: name=value in .env, replacing the line that was there.
+set_env() {
+	touch .env
+	grep -v "^$1=" .env >.env.tmp || true
+	printf '%s=%s\n' "$1" "$2" >>.env.tmp
+	mv .env.tmp .env
+}
+
 echo
-echo "Done. Your owner token (for the widget and curl) is in $config/owner.token."
-if [ ! -e .env ]; then
-	echo "Next: echo COMPOSE_PROFILES=$containers >.env && docker compose up -d --build"
+if [ -n "$release" ]; then
+	# The release's own image for every container part; the profiles once.
+	grep -q '^COMPOSE_PROFILES=' .env 2>/dev/null || set_env COMPOSE_PROFILES "$containers"
+	set_env YGG_IMAGE "$image:$release"
+	if command -v docker >/dev/null 2>&1; then
+		echo "Starting the container parts ($image:$release)..."
+		docker compose pull --quiet
+		docker compose up -d --remove-orphans
+	else
+		echo "  No docker here: start the container parts with docker compose up -d once it is."
+	fi
+	echo "Done: Yggdrasil $release. Your owner token (for the widget and curl) is in $config/owner.token."
 else
-	echo "Next: docker compose up -d --build (COMPOSE_PROFILES in .env: $containers for the $profile profile)"
+	echo "Done. Your owner token (for the widget and curl) is in $config/owner.token."
+	if [ ! -e .env ]; then
+		echo "Next: echo COMPOSE_PROFILES=$containers >.env && docker compose up -d --build"
+	else
+		echo "Next: docker compose up -d --build (COMPOSE_PROFILES in .env: $containers for the $profile profile)"
+	fi
 fi
 if ! full; then
 	echo "On a VPS, keep the user units running after you log out: loginctl enable-linger $(id -un)"

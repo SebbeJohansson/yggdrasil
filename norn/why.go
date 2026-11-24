@@ -236,7 +236,9 @@ func (n *Norn) whyNotes(words []string, now time.Time) []whyFound {
 // whyRewind is Rewind's timeline of the last 31 days, without Sindri's own
 // goals (the goal asked about is one of them).
 func (n *Norn) whyRewind(ctx context.Context, now time.Time) []whyFound {
-	entries, _ := n.timeline(ctx, now.Add(-RewindRangeMax), now, false)
+	// The timeline's end is exclusive: one millisecond on, so what happened at
+	// now (a message sent just before the goal was asked about) is in it.
+	entries, _ := n.timeline(ctx, now.Add(-RewindRangeMax), now.Add(time.Millisecond), false)
 	var out []whyFound
 	for _, e := range entries {
 		if e.Kind == "break" {
