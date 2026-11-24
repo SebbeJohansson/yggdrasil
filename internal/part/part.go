@@ -16,7 +16,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -56,8 +55,9 @@ func New(name string, tokens map[string]string, origins []string) *Part {
 		mux:     http.NewServeMux(),
 		started: time.Now(),
 		logger:  log.New(log.Writer(), "["+name+"] ", log.LstdFlags),
-		work:    os.Getenv("YGG_WORK") == "on",
+		work:    Work(),
 	}
+	GuardWork()
 	p.tricks.now = time.Now
 	p.mux.HandleFunc("GET /health", p.health)
 	p.routes = append(p.routes, "GET /health")

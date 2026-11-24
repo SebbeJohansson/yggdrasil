@@ -11,6 +11,9 @@
 #                          its data/, profile/ and .env into the install
 #   --home DIR             where to install (default ~/.local/share/yggdrasil,
 #                          or YGG_HOME)
+#   --tailscale            publish the parts on your tailnet (docs/tailscale.md)
+#   --work                 a work machine: never on the tailnet, never shares
+#                          with personal machines (docs/tailscale.md)
 #
 # It downloads the bundle for this machine (amd64 or arm64) and the
 # release's SHA256SUMS, checks the one against the other, unpacks the bundle
@@ -26,13 +29,15 @@ base="${YGG_RELEASES_URL:-https://github.com/$repo/releases/download}"
 say() { printf '%s\n' "$*"; }
 die() { printf 'get.sh: %s\n' "$*" >&2; exit 1; }
 
-profile="" version="" checkout="" home="${YGG_HOME:-$HOME/.local/share/yggdrasil}"
+profile="" version="" checkout="" home="${YGG_HOME:-$HOME/.local/share/yggdrasil}" extra=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--profile) profile="${2:-}"; shift 2 ;;
 	--version) version="${2:-}"; shift 2 ;;
 	--from-checkout) checkout="${2:-}"; shift 2 ;;
 	--home) home="${2:-}"; shift 2 ;;
+	--work) extra="$extra --work"; shift ;;
+	--tailscale) extra="$extra --tailscale"; shift ;;
 	-h | --help) sed -n '2,20p' "$0" 2>/dev/null || true; exit 0 ;;
 	*) die "unknown argument $1 (try --profile dev|full [--version v0.1.0] [--from-checkout DIR])" ;;
 	esac
@@ -40,6 +45,7 @@ done
 
 [ "$(id -u)" -ne 0 ] || [ "${YGG_ALLOW_ROOT:-}" = 1 ] || die "run it as the user the parts should run as, not root (YGG_ALLOW_ROOT=1 if you mean it)"
 case "$profile" in "" | dev | full) ;; *) die "the profile is dev or full, not $profile" ;; esac
+case "$extra" in *--work*--tailscale* | *--tailscale*--work*) die "a work machine is never published on the tailnet; leave out --tailscale" ;; esac
 if [ -z "$profile" ] && [ ! -s "$HOME/.config/yggdrasil/profile" ]; then
 	die "say which parts this machine runs: --profile dev (a VPS) or --profile full"
 fi
@@ -110,10 +116,11 @@ mkdir -p "$home"
 (cd "$work/bundle/yggdrasil" && tar -cf - .) | (cd "$home" && tar -xf -)
 say "Installed the files into $home."
 
+# shellcheck disable=SC2086 # extra is a list of flags
 if [ -n "$profile" ]; then
-	sh "$home/scripts/install.sh" --profile "$profile"
+	sh "$home/scripts/install.sh" --profile "$profile" $extra
 else
-	sh "$home/scripts/install.sh"
+	sh "$home/scripts/install.sh" $extra
 fi
 
 say ""

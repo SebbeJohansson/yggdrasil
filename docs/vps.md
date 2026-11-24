@@ -44,7 +44,12 @@ laptop's own node.
 Every part listens on the VPS's 127.0.0.1 only. Two ways in, neither opens a
 port to the internet:
 
-**SSH tunnel** (nothing to install on the VPS):
+**Tailscale** (the main way, [tailscale.md](tailscale.md)): the VPS on your
+tailnet, its parts published with `scripts/tailscale-serve.sh` at
+`https://<vps>.<tailnet>.ts.net:<port>`, reachable from your PC, phone and
+work laptop, and the work laptop reachable from none of them.
+
+**SSH tunnel** (the second way; nothing to install on the VPS):
 
 ```sh
 scripts/tunnel.sh vps      # Sindri on 127.0.0.1:18772, Gjallar 18774, Ratatoskr 18775, Dellingr 18778, Heimdall 18781
@@ -68,9 +73,6 @@ RestartSec=10
 WantedBy=default.target
 ```
 
-**Tailscale serve** (the VPS on your tailnet): `tailscale serve --bg --https=8772 http://127.0.0.1:8772`
-for each part, then the node's URLs are `https://<vps>.<tailnet>.ts.net:8772`
-and so on. Add those origins to `YGG_CORS_ORIGINS` if a browser tab calls them.
 
 ## In the widget
 

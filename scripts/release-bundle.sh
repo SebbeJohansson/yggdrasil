@@ -33,7 +33,7 @@ sed -e '/^  build: \.$/d' \
 	compose.yaml >"$root/compose.yaml"
 grep -q 'YGG_IMAGE:?' "$root/compose.yaml" || { echo "release-bundle: compose.yaml's part image line has changed; update the sed here" >&2; exit 1; }
 cp .env.example README.md "$root/"
-cp scripts/install.sh scripts/tunnel.sh "$root/scripts/"
+cp scripts/install.sh scripts/tunnel.sh scripts/tailscale-serve.sh "$root/scripts/"
 cp -R deploy/systemd "$root/deploy/"
 cp -R docs "$root/docs"
 

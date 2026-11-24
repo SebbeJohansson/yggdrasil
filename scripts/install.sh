@@ -27,13 +27,23 @@ config="$HOME/.config/yggdrasil"
 origins="http://localhost:17420,http://127.0.0.1:17420"
 
 profile="${YGG_PROFILE:-}"
+# --work: this machine holds work data (YGG_WORK=on, docs/tailscale.md); kept once set.
+# --tailscale: publish its parts on the tailnet (scripts/tailscale-serve.sh).
+work="" tailscale=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--profile) profile="${2:-}"; shift 2 ;;
 	--profile=*) profile="${1#--profile=}"; shift ;;
-	*) echo "install.sh: unknown argument $1 (try --profile full|dev)" >&2; exit 2 ;;
+	--work) work=1; shift ;;
+	--tailscale) tailscale=1; shift ;;
+	*) echo "install.sh: unknown argument $1 (try --profile full|dev [--work] [--tailscale])" >&2; exit 2 ;;
 	esac
 done
+grep -q '^YGG_WORK=on' "$config/parts.env" 2>/dev/null && work=1
+if [ -n "$work" ] && [ -n "$tailscale" ]; then
+	echo "install.sh: a work machine is never published on the tailnet; leave out --tailscale" >&2
+	exit 2
+fi
 [ -n "$profile" ] || profile=$(cat "$config/profile" 2>/dev/null || echo full)
 case "$profile" in
 full | dev) ;;
@@ -394,8 +404,15 @@ if full && ! grep -q '^RATATOSKR_WATCH=.*saga' "$config/parts.env"; then
 	echo "  Note: once Sága is set up (MIMIR_URL in saga.env), add saga to RATATOSKR_WATCH in $config/parts.env"
 fi
 
+# A work machine says so on /health, refuses the tailnet and never runs Sága.
+if [ -n "$work" ]; then
+	ensure parts.env YGG_WORK on
+fi
+
 umask 022
 mkdir -p profile data
+# Sindri's project root (SINDRI_ROOTS): it does not start without it.
+mkdir -p "$HOME/projects"
 if full && [ ! -e profile/profile.md ] && [ -e ../my-agent/profile/profile.md ]; then
 	cp ../my-agent/profile/profile.md profile/profile.md
 	echo "  copied your profile from my-agent"
@@ -408,6 +425,11 @@ for unit in deploy/systemd/*.service; do
 done
 if full; then
 	units="ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service ygg-saga.service"
+	# Sága shares this machine's sessions with Mímir: never from a work machine.
+	if [ -n "$work" ]; then
+		units="ygg-vedrfolnir.service ygg-ratatoskr.service ygg-sindri.service ygg-heimdall.service"
+		systemctl --user disable --now ygg-saga.service 2>/dev/null || true
+	fi
 	containers=norn,gjallar,munin,huginn,dellingr,hermodr,loki,languagetool,embeddings
 	# LanguageTool is built from a sibling checkout, which a release does not have.
 	[ -z "$release" ] || containers=norn,gjallar,munin,huginn,dellingr,hermodr,loki,embeddings
@@ -449,6 +471,12 @@ else
 	else
 		echo "Next: docker compose up -d --build (COMPOSE_PROFILES in .env: $containers for the $profile profile)"
 	fi
+fi
+if [ -n "$tailscale" ]; then
+	sh scripts/tailscale-serve.sh
+fi
+if [ -n "$work" ]; then
+	echo "Work machine (YGG_WORK=on): no tailnet, no Sága. Run Tailscale here with shields up (docs/tailscale.md)."
 fi
 if ! full; then
 	echo "On a VPS, keep the user units running after you log out: loginctl enable-linger $(id -un)"
