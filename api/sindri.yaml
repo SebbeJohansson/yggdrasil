@@ -1298,6 +1298,35 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
         "504": { $ref: "#/components/responses/Error" }
+  /v1/sessions/claude/{id}/transcript:
+    get:
+      summary: >-
+        The end of a Claude Code session's transcript, as text, for a widget
+        on another machine (the session reader). Found under the projects
+        folder `dir` names, else in any project folder. The owner only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9_-]{1,128}$" }, description: The session id. }
+        - { name: dir, in: query, schema: { type: string }, description: The session's working directory. }
+        - { name: tail, in: query, schema: { type: integer, minimum: 1, maximum: 16000000, default: 1500000 }, description: How many bytes of the end to read. }
+        - { name: since, in: query, schema: { type: string }, description: "`<size>:<modified>` from the last read; when the file is still that, the text is left out." }
+      responses:
+        "200":
+          description: The end of the transcript.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [size, modified, text]
+                properties:
+                  size: { type: integer, description: The whole file's size in bytes. }
+                  modified: { type: integer, description: When it last changed, epoch ms. }
+                  text: { type: string, description: "The last `tail` bytes; empty when unchanged." }
+                  unchanged: { type: boolean, description: "The file is as `since` said." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/cloud:
     get:
       summary: The cloud sessions (Claude Code on the web) started here, newest first. Anthropic lists no others, so these are all Sindri knows.
@@ -2037,6 +2066,7 @@ components:
         part: { type: string }
         version: { type: string }
         startedAt: { type: string, format: date-time }
+        work: { type: boolean, description: "Set on a machine that holds work data (YGG_WORK=on): a widget elsewhere refuses to add it as a node." }
         loops:
           type: object
           description: Each loop the part runs on a timer. Ratatoskr counts a loop as stalled when it has not run within three intervals and a minute.

@@ -16,6 +16,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -41,6 +42,8 @@ type Part struct {
 	logger  *log.Logger
 	routes  []string
 	tricks  tricks
+	// work: this machine holds work data (Health.Work).
+	work bool
 }
 
 // New makes a part. tokens maps a token to its caller's name; origins are the
@@ -53,6 +56,7 @@ func New(name string, tokens map[string]string, origins []string) *Part {
 		mux:     http.NewServeMux(),
 		started: time.Now(),
 		logger:  log.New(log.Writer(), "["+name+"] ", log.LstdFlags),
+		work:    os.Getenv("YGG_WORK") == "on",
 	}
 	p.tricks.now = time.Now
 	p.mux.HandleFunc("GET /health", p.health)
@@ -227,10 +231,14 @@ type Health struct {
 	Version   string                `json:"version"`
 	StartedAt time.Time             `json:"startedAt"`
 	Loops     map[string]LoopHealth `json:"loops"`
+	// Work is set on a machine that holds work data (YGG_WORK=on in
+	// parts.env): a widget on another machine refuses to add it as a node,
+	// so work never shows up on a personal machine.
+	Work bool `json:"work,omitempty"`
 }
 
 func (p *Part) health(w http.ResponseWriter, _ *http.Request) {
-	health := Health{OK: true, Part: p.Name, Version: Version, StartedAt: p.started, Loops: map[string]LoopHealth{}}
+	health := Health{OK: true, Part: p.Name, Version: Version, StartedAt: p.started, Loops: map[string]LoopHealth{}, Work: p.work}
 	trick := p.tricks.active()
 	for _, loop := range p.loops {
 		loop.mu.Lock()
