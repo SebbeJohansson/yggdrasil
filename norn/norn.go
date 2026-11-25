@@ -155,6 +155,7 @@ func (n *Norn) Mount(p *part.Part) {
 	p.Handle("GET /v1/settings/send-names", n.namesOffSettings)
 	p.Handle("PUT /v1/settings/send-names", n.setNamesOff)
 	p.Handle("GET /v1/conversations", n.conversations)
+	p.Handle("PUT /v1/conversations/{session}/pin", n.pinConversation)
 	p.Handle("GET /v1/search", n.search)
 	p.Handle("GET /v1/activity", n.activity)
 	p.Handle("GET /v1/chat/llm-calls", n.llmCalls)
@@ -288,6 +289,22 @@ func (n *Norn) conversations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	part.JSON(w, http.StatusOK, conversations)
+}
+
+func (n *Norn) pinConversation(w http.ResponseWriter, r *http.Request) {
+	session := r.PathValue("session")
+	var body struct {
+		Pinned *bool `json:"pinned"`
+	}
+	if !sessionID.MatchString(session) || part.Decode(r, &body) != nil || body.Pinned == nil {
+		part.Error(w, http.StatusBadRequest, "send `pinned` true or false for a conversation id")
+		return
+	}
+	if err := n.Store.PinConversation(r.Context(), session, *body.Pinned); err != nil {
+		n.fail(w, err)
+		return
+	}
+	part.JSON(w, http.StatusOK, map[string]any{"session": session, "pinned": *body.Pinned})
 }
 
 // Search limits, and how much text a hit shows either side of the match.

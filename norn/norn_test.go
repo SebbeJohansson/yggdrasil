@@ -214,3 +214,25 @@ func TestDecisionsView(t *testing.T) {
 		t.Errorf("summary %+v", summary)
 	}
 }
+
+func TestPinnedConversationsListFirst(t *testing.T) {
+	n, p := newNorn(t)
+	ctx := context.Background()
+	n.Store.AddTurn(ctx, "old", "user", "first", nil, nil, nil)
+	n.Store.AddTurn(ctx, "new", "user", "second", nil, nil, nil)
+	if code, _ := call(t, p, "PUT", "/v1/conversations/old/pin", map[string]any{"pinned": true}); code != 200 {
+		t.Fatalf("pin: %d", code)
+	}
+	if code, _ := call(t, p, "PUT", "/v1/conversations/old/pin", map[string]any{}); code != 400 {
+		t.Fatalf("missing pinned: %d", code)
+	}
+	list, err := n.Store.Conversations(ctx, 10)
+	if err != nil || len(list) != 2 || list[0].Session != "old" || !list[0].Pinned || list[1].Pinned {
+		t.Fatalf("pinned first: %+v %v", list, err)
+	}
+	call(t, p, "PUT", "/v1/conversations/old/pin", map[string]any{"pinned": false})
+	list, _ = n.Store.Conversations(ctx, 10)
+	if list[0].Pinned || list[1].Pinned {
+		t.Fatalf("unpinned: %+v", list)
+	}
+}

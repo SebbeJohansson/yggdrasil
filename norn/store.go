@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS memories (
 
 CREATE TABLE IF NOT EXISTS session_communication (session TEXT PRIMARY KEY, communication TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS session_mode (session TEXT PRIMARY KEY, mode TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS conversation_pins (session TEXT PRIMARY KEY, at INTEGER NOT NULL);
 `
 
 // Store is Norn's database.
@@ -394,14 +395,19 @@ type Conversation struct {
 	Messages int     `json:"messages"`
 	Started  int64   `json:"started"`
 	Last     int64   `json:"last"`
+	// Pinned conversations list first; PinnedAt is when, nil when not pinned.
+	Pinned   bool   `json:"pinned"`
+	PinnedAt *int64 `json:"pinnedAt"`
 }
 
 const titleOf = `(SELECT u.content FROM turns u WHERE u.session = t.session AND u.role = 'user' AND u.author IS NULL ORDER BY u.id LIMIT 1)`
 
-// Conversations is every conversation, the most recent first.
+// Conversations is every conversation, the pinned first (the latest pin
+// first), then the rest with the most recent first.
 func (s *Store) Conversations(ctx context.Context, limit int) ([]Conversation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT t.session, count(*), min(t.at), max(t.at), `+titleOf+`
-		FROM turns t GROUP BY t.session ORDER BY max(t.at) DESC LIMIT ?`, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT t.session, count(*), min(t.at), max(t.at), `+titleOf+`, p.at
+		FROM turns t LEFT JOIN conversation_pins p ON p.session = t.session
+		GROUP BY t.session ORDER BY p.at IS NULL, p.at DESC, max(t.at) DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -409,12 +415,23 @@ func (s *Store) Conversations(ctx context.Context, limit int) ([]Conversation, e
 	conversations := []Conversation{}
 	for rows.Next() {
 		var c Conversation
-		if err := rows.Scan(&c.Session, &c.Messages, &c.Started, &c.Last, &c.Title); err != nil {
+		if err := rows.Scan(&c.Session, &c.Messages, &c.Started, &c.Last, &c.Title, &c.PinnedAt); err != nil {
 			return nil, err
 		}
+		c.Pinned = c.PinnedAt != nil
 		conversations = append(conversations, c)
 	}
 	return conversations, rows.Err()
+}
+
+// PinConversation pins a conversation to the top of the list, or unpins it.
+func (s *Store) PinConversation(ctx context.Context, session string, pinned bool) error {
+	if !pinned {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM conversation_pins WHERE session = ?`, session)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO conversation_pins (session, at) VALUES (?, ?) ON CONFLICT (session) DO NOTHING`, session, s.ms())
+	return err
 }
 
 // SearchTurn is a turn that holds the searched text.

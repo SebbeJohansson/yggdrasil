@@ -106,6 +106,8 @@ conversation, decides what each message is, and builds the hand-over
 (your words, profile, memories, inbox). Sindri owns the agents, the coding
 prompts and tool rules, tasks, goals and approvals, and posts what agents
 say back into the conversation (`POST /v1/conversations/{session}/agent-turns`).
+Norn also keeps which conversations you pinned: `PUT /v1/conversations/{session}/pin`,
+and `GET /v1/conversations` lists pinned ones first with `pinned` and `pinnedAt`.
 
 Moved:
 - **Veðrfölnir**: the runner's `/system` and `/services` (without `stop`:

@@ -301,13 +301,42 @@ paths:
                 type: array
                 items:
                   type: object
-                  required: [session, title, messages, started, last]
+                  required: [session, title, messages, started, last, pinned, pinnedAt]
                   properties:
                     session: { type: string }
                     title: { type: [string, "null"] }
                     messages: { type: integer }
                     started: { type: integer }
                     last: { type: integer }
+                    pinned: { type: boolean }
+                    pinnedAt: { type: [integer, "null"], description: When it was pinned, in ms. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/conversations/{session}/pin:
+    put:
+      summary: Pin a conversation to the top of the list, or unpin it. Pinned ones list first, the latest pin first.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pinned]
+              properties:
+                pinned: { type: boolean }
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, pinned]
+                properties:
+                  session: { type: string }
+                  pinned: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/search:
     get:
