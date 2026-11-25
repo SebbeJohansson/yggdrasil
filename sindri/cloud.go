@@ -326,6 +326,9 @@ func (c *ClaudeCloud) startInHerdr(ctx context.Context, cwd, task string) (Cloud
 			if url, id := FindCloudURL(text); id != "" {
 				return CloudStarted{ID: id, URL: url, Pane: agent.PaneID}, nil
 			}
+			if trustFolder.MatchString(text) {
+				return CloudStarted{}, httpErr(409, "Claude asks whether to trust %s (pane %s): answer it there, or run claude in that folder once and pick Yes, then start again", cwd, agent.PaneID)
+			}
 		}
 		select {
 		case <-ctx.Done():
