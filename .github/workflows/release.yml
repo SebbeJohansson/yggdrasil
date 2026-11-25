@@ -1,12 +1,19 @@
-# A release, from a version tag: `git tag v0.2.0 && git push origin v0.2.0`
-# (docs/releases.md). Tests first; then for amd64 and arm64 the bundle a
-# machine installs (scripts/release-bundle.sh) and SHA256SUMS over both, the
-# parts' image on ghcr.io for both, and a GitHub release holding the files.
+# A release, from a version tag: `git tag v0.2.0 && git push origin v0.2.0`,
+# or "Run workflow" with a version (on GitHub, or Release on a project's page
+# in the dashboard), which tags the commit it built (docs/releases.md). Tests
+# first; then for amd64 and arm64 the bundle a machine installs
+# (scripts/release-bundle.sh) and SHA256SUMS over both, the parts' image on
+# ghcr.io for both, and a GitHub release holding the files.
 name: Release
 
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v0.3.6 (becomes that tag)"
+        required: true
 
 permissions:
   contents: write
@@ -16,10 +23,28 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      VERSION: ${{ github.ref_name }}
       IMAGE: ghcr.io/sebbejohansson/yggdrasil
     steps:
       - uses: actions/checkout@v4
+
+      - name: Version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            version="v${INPUT_VERSION#v}"
+            if git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null; then
+              echo "::error::Tag $version already exists. Pick a new version."
+              exit 1
+            fi
+          else
+            version="$GITHUB_REF_NAME"
+          fi
+          if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$version' is not a version like v0.3.6 or v0.4.0-rc.1."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v5
         with:
@@ -62,5 +87,8 @@ jobs:
           # A tag with a suffix (v0.2.0-rc.1) is a prerelease, never "latest".
           prerelease=""
           case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          # Run by hand, the release makes the tag, on the commit built here.
+          tag="--verify-tag"
+          [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && tag="--target $GITHUB_SHA"
           gh release create "$VERSION" dist/*.tar.gz dist/SHA256SUMS \
-            --verify-tag --generate-notes --title "Yggdrasil $VERSION" $prerelease
+            $tag --generate-notes --title "Yggdrasil $VERSION" $prerelease

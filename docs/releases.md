@@ -32,6 +32,11 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
+Or without a checkout: **Run workflow** on the Release workflow on GitHub with
+a version, or **Release** on the project's page in the dashboard. Run that
+way, the workflow builds the default branch and makes the tag itself, on the
+commit it built; a version whose tag exists already is refused.
+
 The workflow runs the tests first; a failing test publishes nothing. Once the
 first release's image is on ghcr.io, make the package public once
 (github.com/SebbeJohansson → Packages → yggdrasil → Package settings → Change
