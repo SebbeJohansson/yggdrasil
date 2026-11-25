@@ -310,7 +310,7 @@ func (c *ClaudeCloud) startHere(ctx context.Context, cwd, task string) (CloudSta
 }
 
 func (c *ClaudeCloud) startInHerdr(ctx context.Context, cwd, task string) (CloudStarted, error) {
-	agent, err := c.Herdr.Start(ctx, HerdrStart{Kind: "claude", Cwd: cwd, Name: "cloud " + HerdrAgentName(cwd), Args: []string{"--cloud=" + task}})
+	agent, err := c.Herdr.Start(ctx, HerdrStart{Kind: "claude", Cwd: cwd, Name: PrefixedHerdrName("cloud-", cwd), Args: []string{"--cloud=" + task}})
 	if err != nil {
 		var down *HerdrDown
 		if errors.As(err, &down) {

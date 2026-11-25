@@ -444,16 +444,22 @@ var (
 
 // HerdrAgentName is a herdr name from a folder: lowercase, starting with a letter, at most 32 characters.
 func HerdrAgentName(directory string) string {
+	return PrefixedHerdrName("", directory)
+}
+
+// PrefixedHerdrName is HerdrAgentName after prefix, still within herdr's
+// 32 characters; prefix must itself be a valid name start, such as "cloud-".
+func PrefixedHerdrName(prefix, directory string) string {
 	suffix := make([]byte, 2)
 	_, _ = rand.Read(suffix)
 	base := nameLeading.ReplaceAllString(nameUnsafe.ReplaceAllString(strings.ToLower(DirectoryName(directory)), "-"), "")
-	if len(base) > 26 {
-		base = base[:26]
+	if limit := 26 - len(prefix); len(base) > limit {
+		base = base[:limit]
 	}
 	if base == "" {
 		base = "agent"
 	}
-	return base + "-" + hex.EncodeToString(suffix)
+	return prefix + base + "-" + hex.EncodeToString(suffix)
 }
 
 // HerdrStart is an agent to start in a new herdr workspace.
