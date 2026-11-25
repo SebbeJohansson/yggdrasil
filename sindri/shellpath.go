@@ -38,7 +38,12 @@ func shellPath(shell string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Markers keep whatever the shell's rc files print out of the PATH.
-	out, _ := exec.CommandContext(ctx, shell, "-ic", `printf '\n<<PATH>>%s<<END>>\n' "$PATH"`).Output()
+	command := exec.CommandContext(ctx, shell, "-ic", `printf '\n<<PATH>>%s<<END>>\n' "$PATH"`)
+	// A daemon the rc files start (D-Bus waking xdg-desktop-portal) keeps
+	// stdout open after the shell exits; without this Output waits forever
+	// and Sindri never starts listening.
+	command.WaitDelay = 2 * time.Second
+	out, _ := command.Output()
 	text := string(out)
 	start, end := strings.Index(text, "<<PATH>>"), strings.Index(text, "<<END>>")
 	if start < 0 || end < start {
