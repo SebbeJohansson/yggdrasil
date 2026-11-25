@@ -507,6 +507,22 @@ func (w *Worktree) isMerged() bool {
 	return gitOK(w.Repo, "merge-base", "--is-ancestor", w.Branch, w.Base)
 }
 
+// Retarget points the worktree at the repo's default branch once the branch
+// it was cut from is gone or merged into it (a feature branch whose pull
+// request landed), so it is reviewed and merged against where that work went.
+// A base the checkout is still on stays: it may just have no commits of its own yet.
+func (w *Worktree) Retarget() {
+	main := DefaultBranch(w.Repo)
+	if main == "" || w.Base == main {
+		return
+	}
+	gone := !gitOK(w.Repo, "show-ref", "--verify", "--quiet", "refs/heads/"+w.Base)
+	current, _ := tryGit(w.Repo, "rev-parse", "--abbrev-ref", "HEAD")
+	if gone || (current != w.Base && gitOK(w.Repo, "merge-base", "--is-ancestor", w.Base, main)) {
+		w.Base = main
+	}
+}
+
 // IsLanded is whether the branch is merged into base, or gone.
 func (w *Worktree) IsLanded() bool {
 	if !w.branchExists() {

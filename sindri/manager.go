@@ -1264,6 +1264,7 @@ func (m *Manager) withWorktree(id string, changes bool, step func(a *Agent) (any
 	if changes && busy(a.Status) {
 		return nil, httpErr(409, "agent is %s; wait for it to finish", a.Status)
 	}
+	a.Worktree.Retarget()
 	result, err := step(a)
 	if review, ok := err.(*ReviewError); ok {
 		return nil, httpErr(409, "%s", review.Message)
@@ -1573,6 +1574,9 @@ func Summarise(a *Agent) map[string]any {
 			fields["lastError"] = a.Log[i].Text
 			break
 		}
+	}
+	if a.Worktree != nil {
+		a.Worktree.Retarget()
 	}
 	if a.Worktree != nil && a.Worktree.IsLanded() {
 		fields["merged"] = true
