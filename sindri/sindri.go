@@ -38,6 +38,8 @@ type Sindri struct {
 	Cloud *Cloud
 	// Usage is the Claude usage ledger (usage.go); nil is off.
 	Usage *Usage
+	// Upgrader upgrades this machine to a release (upgrade.go); nil is off.
+	Upgrader *Upgrader
 }
 
 // Mount adds Sindri's routes and loops to the part.
@@ -72,6 +74,8 @@ func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("POST /v1/agents/{id}/abort", s.agent(func(id string) (*Agent, error) { return s.Agents.Abort(id) }))
 	p.Handle("POST /v1/agents/{id}/remote", s.agent(func(id string) (*Agent, error) { return s.Agents.Remote(id) }))
 	p.Handle("POST /v1/agents/{id}/fix-conflicts", s.agent(func(id string) (*Agent, error) { return s.Agents.FixConflicts(id) }))
+	p.Handle("GET /v1/upgrade", s.upgradeStatus)
+	p.Handle("POST /v1/upgrade", only(s.startUpgrade))
 	p.Handle("POST /v1/agents/{id}/move-onto", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Onto string `json:"onto"`

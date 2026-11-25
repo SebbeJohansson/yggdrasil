@@ -110,6 +110,17 @@ a checkout, when stderr is not a terminal, under CI, or with
 `YGG_NO_UPDATE_CHECK=1`. The parts themselves never ask; the widget's
 Machines card shows each machine's version against the newest release.
 
+### From the dashboard
+
+The Machines card's **Upgrade** button asks that machine's Sindri
+(`POST /v1/upgrade {"version": "v0.3.4"}`, owner only) to run
+`ygg upgrade <version>`. Sindri starts it with `systemd-run --user` in a unit
+of its own, since the install restarts Sindri. The output and exit code are
+kept in `~/.local/state/yggdrasil/upgrade.{log,exit}`, and
+`GET /v1/upgrade` returns how the last one went once Sindri is back. A
+machine built from a checkout refuses: update it with git and
+`scripts/install.sh`.
+
 Without a download (a machine that should not reach GitHub), copy the bundle
 and `SHA256SUMS` over and:
 

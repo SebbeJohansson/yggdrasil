@@ -41,6 +41,46 @@ paths:
           description: The spec.
           content:
             application/yaml: {}
+  /v1/upgrade:
+    get:
+      summary: This machine's version and the last upgrade started from the dashboard (null when none), with its output.
+      responses:
+        "200":
+          description: The version and the last upgrade.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string }
+                  last:
+                    type: [object, "null"]
+                    properties:
+                      version: { type: string }
+                      from: { type: string }
+                      startedAt: { type: integer }
+                      running: { type: boolean }
+                      ok: { type: boolean }
+                      exitCode: { type: integer }
+                      log: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Owner only. Run `ygg upgrade <version>` in a systemd user unit of its own; Sindri restarts during it. Refused on a machine built from a checkout, or while one runs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: string, description: "v0.3.4, or latest" }
+      responses:
+        "200": { description: The upgrade, started. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/agents:
     get:
       summary: Every agent, the most recently active first, without logs.
