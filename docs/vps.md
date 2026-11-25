@@ -78,7 +78,10 @@ WantedBy=default.target
 
 Add the VPS as a node in `~/.config/yggdrasil/nodes.json` on each machine
 whose widget should see it (my-widget's README, Nodes), with the VPS's owner
-token (`~/.config/yggdrasil/owner.token` there). The widget then lists its
+token (`~/.config/yggdrasil/owner.token` there). Instead of copying it,
+run `ygg pair` on the VPS and scan the QR code in the widget or the phone
+app, or run `ygg pair add '<link>'` on the machine whose widget should see it.
+The widget then lists its
 agents and goals beside this machine's, reads its sessions through Sindri
 (`GET /v1/sessions/claude/{id}/transcript`, the owner only), and can send new
 goals to it.
