@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -515,5 +516,42 @@ func TestThePromiseLedgerTurnedOffReadsAndRemindsNothing(t *testing.T) {
 	p.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("a part turned it off: %d", recorder.Code)
+	}
+}
+
+func TestAMailSourceThatDoesNotAnswerIsOnlyReportedAfterTheGrace(t *testing.T) {
+	now := time.Now()
+	n, _ := promisesNorn(t, now)
+	clock := now
+	n.Promises.now = func() time.Time { return clock }
+	timeout := &url.Error{Op: "Get", URL: "https://gmail.googleapis.com/x", Err: context.DeadlineExceeded}
+	if err := n.Promises.sourceResult("gmail", timeout); err != nil {
+		t.Fatalf("a first timeout was reported: %v", err)
+	}
+	clock = now.Add(PromiseSourceGrace - time.Minute)
+	if err := n.Promises.sourceResult("gmail", timeout); err != nil {
+		t.Fatalf("a timeout inside the grace was reported: %v", err)
+	}
+	// Another source's clock is its own.
+	if err := n.Promises.sourceResult("outlook", timeout); err != nil {
+		t.Fatalf("outlook: %v", err)
+	}
+	clock = now.Add(PromiseSourceGrace + time.Minute)
+	if err := n.Promises.sourceResult("gmail", timeout); err == nil {
+		t.Fatal("a source silent past the grace was not reported")
+	}
+	// An answer starts the clock over.
+	if err := n.Promises.sourceResult("gmail", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.Promises.sourceResult("gmail", timeout); err != nil {
+		t.Fatalf("a timeout after an answer was reported: %v", err)
+	}
+}
+
+func TestAMailSourceThatAnswersWithAnErrorIsReportedAtOnce(t *testing.T) {
+	n, _ := promisesNorn(t, time.Now())
+	if err := n.Promises.sourceResult("gmail", apiError("Google", 401, nil)); err == nil {
+		t.Fatal("a 401 was swallowed")
 	}
 }

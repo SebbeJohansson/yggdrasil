@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"slices"
 	"strconv"
@@ -45,6 +46,11 @@ const (
 	promisesKept = 60 * 24 * time.Hour
 	// maxPromisesPerMessage is the most promises taken from one message.
 	maxPromisesPerMessage = 5
+	// PromiseSourceGrace is how long a mail source may fail to answer (timeouts,
+	// no connection) before the loop reports it failing. Nothing is lost
+	// meanwhile: mail is read again every pass, and a blip on the way to Gmail
+	// or Outlook clears itself.
+	PromiseSourceGrace = 2 * time.Hour
 )
 
 const promiseSchema = `CREATE TABLE IF NOT EXISTS promises (
@@ -134,6 +140,8 @@ type Promises struct {
 	mu      sync.Mutex
 	offered map[string]SentMessage
 	ready   bool
+	// unreachable is since when each mail source has not answered at all.
+	unreachable map[string]time.Time
 }
 
 // NewPromises makes the ledger over Norn's local model.
@@ -472,6 +480,40 @@ func (p *Promises) markSeen(ctx context.Context, id string) error {
 	return err
 }
 
+// unreachableError is whether err is the network failing (a timeout, no
+// connection) rather than the service answering with an error.
+func unreachableError(err error) bool {
+	var netErr net.Error
+	return errors.Is(err, context.DeadlineExceeded) || errors.As(err, &netErr)
+}
+
+// sourceResult is the error a mail source's read is reported with. A service
+// that answers with an error is reported at once. One that does not answer is
+// only reported once it has stayed silent for PromiseSourceGrace: the same
+// mail is read again next pass, so a blip costs nothing and an alert for it is
+// noise, while a source down for hours still is not.
+func (p *Promises) sourceResult(source string, err error) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err == nil || !unreachableError(err) {
+		delete(p.unreachable, source)
+		return err
+	}
+	if p.unreachable == nil {
+		p.unreachable = map[string]time.Time{}
+	}
+	since, down := p.unreachable[source]
+	if !down {
+		since = p.now()
+		p.unreachable[source] = since
+	}
+	if p.now().Sub(since) < PromiseSourceGrace {
+		p.n.logf("promises: %s did not answer (read again next pass): %v", source, err)
+		return nil
+	}
+	return err
+}
+
 // gather is every message to read: what was offered, and your sent mail.
 // A source that fails is skipped this pass; the others still count.
 func (p *Promises) gather(ctx context.Context, since time.Time) ([]SentMessage, error) {
@@ -487,7 +529,7 @@ func (p *Promises) gather(ctx context.Context, since time.Time) ([]SentMessage, 
 	if status := n.Accounts.Microsoft.Status(); status.State == "signed-in" && status.Scopes != nil && status.Scopes.Mail && !n.hidden(ctx, "outlook") {
 		if token, err := n.Accounts.Microsoft.Token(ctx); err == nil {
 			sent, err := readSentMail(ctx, defaultBearerGet, token.AccessToken, since)
-			if err != nil {
+			if err = p.sourceResult("outlook", err); err != nil {
 				failed = append(failed, err)
 			}
 			messages = append(messages, sent...)
@@ -496,7 +538,7 @@ func (p *Promises) gather(ctx context.Context, since time.Time) ([]SentMessage, 
 	if google := n.Accounts.Google; google.Configured() && google.Grants().Gmail && !n.hidden(ctx, "gmail") {
 		if token, err := google.Token(ctx); err == nil {
 			sent, err := readSentGmail(ctx, defaultBearerGet, token, since, func(id string) bool { return p.seen(ctx, id) })
-			if err != nil {
+			if err = p.sourceResult("gmail", err); err != nil {
 				failed = append(failed, err)
 			}
 			messages = append(messages, sent...)
