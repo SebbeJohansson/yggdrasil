@@ -869,8 +869,10 @@ func (w *Worktree) Merge() (string, error) {
 
 var pullRequestURL = regexp.MustCompile(`https://\S+/pull/\d+`)
 
-// PullRequest pushes the branch and opens a GitHub pull request into base with gh.
-func (w *Worktree) PullRequest() (url, done string, err error) {
+// PullRequest pushes the branch and opens a GitHub pull request into base
+// with gh, titled from its commits. A body, when given, replaces the one
+// gh would make from the commits.
+func (w *Worktree) PullRequest(body string) (url, done string, err error) {
 	switch {
 	case !w.branchExists():
 		return "", "", reviewErr("branch %s is gone", w.Branch)
@@ -901,7 +903,11 @@ func (w *Worktree) PullRequest() (url, done string, err error) {
 	if _, err := git(w.Path, "push", "--set-upstream", remote, w.Branch); err != nil {
 		return "", "", reviewErr("the push to %s failed: %s", remote, firstLine(err))
 	}
-	command := exec.Command("gh", "pr", "create", "--base", w.Base, "--head", w.Branch, "--fill")
+	args := []string{"pr", "create", "--base", w.Base, "--head", w.Branch, "--fill"}
+	if body != "" {
+		args = append(args, "--body", body)
+	}
+	command := exec.Command("gh", args...)
 	command.Dir = w.Path
 	var stderr strings.Builder
 	command.Stderr = &stderr

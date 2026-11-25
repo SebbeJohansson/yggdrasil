@@ -95,7 +95,7 @@ func (s *Sindri) Mount(p *part.Part) {
 		done(w)(s.Agents.Merge(r.PathValue("id")))
 	})
 	p.Handle("POST /v1/agents/{id}/pull-request", func(w http.ResponseWriter, r *http.Request) {
-		answer(w)(s.Agents.PullRequest(r.PathValue("id")))
+		answer(w)(s.Agents.PullRequest(r.PathValue("id"), s.closes(r.PathValue("id"))))
 	})
 	p.Handle("POST /v1/agents/{id}/push-base", func(w http.ResponseWriter, r *http.Request) {
 		done(w)(s.Agents.PushBase(r.PathValue("id")))

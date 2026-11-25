@@ -404,6 +404,20 @@ a winner, a draft goal of that kind that does not race shows the conduit
 that wins it most (`suggestion`; none on a tie). It only suggests: you
 choose with `PUT /v1/goals/{id}/conduit`.
 
+### Sindri: goals from GitHub issues
+
+`GET /v1/goals/candidates?from=github` lists the open issues of the projects
+here whose `origin` is on github.com, each with its project already picked
+(source `github:<owner>/<repo>#<n>`). Sindri asks GitHub with the GitHub CLI
+(`gh`) and the login it already has, in one search. `project` narrows it to
+one project, `query` to titles, and `assignee` is `mine` (the default),
+`unassigned` or `all`.
+
+The issue itself is never moved or commented on. A pull request Sindri opens
+for such a goal, in the issue's own repo, has `Closes <owner>/<repo>#<n>` as
+its body, so GitHub closes the issue when it merges. A goal merged locally,
+without a pull request, leaves the issue open.
+
 ### Sindri: cloud sessions
 
 Claude Code on the web, started and followed through the real `claude` CLI

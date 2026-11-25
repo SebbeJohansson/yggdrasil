@@ -1394,10 +1394,15 @@ func (m *Manager) Merge(id string) (string, error) {
 	return done.(string), nil
 }
 
-// PullRequest pushes an agent's branch and opens a pull request.
-func (m *Manager) PullRequest(id string) (map[string]string, error) {
+// PullRequest pushes an agent's branch and opens a pull request. closes
+// gives the goal's source: a GitHub issue in the same repo is closed by it.
+func (m *Manager) PullRequest(id string, closes func(path string) string) (map[string]string, error) {
 	result, err := m.withWorktree(id, true, func(a *Agent) (any, error) {
-		url, done, err := a.Worktree.PullRequest()
+		body := ""
+		if closes != nil {
+			body = closes(a.Worktree.Repo)
+		}
+		url, done, err := a.Worktree.PullRequest(body)
 		return map[string]string{"url": url, "done": done}, err
 	})
 	if err != nil {
@@ -1598,7 +1603,7 @@ func (m *Manager) OnUnowned(path, step, commit string, force bool) (any, error) 
 		result, err = w.Remove(force)
 	case "pull-request":
 		var url, done string
-		url, done, err = w.PullRequest()
+		url, done, err = w.PullRequest("")
 		result = map[string]string{"url": url, "done": done}
 	case "push-base":
 		result, err = w.PushBase()

@@ -36,7 +36,7 @@ var runGH = func(args ...string) ([]byte, error) {
 	out, err := command.Output()
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
-			return nil, httpErr(409, "the GitHub CLI (gh) is not installed here, so releases can't be read or started")
+			return nil, httpErr(409, "the GitHub CLI (gh) is not installed here, so Sindri can't reach GitHub")
 		}
 		if text := strings.TrimSpace(stderr.String()); text != "" {
 			return out, fmt.Errorf("gh %s: %s", args[0], text)

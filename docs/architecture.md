@@ -125,7 +125,8 @@ Moved:
   tasks, goals with pictures, parts across repos, automatic approvals,
   follow-through on failed tests and unfinished goal parts, waiting for room or for Claude usage, and
   the coding-agent and automation settings, Linear goal candidates and
-  moving an issue as its goal moves, `/v1/activity`, and every coding-agent
+  moving an issue as its goal moves, GitHub issues as goal candidates (read
+  with `gh`; a goal's pull request closes its issue), `/v1/activity`, and every coding-agent
   session on the machine (`/v1/sessions`: Claude Code's live sessions,
   OpenCode's, herdr's panes, with prompts, keys and dialog answers). Question
   agents run in herdr panes while herdr runs, as my-agent's did. The

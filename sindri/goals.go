@@ -518,6 +518,8 @@ type Candidate struct {
 	// State and StateType are a Linear issue's: "Todo", "unstarted".
 	State     string `json:"state,omitempty"`
 	StateType string `json:"stateType,omitempty"`
+	// Labels are a GitHub issue's.
+	Labels []string `json:"labels,omitempty"`
 }
 
 var (
@@ -1100,8 +1102,25 @@ func (w *Work) candidates(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		part.JSON(rw, http.StatusOK, map[string]any{"from": "linear", "candidates": found})
+	case "github":
+		assignee := query.Get("assignee")
+		if assignee != "" && !slices.Contains(GitHubAssignees, assignee) {
+			part.Error(rw, http.StatusBadRequest, "`assignee` must be mine, unassigned or all")
+			return
+		}
+		found, err := GitHubCandidates(r.Context(), w.Agents.roots[0], GitHubFilter{Project: project, Query: query.Get("query"), Assignee: assignee}, known)
+		var answered *HTTPError
+		switch {
+		case errors.As(err, &answered):
+			fail(rw, err)
+		case err != nil:
+			w.logf("GitHub did not answer: %v", err)
+			part.Error(rw, http.StatusBadGateway, "GitHub did not answer")
+		default:
+			part.JSON(rw, http.StatusOK, map[string]any{"from": "github", "candidates": found})
+		}
 	default:
-		part.Error(rw, http.StatusBadRequest, "`from` must be todo or linear")
+		part.Error(rw, http.StatusBadRequest, "`from` must be todo, linear or github")
 	}
 }
 

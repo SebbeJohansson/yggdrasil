@@ -1646,12 +1646,12 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/goals/candidates:
     get:
-      summary: The open "- [ ]" lines of a project's TODO.md, or your open Linear issues, each ready to post as a goal. A goal from Linear moves its issue along as the goal moves.
+      summary: The open "- [ ]" lines of a project's TODO.md, your open Linear issues, or the open GitHub issues of the projects here, each ready to post as a goal. A goal from Linear moves its issue along as the goal moves; a pull request for a goal from GitHub, in the issue's repo, closes the issue when it merges.
       parameters:
-        - { name: from, in: query, required: true, example: todo, schema: { type: string, enum: [todo, linear] } }
-        - { name: project, in: query, example: demo, schema: { type: string }, description: "todo: the project (required). linear: part of a Linear project's name." }
-        - { name: query, in: query, schema: { type: string }, description: "linear: part of the title." }
-        - { name: assignee, in: query, schema: { type: string, enum: [mine, unassigned, all] }, description: "linear: whose issues; mine by default." }
+        - { name: from, in: query, required: true, example: todo, schema: { type: string, enum: [todo, linear, github] } }
+        - { name: project, in: query, example: demo, schema: { type: string }, description: "todo: the project (required). linear: part of a Linear project's name. github: a project here; every project on GitHub when left out." }
+        - { name: query, in: query, schema: { type: string }, description: "linear, github: part of the title." }
+        - { name: assignee, in: query, schema: { type: string, enum: [mine, unassigned, all] }, description: "linear, github: whose issues; mine by default." }
       responses:
         "200":
           description: The candidates.
@@ -1676,6 +1676,7 @@ paths:
                         goal: { type: integer, description: The goal that already has this source. }
                         state: { type: string, description: "linear: the issue's state, e.g. Todo." }
                         stateType: { type: string, description: "linear: triage, backlog, unstarted, started, completed or canceled." }
+                        labels: { type: array, items: { type: string }, description: "github: the issue's labels." }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
