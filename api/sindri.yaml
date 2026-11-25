@@ -356,6 +356,31 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /v1/agents/{id}/move-onto:
+    post:
+      summary: Rebase the agent's own commits onto another branch and make it the base, so work cut from a branch your checkout has left merges where the checkout is now. A conflict is handed to the agent to resolve (agentAsked).
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                onto: { type: string, description: "The branch to move onto; omitted, the branch your checkout is on." }
+      responses:
+        "200":
+          description: What was done.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  done: { type: string }
+                  agentAsked: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/agents/{id}/review:
     get:
       summary: The agent's branch, its commits, files and diff, with its screenshots. ?commit= for one commit.

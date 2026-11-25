@@ -1,6 +1,7 @@
 package sindri
 
 import (
+	"os"
 	"os/exec"
 	"testing"
 )
@@ -42,5 +43,37 @@ func TestAWorktreeCutFromAMergedFeatureBranchIsReviewedAgainstMain(t *testing.T)
 	w.Retarget()
 	if w.Base != "main" {
 		t.Fatalf("a deleted base stayed: %s", w.Base)
+	}
+}
+
+func TestMoveOntoReplaysOnlyTheBranchsOwnCommitsOntoTheCheckoutsBranch(t *testing.T) {
+	repo := t.TempDir()
+	gitIn(t, repo, "init", "-b", "main")
+	gitIn(t, repo, "commit", "--allow-empty", "-m", "first")
+	gitIn(t, repo, "checkout", "-b", "old-feature")
+	gitIn(t, repo, "commit", "--allow-empty", "-m", "old feature work")
+	cut, _ := tryGit(repo, "rev-parse", "--short", "HEAD")
+	path := t.TempDir() + "/wt"
+	gitIn(t, repo, "worktree", "add", "-b", "agent/x", path)
+	if err := os.WriteFile(path+"/fix.txt", []byte("fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, path, "add", "fix.txt")
+	gitIn(t, path, "commit", "-m", "the fix")
+	gitIn(t, repo, "checkout", "main")
+	w := &Worktree{Repo: repo, Path: path, Branch: "agent/x", Base: "old-feature", BaseCommit: cut}
+
+	done, conflicts, err := w.MoveOnto("")
+	if err != nil || len(conflicts) > 0 {
+		t.Fatalf("move failed: %v %v", err, conflicts)
+	}
+	if w.Base != "main" {
+		t.Fatalf("base is %s, not main: %s", w.Base, done)
+	}
+	if subjects, _ := tryGit(repo, "log", "--format=%s", "main..agent/x"); subjects != "the fix" {
+		t.Fatalf("branch carries more than its own commit: %q", subjects)
+	}
+	if _, err := w.Merge(); err != nil {
+		t.Fatalf("merge after the move: %v", err)
 	}
 }

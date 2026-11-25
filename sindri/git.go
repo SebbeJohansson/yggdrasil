@@ -574,6 +574,65 @@ func (w *Worktree) ConflictsToFix() ([]string, error) {
 	return conflicts, nil
 }
 
+// MoveOnto replays the branch's own commits (those after BaseCommit) onto
+// onto, in the worktree, and makes onto its base: work cut from a branch the
+// checkout has since left is then merged where the checkout is now. onto ""
+// is the branch the checkout is on. A conflict leaves the branch as it was and
+// comes back as its files, with the base already moved, for an agent to finish.
+func (w *Worktree) MoveOnto(onto string) (done string, conflicts []string, err error) {
+	if onto == "" {
+		onto, _ = tryGit(w.Repo, "branch", "--show-current")
+		if onto == "" {
+			return "", nil, reviewErr("your checkout of %s is on a detached HEAD, so there is no branch to move onto", w.Repo)
+		}
+	}
+	own := count(w.Repo, "rev-list", "--count", w.BaseCommit+".."+w.Branch)
+	switch {
+	case onto == w.Base:
+		return "", nil, reviewErr("%s is already based on %s", w.Branch, onto)
+	case onto == w.Branch:
+		return "", nil, reviewErr("your checkout of %s is on %s itself", w.Repo, w.Branch)
+	case !gitOK(w.Repo, "show-ref", "--verify", "--quiet", "refs/heads/"+onto):
+		return "", nil, reviewErr("there is no branch %s in %s", onto, w.Repo)
+	case !w.branchExists():
+		return "", nil, reviewErr("branch %s is gone", w.Branch)
+	case !exists(w.Path):
+		return "", nil, reviewErr("the worktree is gone")
+	case own == 0:
+		return "", nil, reviewErr("%s has no commits of its own yet", w.Branch)
+	}
+	if current, _ := tryGit(w.Path, "branch", "--show-current"); current != w.Branch {
+		return "", nil, reviewErr("the worktree is not on %s", w.Branch)
+	}
+	if pending := w.uncommitted(); len(pending) > 0 {
+		return "", nil, reviewErr("the worktree has %d uncommitted change%s; ask the agent to commit them first", len(pending), plural(len(pending)))
+	}
+	from := w.BaseCommit
+	onTo, _ := tryGit(w.Repo, "rev-parse", "--short", onto)
+	if _, err := git(w.Path, "rebase", "--onto", onto, from); err != nil {
+		conflicted, _ := tryGit(w.Path, "diff", "--name-only", "--diff-filter=U")
+		_, _ = tryGit(w.Path, "rebase", "--abort")
+		files := strings.Fields(conflicted)
+		if len(files) == 0 {
+			return "", nil, reviewErr("the rebase onto %s failed: %s", onto, firstLine(err))
+		}
+		w.Base, w.BaseCommit = onto, onTo
+		return "", files, nil
+	}
+	w.Base, w.BaseCommit = onto, onTo
+	return fmt.Sprintf("moved %d commit%s of %s onto %s", own, plural(own), w.Branch, onto), nil, nil
+}
+
+// MoveOntoPrompt asks an agent to finish moving its commits onto a new base.
+func MoveOntoPrompt(w *Worktree, cutFrom, oldBase string, conflicts []string) string {
+	return strings.Join([]string{
+		fmt.Sprintf("Your branch %s was cut from %s, but it is merged into %s now. Moving your commits onto %s conflicts in %s.", w.Branch, oldBase, w.Base, w.Base, strings.Join(conflicts, ", ")),
+		fmt.Sprintf("Move only your own commits onto %s here in your worktree (`git rebase --onto %s %s`) and resolve each conflict so that both what %s has and what you changed still work.", w.Base, w.Base, cutFrom, w.Base),
+		"Run the project's checks, finish the rebase, and leave nothing uncommitted.",
+		fmt.Sprintf("Do not merge into %s or push; it is merged from the review page. Say in a line or two how you resolved each file.", w.Base),
+	}, " ")
+}
+
 func (w *Worktree) commitsIn(rangeSpec string) []Commit {
 	out, _ := tryGit(w.Repo, "log", "--format=%h%x00%s%x00%ct", rangeSpec)
 	var commits []Commit

@@ -1384,6 +1384,49 @@ func (m *Manager) FixConflicts(id string) (*Agent, error) {
 	return m.Prompt(id, text.(string), nil, false)
 }
 
+// MoveOnto rebases an agent's own commits onto onto ("" for the branch the
+// checkout is on). On a conflict the agent is asked to finish it, and
+// agentAsked says so.
+func (m *Manager) MoveOnto(id, onto string) (map[string]any, error) {
+	var prompt string
+	result, err := m.withWorktree(id, true, func(a *Agent) (any, error) {
+		cutFrom, oldBase := a.Worktree.BaseCommit, a.Worktree.Base
+		done, conflicts, err := a.Worktree.MoveOnto(onto)
+		if err != nil {
+			return nil, err
+		}
+		m.touchLocked(a)
+		if len(conflicts) == 0 {
+			return map[string]any{"done": done, "agentAsked": false}, nil
+		}
+		var denied []string
+		for _, rule := range a.DisallowedTools {
+			if !strings.HasPrefix(rule, "Bash(git rebase") {
+				denied = append(denied, rule)
+			}
+		}
+		a.DisallowedTools = denied
+		if !slices.Contains(a.AllowedTools, rebaseRule) {
+			a.AllowedTools = append(a.AllowedTools, rebaseRule)
+		}
+		prompt = MoveOntoPrompt(a.Worktree, cutFrom, oldBase, conflicts)
+		return map[string]any{
+			"done":       fmt.Sprintf("moving onto %s conflicts in %s; asked the agent to resolve it", a.Worktree.Base, strings.Join(conflicts, ", ")),
+			"agentAsked": true,
+		}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if prompt != "" {
+		m.close(id)
+		if _, err := m.Prompt(id, prompt, nil, false); err != nil {
+			return nil, err
+		}
+	}
+	return result.(map[string]any), nil
+}
+
 // --- worktrees no agent owns -------------------------------------------------------
 
 // Worktrees is every worktree, with the agent working in it.
