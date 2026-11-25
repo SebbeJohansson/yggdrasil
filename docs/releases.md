@@ -148,3 +148,24 @@ Settings and tokens in `~/.config/yggdrasil` stay where they are, and so does
 the host parts' own state in `~/.local/state/yggdrasil` (Sindri's goals, tasks
 and agents). The checkout itself is left in place; remove it once the release
 runs.
+
+## Releasing any project from the dashboard
+
+A project's page in the dashboard has a Release card when the project's
+checkout has a `.github/workflows/release.yml` (or `.yaml`) that can be run by
+hand with a version (`workflow_dispatch` with a `version` input) and its
+`origin` is on GitHub. Yggdrasil and yggdrasil-mobile both do. The card shows
+the newest release (a link to it), the workflow's last runs, and the next
+version (the next patch, or a prerelease's release), which you can change
+before starting it.
+
+Sindri talks to GitHub through the GitHub CLI (`gh`), with the login it
+already has, so the machine needs `gh auth login` done once.
+
+- `GET /v1/projects/{name}/release`: `releasable` (with a `reason` when not),
+  `repo`, `latest`, `next`, `releasesUrl`, `runsUrl` and the last three `runs`
+  (a run whose `status` is `waiting` waits for approval in its environment,
+  as yggdrasil-mobile's signed releases do).
+- `POST /v1/projects/{name}/release {"version": "v0.3.6"}` (owner only) runs
+  the workflow on the repo's default branch with that version; the workflow
+  makes the tag.

@@ -709,6 +709,75 @@ paths:
                   error: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/Error" }
+  /v1/projects/{name}/release:
+    get:
+      summary: The project's releases, when its checkout has a .github/workflows/release.yml that can be run by hand with a version input and its origin is on GitHub (read with gh). Otherwise releasable is false, with the reason.
+      parameters: [{ name: name, in: path, required: true, example: demo, schema: { type: string } }]
+      responses:
+        "200":
+          description: The newest release, the next version and the workflow's last three runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [releasable, latest, runs]
+                properties:
+                  releasable: { type: boolean }
+                  reason: { type: string }
+                  repo: { type: string, description: owner/name }
+                  workflow: { type: string }
+                  releasesUrl: { type: string }
+                  runsUrl: { type: string }
+                  latest:
+                    type: [object, "null"]
+                    properties:
+                      tag: { type: string }
+                      url: { type: string }
+                      publishedAt: { type: string }
+                      prerelease: { type: boolean }
+                  next: { type: string, description: "The next patch, or a prerelease's release; v0.1.0 when there is none." }
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        title: { type: string }
+                        event: { type: string }
+                        status: { type: string, description: "GitHub's: queued, in_progress, waiting (for approval in an environment), completed…" }
+                        conclusion: { type: string }
+                        url: { type: string }
+                        createdAt: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      summary: Owner only. Run the project's release workflow on the repo's default branch with this version (gh workflow run); the workflow makes the tag. Refused when the tag exists or the project can't be released.
+      parameters: [{ name: name, in: path, required: true, example: demo, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: string, example: v0.3.6, description: "v0.3.6 or 0.3.6; a prerelease like v0.4.0-rc.1" }
+      responses:
+        "200":
+          description: The workflow, started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string }
+                  ref: { type: string }
+                  runsUrl: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/work/code:
     post:
       summary: Hand a coding task over. One agent per project, each in a worktree, all on one branch name when there are several. A project with no room waits and starts when an agent finishes.

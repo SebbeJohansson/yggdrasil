@@ -132,6 +132,8 @@ func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("GET /v1/projects/{name}/docs", func(w http.ResponseWriter, r *http.Request) {
 		answer(w)(ReadProjectDocs(s.Root, r.PathValue("name")))
 	})
+	p.Handle("GET /v1/projects/{name}/release", s.projectRelease)
+	p.Handle("POST /v1/projects/{name}/release", only(s.startProjectRelease))
 	if s.Work != nil {
 		s.Work.MountWork(p)
 		p.Loop("feed", 3*time.Second, s.Work.Feed)
