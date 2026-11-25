@@ -56,6 +56,10 @@ ygg strikes            # Loki's last strikes and who noticed
 ygg strike norn [loop] [--loop calendar] [--minutes 3] [--yes]   # have Loki trick a part
 ```
 
+Only `ygg strike` changes anything: it picks the trick from Loki's
+`/v1/targets` (health when no kind is given, by a way that is open), says
+what it will do and asks first unless given `--yes`.
+
 ### Connect another device with a QR code
 
 `ygg pair` shows a QR code and a link for this machine; scan or paste it
@@ -71,10 +75,6 @@ ygg pair add '<link>'  # on the other machine: adds the node to ~/.config/yggdra
 ```
 
 The widget and the phone app take the same link (Add node / Settings → Connection).
-
-Only `ygg strike` changes anything: it picks the trick from Loki's
-`/v1/targets` (health when no kind is given, by a way that is open), says
-what it will do and asks first unless given `--yes`.
 
 ## Run
 
