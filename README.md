@@ -56,6 +56,22 @@ ygg strikes            # Loki's last strikes and who noticed
 ygg strike norn [loop] [--loop calendar] [--minutes 3] [--yes]   # have Loki trick a part
 ```
 
+### Connect another device with a QR code
+
+`ygg pair` shows a QR code and a link for this machine; scan or paste it
+instead of copying `owner.token` by hand. The link is
+`yggdrasil://pair?v=1&id=…&label=…&host=<tailnet name>&token=<owner token>`,
+so it holds the owner token: show it only to your own devices. A work machine
+(`YGG_WORK=on`) makes none, and a link from one is refused.
+
+```sh
+ygg pair [--id vps] [--label VPS] [--host vps.tailnet.ts.net]   # QR + link; the host comes from Tailscale
+ygg pair --json        # {uri, id, label, host, token}, for the widget
+ygg pair add '<link>'  # on the other machine: adds the node to ~/.config/yggdrasil/nodes.json
+```
+
+The widget and the phone app take the same link (Add node / Settings → Connection).
+
 Only `ygg strike` changes anything: it picks the trick from Loki's
 `/v1/targets` (health when no kind is given, by a way that is open), says
 what it will do and asks first unless given `--yes`.
