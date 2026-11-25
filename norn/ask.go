@@ -574,7 +574,18 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 				candidates = append(candidates, agent)
 			}
 		}
-		named := NameAgents(candidates[:min(8, len(candidates))])
+		projects := n.Sindri.Projects(ctx)
+		candidates = candidates[:min(8, len(candidates))]
+		// A question agent has no worktree but may have changed a project
+		// in place; its log says which, so "commit that" finds it.
+		for i, agent := range candidates {
+			if agent.Worktree == nil && slices.Contains(own, agent.ID) {
+				if full, err := n.Sindri.Agent(ctx, agent.ID); err == nil {
+					candidates[i].WorkedIn = WorkedIn(*full, projects)
+				}
+			}
+		}
+		named := NameAgents(candidates)
 		names := map[string]string{}
 		for _, entry := range named {
 			names[entry.Agent.ID] = entry.Name
@@ -594,7 +605,7 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 			}
 			conversation = append(conversation, Line{who, t.Content})
 		}
-		input := DispatchInput{Message: question, HasCalendar: hasCalendar, Projects: n.Sindri.Projects(ctx), Agents: named, Conversation: conversation}
+		input := DispatchInput{Message: question, HasCalendar: hasCalendar, Projects: projects, Agents: named, Conversation: conversation}
 		result := Dispatch(ctx, input, func(ctx context.Context, messages []llm.Message, format map[string]any) (string, error) {
 			think := false
 			return n.LLM.Chat(ctx, messages, llm.Options{Purpose: "dispatch", Model: n.Config.DispatchModel, Temperature: 0, TopP: 1, MaxTokens: 60,

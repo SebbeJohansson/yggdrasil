@@ -176,7 +176,8 @@ func TestNeedsYou(t *testing.T) {
 }
 
 func TestDispatchGuards(t *testing.T) {
-	named := []NamedAgent{{Name: "titles", Agent: Agent{ID: "a1", Label: "Fix titles", Resumable: true}}, {Name: "closed", Agent: Agent{ID: "a2", Label: "Old"}}}
+	named := []NamedAgent{{Name: "titles", Agent: Agent{ID: "a1", Label: "Fix titles", Resumable: true}}, {Name: "closed", Agent: Agent{ID: "a2", Label: "Old"}},
+		{Name: "glim-server", Agent: Agent{ID: "a3", Label: "ask: Build a glim server", Resumable: true, WorkedIn: "glim"}}}
 	input := func(message string) DispatchInput {
 		return DispatchInput{Message: message, Projects: []string{"my-widget", "glim"}, Agents: named,
 			Conversation: []Line{{"person", "fix the titles"}, {"titles", "Done. Should I also do the tabs?"}}}
@@ -190,6 +191,7 @@ func TestDispatchGuards(t *testing.T) {
 		{"yes, the tabs too", `{"action":"reply_to_agent","agent":null,"project":null}`, "reply_to_agent", "titles"},
 		{"how's it going", `{"action":"reply_to_agent","agent":"closed","project":null}`, "status", "closed"},
 		{"hm", `not json`, "answer", ""},
+		{"commit to this remote: git remote add origin git@github.com:me/glim.git", `{"action":"code","agent":null,"project":"glim"}`, "reply_to_agent", "glim-server"},
 	}
 	for _, c := range cases {
 		result := Dispatch(context.Background(), input(c.message), complete(c.model))
@@ -204,6 +206,21 @@ func TestDispatchGuards(t *testing.T) {
 		if got.Action != c.action || target != c.target {
 			t.Errorf("%q: got %s %q, want %s %q (guards %v)", c.message, got.Action, target, c.action, c.target, result.Guards)
 		}
+	}
+}
+
+func TestWorkedIn(t *testing.T) {
+	var agent Agent
+	_ = json.Unmarshal([]byte(`{"log":[
+		{"kind":"tool","text":"Bash cd /home/me/projects && grep -rli akeneo"},
+		{"kind":"tool","text":"Bash mkdir -p /home/me/projects/svc-akeneo-mcp/akeneo && cd /home/me/projects/svc-akeneo-mcp"},
+		{"kind":"tool","text":"Read /home/me/projects/yggdrasil/loki/plan.go"},
+		{"kind":"text","text":"see /home/me/projects/yggdrasil/a /home/me/projects/yggdrasil/b /home/me/projects/yggdrasil/c"}]}`), &agent)
+	if got := WorkedIn(agent, []string{"loki", "yggdrasil", "svc-akeneo-mcp"}); got != "svc-akeneo-mcp" {
+		t.Fatalf("got %q", got)
+	}
+	if got := WorkedIn(Agent{}, []string{"glim"}); got != "" {
+		t.Fatalf("got %q for no log", got)
 	}
 }
 

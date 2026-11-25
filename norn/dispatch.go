@@ -120,11 +120,46 @@ func stateOf(a Agent) string {
 		"waiting": "finished", "done": "finished", "failed": "failed", "aborted": "stopped"}[a.Status]
 }
 
-var labelProject = regexp.MustCompile(`^([\w.-]+):\s`)
+var (
+	labelProject = regexp.MustCompile(`^([\w.-]+):\s`)
+	aPath        = regexp.MustCompile(`(?:/[\w.@-]+){2,}`)
+)
+
+// WorkedIn is the project an agent's tool calls touched most: the first
+// folder in each path that is a project, so yggdrasil/loki counts as
+// yggdrasil. Empty when its tools named no project.
+func WorkedIn(a Agent, projects []string) string {
+	known := map[string]bool{}
+	for _, p := range projects {
+		known[p] = true
+	}
+	counts := map[string]int{}
+	best := ""
+	for _, entry := range a.Log {
+		if entry.Kind != "tool" {
+			continue
+		}
+		for _, path := range aPath.FindAllString(entry.Text, -1) {
+			for _, part := range strings.Split(path, "/") {
+				if known[part] {
+					counts[part]++
+					if counts[part] > counts[best] || best == "" {
+						best = part
+					}
+					break
+				}
+			}
+		}
+	}
+	return best
+}
 
 func projectOf(a Agent, projects []string) string {
 	if a.Worktree != nil {
 		return a.Worktree.Repo[strings.LastIndex(a.Worktree.Repo, "/")+1:]
+	}
+	if a.WorkedIn != "" {
+		return a.WorkedIn
 	}
 	if match := labelProject.FindStringSubmatch(a.Label); match != nil {
 		return match[1]
@@ -148,11 +183,13 @@ Rules:
 4. Questions about the person's own colleagues, team or inbox are answer: the assistant knows those.
 5. A ticket to work on, or a change, that names no project is delegate: that agent finds the repository and hands the coding on.
 6. A follow-up on what an agent already did -- it refers to that agent's task or result, often with "also", "and", "those" or "that change" -- is reply_to_agent for that agent, not delegate: the agent has the context.
+7. Committing, pushing or adding a remote for changes an agent made is reply_to_agent for the agent that worked in that project, not code: a new coding agent starts from a clean copy without those changes.
 Examples (other agents and projects than the real ones):
 - Agent "migrate" last asked "Should I also run it against staging?"; message "yes, staging too" -> {"action":"reply_to_agent","agent":"migrate","project":null}
 - Agent "migrate" last asked "Keep the old column or drop it?"; message "drop it" -> {"action":"reply_to_agent","agent":"migrate","project":null}
 - Agent "docs" finished updating the API docs; message "also mention the rate limits there" -> {"action":"reply_to_agent","agent":"docs","project":null}
 - Agent "invoices" finished listing unpaid invoices; message "which of those are older than 30 days?" -> {"action":"reply_to_agent","agent":"invoices","project":null}
+- Agent "search" built a search page in shop-app; message "commit it and push to origin" -> {"action":"reply_to_agent","agent":"search","project":null}
 - Message "is the migration finished yet?" -> {"action":"status","agent":"migrate","project":null}
 - Agent "billing" finished work on ticket SHOP-12; message "is the ticket marked as done in Jira?" -> {"action":"reply_to_agent","agent":"billing","project":null}
 - Message "change the button colour to green in shop-app" -> {"action":"code","agent":null,"project":"shop-app"}
@@ -238,6 +275,7 @@ var (
 	asksHow = regexp.MustCompile(`(?i)^\s*(how|why|where|when|which|what does|does|do|is|are|should)\b`)
 	live    = regexp.MustCompile(`(?i)\b(weather|news|latest|newest|current (version|price)|today'?s?|calendar|meetings?|linear|jira|asana|tickets?|issues? assigned|pull requests?|prs?)\b`)
 	ticket  = regexp.MustCompile(`\b[A-Z][A-Z0-9]{1,9}-\d+\b`)
+	gitAsk  = regexp.MustCompile(`(?i)\b(commit|push|remote|stage)\b`)
 	outside = regexp.MustCompile(`(?i)\b(linear|jira|asana|github|tickets?|issues?|pull requests?|prs?|marked|merged|deployed|released)\b`)
 )
 
@@ -283,6 +321,17 @@ var guards = []guard{
 		project := MentionedProject(in.Message, in.Projects)
 		if d.Action == "delegate" && project != "" && Change.MatchString(in.Message) && !asksHow.MatchString(in.Message) {
 			return &Decision{Action: "code", Project: str(project)}
+		}
+		return nil
+	}},
+	{"committing an agent's work goes to that agent", func(d Decision, in DispatchInput) *Decision {
+		if d.Action != "code" || d.Project == nil || !gitAsk.MatchString(in.Message) {
+			return nil
+		}
+		for _, named := range in.Agents {
+			if named.Agent.Resumable && projectOf(named.Agent, in.Projects) == *d.Project {
+				return &Decision{Action: "reply_to_agent", Agent: str(named.Name)}
+			}
 		}
 		return nil
 	}},

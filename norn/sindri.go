@@ -50,6 +50,9 @@ type Agent struct {
 		Kind string `json:"kind"`
 		Text string `json:"text"`
 	} `json:"log"`
+	// WorkedIn is the project an agent with no worktree ran its tools in,
+	// read from its log by Norn; Sindri does not send it.
+	WorkedIn string `json:"-"`
 }
 
 // SindriClient calls Sindri. A zero URL turns agents off.
