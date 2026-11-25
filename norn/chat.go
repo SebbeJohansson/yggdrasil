@@ -34,13 +34,24 @@ type Participant struct {
 	Stoppable  bool   `json:"stoppable,omitempty"`
 }
 
+// pendingOf is the call an agent waits on, for the page: its request, a line,
+// and the questions when it asks some.
+func pendingOf(a Agent) map[string]any {
+	p := a.Pending[0]
+	out := map[string]any{"requestId": p.RequestID, "summary": p.Summary}
+	if len(p.Questions) > 0 {
+		out["questions"] = p.Questions
+	}
+	return out
+}
+
 func participant(a Agent) Participant {
 	p := Participant{ID: a.ID, Label: TaskOf(a.Label), Place: placeOf(a), Status: a.Status, AsksYou: a.AsksYou, Cwd: a.Cwd}
 	if a.Status == "working" {
 		p.Tool = clipText(a.Tool, 120)
 	}
 	if a.Status == "needs-approval" && len(a.Pending) > 0 {
-		p.Pending = map[string]string{"requestId": a.Pending[0].RequestID, "summary": a.Pending[0].Summary}
+		p.Pending = pendingOf(a)
 	}
 	if a.Worktree != nil {
 		p.Branch = a.Worktree.Branch
@@ -151,17 +162,17 @@ func (n *Norn) agentTurn(w http.ResponseWriter, r *http.Request) {
 
 // Need is something waiting on you.
 type Need struct {
-	Kind       string            `json:"kind"` // approval, question, failed, result, stuck, ready, release
-	Agent      string            `json:"agent"`
-	Label      string            `json:"label"`
-	Session    *string           `json:"session"`
-	Text       *string           `json:"text"`
-	Pending    map[string]string `json:"pending,omitempty"`
-	Reviewable bool              `json:"reviewable,omitempty"`
-	Running    bool              `json:"running,omitempty"`
-	At         int64             `json:"at"`
-	Overdue    bool              `json:"overdue,omitempty"`
-	Check      string            `json:"check,omitempty"`
+	Kind       string         `json:"kind"` // approval, question, failed, result, stuck, ready, release
+	Agent      string         `json:"agent"`
+	Label      string         `json:"label"`
+	Session    *string        `json:"session"`
+	Text       *string        `json:"text"`
+	Pending    map[string]any `json:"pending,omitempty"`
+	Reviewable bool           `json:"reviewable,omitempty"`
+	Running    bool           `json:"running,omitempty"`
+	At         int64          `json:"at"`
+	Overdue    bool           `json:"overdue,omitempty"`
+	Check      string         `json:"check,omitempty"`
 	// Link and Repo are a failed release's run and repository (kind release).
 	Link string `json:"link,omitempty"`
 	Repo string `json:"repo,omitempty"`
@@ -226,7 +237,7 @@ func (n *Norn) NeedsYou(ctx context.Context, now time.Time) ([]Need, error) {
 		switch {
 		case a.Status == "needs-approval" && len(a.Pending) > 0:
 			need.Kind, need.Overdue = "approval", overdue
-			need.Pending = map[string]string{"requestId": a.Pending[0].RequestID, "summary": a.Pending[0].Summary}
+			need.Pending = pendingOf(a)
 			live[a.ID] = true
 		case a.AsksYou && (a.Status == "waiting" || a.Status == "done"):
 			need.Kind, need.Overdue, need.Text = "question", overdue, said()

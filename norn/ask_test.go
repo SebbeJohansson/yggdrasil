@@ -62,10 +62,7 @@ func (f *fakeSindri) called(prefix string) string {
 func withSindri(t *testing.T, n *Norn) *fakeSindri {
 	t.Helper()
 	fake := &fakeSindri{agents: []Agent{{ID: "a1", Label: "my-widget: Fix the DM titles", Status: "needs-approval", Resumable: true, LastActivity: time.Now().UnixMilli(),
-		Pending: []struct {
-			RequestID string `json:"requestId"`
-			Summary   string `json:"summary"`
-		}{{"r1", "Bash rm -rf build"}}}}}
+		Pending: []PendingCall{{RequestID: "r1", Summary: "Bash rm -rf build"}}}}}
 	server := httptest.NewServer(fake)
 	t.Cleanup(server.Close)
 	n.Sindri = &SindriClient{URL: server.URL, Token: "t", HTTP: server.Client()}
@@ -86,6 +83,23 @@ func TestYesAnswersTheAgentWaitingOnATool(t *testing.T) {
 		t.Fatalf("got %+v", response)
 	}
 	if call := fake.called("POST /v1/agents/a1/permissions/r1"); !strings.Contains(call, `"allow":false`) {
+		t.Fatalf("Sindri was told %q", call)
+	}
+}
+
+func TestAnyReplyAnswersTheAgentAskingAQuestion(t *testing.T) {
+	n, _ := newNorn(t)
+	fake := withSindri(t, n)
+	fake.agents[0].Pending = []PendingCall{{RequestID: "r1", Summary: "a question: Names?", Questions: []Question{{Question: "Names?"}}}}
+	_ = n.Store.BindAgent(context.Background(), "s1", "a1")
+	response, err := n.Ask(context.Background(), AskRequest{Question: "2", Session: "s1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Via != "rule: answer" {
+		t.Fatalf("got %+v", response)
+	}
+	if call := fake.called("POST /v1/agents/a1/permissions/r1"); !strings.Contains(call, `"reply":"2"`) {
 		t.Fatalf("Sindri was told %q", call)
 	}
 }

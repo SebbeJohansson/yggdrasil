@@ -978,6 +978,9 @@ func (m *Manager) Answer(id, requestID string, allow bool, message string) (*Age
 		return nil, httpErr(404, "no pending permission %s", requestID)
 	}
 	pending := a.Pending[index]
+	if allow && pending.ToolName == AskTool {
+		return nil, httpErr(400, "it asks you a question: send `answers` or `reply`, not a yes")
+	}
 	var response map[string]any
 	if allow {
 		response = map[string]any{"behavior": "allow", "updatedInput": pending.Input, "toolUseID": pending.ToolUseID}
@@ -997,6 +1000,47 @@ func (m *Manager) Answer(id, requestID string, allow bool, message string) (*Age
 		verb = "allowed"
 	}
 	a.addLog(LogEntry{At: m.ms(), Kind: "permission", Text: verb + ": " + pending.Summary})
+	m.touchLocked(a)
+	return a, nil
+}
+
+// AnswerQuestion answers the questions an agent asks with AskUserQuestion:
+// answers by question, or a reply read as them (see AnswersFrom).
+func (m *Manager) AnswerQuestion(id, requestID string, answers map[string]string, reply string) (*Agent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, err := m.getLocked(id)
+	if err != nil {
+		return nil, err
+	}
+	process := m.live[id]
+	index := slices.IndexFunc(a.Pending, func(p Pending) bool { return p.RequestID == requestID })
+	if index < 0 || process == nil {
+		return nil, httpErr(404, "no pending question %s", requestID)
+	}
+	pending := a.Pending[index]
+	if pending.ToolName != AskTool {
+		return nil, httpErr(400, "it waits on %s, not a question: allow or deny it", pending.Summary)
+	}
+	if len(answers) == 0 {
+		if strings.TrimSpace(reply) == "" {
+			return nil, httpErr(400, "send `answers` or `reply`")
+		}
+		answers = AnswersFrom(pending.Questions, reply)
+	}
+	response := map[string]any{"behavior": "allow", "updatedInput": withAnswers(pending.Input, answers), "toolUseID": pending.ToolUseID}
+	m.writeLocked(process, map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": requestID, "response": response}})
+	a.Pending = slices.Delete(a.Pending, index, index+1)
+	if len(a.Pending) == 0 {
+		a.Status = Working
+	}
+	var said []string
+	for _, q := range pending.Questions {
+		if answer, ok := answers[q.Question]; ok {
+			said = append(said, answer)
+		}
+	}
+	a.addLog(LogEntry{At: m.ms(), Kind: "permission", Text: "answered: " + Clip(strings.Join(said, "; "), 200)})
 	m.touchLocked(a)
 	return a, nil
 }

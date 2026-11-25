@@ -586,6 +586,9 @@ func PostFor(a *Agent, communication, lastError string) string {
 	concise := communication == "concise"
 	switch a.Status {
 	case NeedsApproval:
+		if len(a.Pending) > 0 && len(a.Pending[0].Questions) > 0 {
+			return "Asks you:\n\n" + QuestionsText(a.Pending[0].Questions)
+		}
 		wants := "a tool"
 		if len(a.Pending) > 0 {
 			wants = a.Pending[0].Summary

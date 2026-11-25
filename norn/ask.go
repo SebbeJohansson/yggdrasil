@@ -439,36 +439,48 @@ func (n *Norn) Ask(ctx context.Context, request AskRequest) (AskResponse, error)
 		return a.handOver(via, n.Inbox.InboxForQuestion(question, now)), nil
 	}
 
-	// "yes" or "no" to an agent waiting on a tool.
-	if allow, message, ok := ApprovalReply(question); sindri && ok && !fromPart {
+	// An agent waiting on you: a question takes any reply as its answer, a
+	// tool call takes "yes" or "no".
+	var waiting *Agent
+	if sindri && !fromPart {
 		ids, _ := n.Store.AgentsOf(ctx, session)
 		if request.To != "" && request.To != "norn" {
 			ids = []string{request.To}
 		}
-		var waiting *Agent
 		for _, id := range ids {
 			if agent, err := n.Sindri.Agent(ctx, id); err == nil && agent.Status == "needs-approval" && len(agent.Pending) > 0 && (waiting == nil || agent.LastActivity > waiting.LastActivity) {
 				waiting = agent
 			}
 		}
-		if waiting != nil {
-			if err := n.Sindri.Answer(ctx, waiting.ID, waiting.Pending[0].RequestID, allow, message); err != nil {
-				return a.answered("Could not pass that on: "+err.Error(), nil, "rule: approval"), nil
-			}
-			task := TaskOf(waiting.Label)
-			answer := `Allowed. The agent on "` + task + `" goes on.`
-			if !allow {
-				told := ""
-				if message != "" {
-					told = `, and told it: "` + message + `"`
-				}
-				answer = "Denied" + told + `. The agent on "` + task + `" goes on without it.`
-			}
-			via := "rule: approval"
-			_, _ = n.Store.AddTurn(ctx, session, "user", question, &task, nil, &via)
-			_, _ = n.Store.AddTurn(ctx, session, "assistant", answer, nil, nil, nil)
-			return AskResponse{Answer: answer, Session: session, Recalled: orNone(a.recalled), Via: via}, nil
+	}
+	if waiting != nil && len(waiting.Pending[0].Questions) > 0 {
+		via := "rule: answer"
+		if err := n.Sindri.AnswerQuestion(ctx, waiting.ID, waiting.Pending[0].RequestID, question); err != nil {
+			return a.answered("Could not pass that on: "+err.Error(), nil, via), nil
 		}
+		task := TaskOf(waiting.Label)
+		answer := `Answered. The agent on "` + task + `" goes on.`
+		_, _ = n.Store.AddTurn(ctx, session, "user", question, &task, nil, &via)
+		_, _ = n.Store.AddTurn(ctx, session, "assistant", answer, nil, nil, nil)
+		return AskResponse{Answer: answer, Session: session, Recalled: orNone(a.recalled), Via: via}, nil
+	}
+	if allow, message, ok := ApprovalReply(question); ok && waiting != nil {
+		if err := n.Sindri.Answer(ctx, waiting.ID, waiting.Pending[0].RequestID, allow, message); err != nil {
+			return a.answered("Could not pass that on: "+err.Error(), nil, "rule: approval"), nil
+		}
+		task := TaskOf(waiting.Label)
+		answer := `Allowed. The agent on "` + task + `" goes on.`
+		if !allow {
+			told := ""
+			if message != "" {
+				told = `, and told it: "` + message + `"`
+			}
+			answer = "Denied" + told + `. The agent on "` + task + `" goes on without it.`
+		}
+		via := "rule: approval"
+		_, _ = n.Store.AddTurn(ctx, session, "user", question, &task, nil, &via)
+		_, _ = n.Store.AddTurn(ctx, session, "assistant", answer, nil, nil, nil)
+		return AskResponse{Answer: answer, Session: session, Recalled: orNone(a.recalled), Via: via}, nil
 	}
 
 	// A goal's conversation belongs to its agents: what you say there goes to

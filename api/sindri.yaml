@@ -349,7 +349,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
   /v1/agents/{id}/permissions/{requestId}:
     post:
-      summary: Allow or deny a tool call the agent is waiting on. You and Norn only; another part gets a 403.
+      summary: Allow or deny a tool call the agent is waiting on, or answer its questions (AskUserQuestion). You and Norn only; another part gets a 403.
       parameters:
         - { $ref: "#/components/parameters/ID" }
         - { name: requestId, in: path, required: true, schema: { type: string } }
@@ -359,10 +359,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [allow]
               properties:
-                allow: { type: boolean }
+                allow: { type: boolean, description: Required unless the call is a question. A question refuses a plain allow. }
                 message: { type: string }
+                answers:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: A question's answers, by question text.
+                reply:
+                  type: string
+                  description: A reply read as a question's answers, one line per question; a choice's number or label picks it, other words are the answer.
       responses:
         "200": { $ref: "#/components/responses/Agent" }
         "400": { $ref: "#/components/responses/Error" }
@@ -2287,6 +2293,24 @@ components:
               summary: { type: string }
               at: { type: integer }
               input: { type: object }
+              questions:
+                type: array
+                description: An AskUserQuestion call's questions. It is answered with `answers` or `reply`, not allowed.
+                items:
+                  type: object
+                  required: [question]
+                  properties:
+                    question: { type: string }
+                    header: { type: string }
+                    multiSelect: { type: boolean }
+                    options:
+                      type: array
+                      items:
+                        type: object
+                        required: [label]
+                        properties:
+                          label: { type: string }
+                          description: { type: string }
         startedAt: { type: integer }
         lastActivity: { type: integer }
         costUsd: { type: number }

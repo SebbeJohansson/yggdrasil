@@ -19,25 +19,22 @@ import (
 
 // Agent is a coding or question agent as Sindri lists it.
 type Agent struct {
-	ID           string `json:"id"`
-	Label        string `json:"label"`
-	Cwd          string `json:"cwd"`
-	Status       string `json:"status"`
-	Tool         string `json:"tool"`
-	LastText     string `json:"lastText"`
-	Result       string `json:"result"`
-	Task         string `json:"task"`
-	LastActivity int64  `json:"lastActivity"`
-	AsksYou      bool   `json:"asksYou"`
-	Session      string `json:"session"` // the conversation Sindri started it for
-	Resumable    bool   `json:"resumable"`
-	Merged       bool   `json:"merged"`
-	LastError    string `json:"lastError"`
-	Pending      []struct {
-		RequestID string `json:"requestId"`
-		Summary   string `json:"summary"`
-	} `json:"pending"`
-	Worktree *struct {
+	ID           string        `json:"id"`
+	Label        string        `json:"label"`
+	Cwd          string        `json:"cwd"`
+	Status       string        `json:"status"`
+	Tool         string        `json:"tool"`
+	LastText     string        `json:"lastText"`
+	Result       string        `json:"result"`
+	Task         string        `json:"task"`
+	LastActivity int64         `json:"lastActivity"`
+	AsksYou      bool          `json:"asksYou"`
+	Session      string        `json:"session"` // the conversation Sindri started it for
+	Resumable    bool          `json:"resumable"`
+	Merged       bool          `json:"merged"`
+	LastError    string        `json:"lastError"`
+	Pending      []PendingCall `json:"pending"`
+	Worktree     *struct {
 		Repo   string `json:"repo"`
 		Branch string `json:"branch"`
 		Base   string `json:"base"`
@@ -187,6 +184,32 @@ func (c *SindriClient) Reply(ctx context.Context, request map[string]any) (*Agen
 func (c *SindriClient) Answer(ctx context.Context, agent, requestID string, allow bool, message string) error {
 	return c.call(ctx, http.MethodPost, "/v1/agents/"+url.PathEscape(agent)+"/permissions/"+url.PathEscape(requestID),
 		map[string]any{"allow": allow, "message": message}, nil)
+}
+
+// PendingCall is a tool call an agent waits on.
+type PendingCall struct {
+	RequestID string `json:"requestId"`
+	Summary   string `json:"summary"`
+	// Questions are what an AskUserQuestion call asks; any reply answers them.
+	Questions []Question `json:"questions,omitempty"`
+}
+
+// Question is one question an agent asks you, with its choices.
+type Question struct {
+	Question    string `json:"question"`
+	Header      string `json:"header,omitempty"`
+	MultiSelect bool   `json:"multiSelect,omitempty"`
+	Options     []struct {
+		Label       string `json:"label"`
+		Description string `json:"description,omitempty"`
+	} `json:"options,omitempty"`
+}
+
+// AnswerQuestion answers the questions an agent asks with your reply; Sindri
+// reads a choice's number or label, else takes your own words.
+func (c *SindriClient) AnswerQuestion(ctx context.Context, agent, requestID, reply string) error {
+	return c.call(ctx, http.MethodPost, "/v1/agents/"+url.PathEscape(agent)+"/permissions/"+url.PathEscape(requestID),
+		map[string]any{"reply": reply}, nil)
 }
 
 // Part adds another project's part to the conversation's code task.

@@ -595,6 +595,9 @@ func StatusAnswer(a *Agent) string {
 		}
 		return "Claude is still working on " + task + "."
 	case "needs-approval":
+		if len(a.Pending) > 0 && len(a.Pending[0].Questions) > 0 {
+			return "Claude asks you on " + task + ": " + a.Pending[0].Questions[0].Question + " Reply with your answer."
+		}
 		wants := ""
 		if len(a.Pending) > 0 {
 			wants = ": it wants to run " + a.Pending[0].Summary

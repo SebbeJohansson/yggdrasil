@@ -340,11 +340,20 @@ func (s *Sindri) label(w http.ResponseWriter, r *http.Request) {
 
 func (s *Sindri) answer(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Allow   *bool  `json:"allow"`
-		Message string `json:"message"`
+		Allow   *bool             `json:"allow"`
+		Message string            `json:"message"`
+		Answers map[string]string `json:"answers"`
+		Reply   string            `json:"reply"`
 	}
-	if err := part.Decode(r, &body); err != nil || body.Allow == nil {
-		part.Error(w, http.StatusBadRequest, "`allow` must be true or false")
+	err := part.Decode(r, &body)
+	if err == nil && (len(body.Answers) > 0 || body.Reply != "") {
+		s.agent(func(id string) (*Agent, error) {
+			return s.Agents.AnswerQuestion(id, r.PathValue("requestId"), body.Answers, body.Reply)
+		})(w, r)
+		return
+	}
+	if err != nil || body.Allow == nil {
+		part.Error(w, http.StatusBadRequest, "`allow` must be true or false, or send `answers` or `reply` to a question")
 		return
 	}
 	s.agent(func(id string) (*Agent, error) {

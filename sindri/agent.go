@@ -43,7 +43,9 @@ type Pending struct {
 	Input     map[string]any `json:"input,omitempty"`
 	ToolUseID string         `json:"toolUseId,omitempty"`
 	Summary   string         `json:"summary"`
-	At        int64          `json:"at"`
+	// Questions are what an AskUserQuestion call asks you; it is answered, not allowed.
+	Questions []Question `json:"questions,omitempty"`
+	At        int64      `json:"at"`
 }
 
 // LogEntry is one line of an agent's log.
@@ -304,6 +306,10 @@ func (a *Agent) applyClaude(event map[string]any, baseCost float64, now int64) {
 		input, _ := request["input"].(map[string]any)
 		toolUseID, _ := request["tool_use_id"].(string)
 		pending := Pending{RequestID: requestID, ToolName: toolName, Input: input, ToolUseID: toolUseID, Summary: ToolSummary(toolName, input), At: now}
+		if toolName == AskTool {
+			pending.Questions = QuestionsOf(toolName, input)
+			pending.Summary = QuestionSummary(pending.Questions)
+		}
 		a.Pending = append(a.Pending, pending)
 		a.Status = NeedsApproval
 		a.addLog(LogEntry{At: now, Kind: "permission", Text: "wants to run: " + pending.Summary})
