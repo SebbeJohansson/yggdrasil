@@ -49,6 +49,8 @@ func TestAWorktreeCutFromAMergedFeatureBranchIsReviewedAgainstMain(t *testing.T)
 func TestMoveOntoReplaysOnlyTheBranchsOwnCommitsOntoTheCheckoutsBranch(t *testing.T) {
 	repo := t.TempDir()
 	gitIn(t, repo, "init", "-b", "main")
+	gitIn(t, repo, "config", "user.name", "t")
+	gitIn(t, repo, "config", "user.email", "t@example.com")
 	gitIn(t, repo, "commit", "--allow-empty", "-m", "first")
 	gitIn(t, repo, "checkout", "-b", "old-feature")
 	gitIn(t, repo, "commit", "--allow-empty", "-m", "old feature work")
