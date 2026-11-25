@@ -160,3 +160,35 @@ func TestABadBundleLeavesTheInstallAsItWas(t *testing.T) {
 		t.Errorf("left behind: %v", left)
 	}
 }
+
+func TestCompare(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int // sign only
+	}{
+		{"v0.2.0", "v0.3.0", -1},
+		{"v0.10.0", "v0.9.0", 1},
+		{"v1.0.0", "v1.0.0", 0},
+		{"v1.0.0-rc.1", "v1.0.0", -1},
+		{"v1.0.0", "v1.0.0-rc.1", 1},
+		{"v1.0.0-rc.1", "v1.0.0-rc.2", -1},
+		{"dev", "v1.0.0", 0},
+		{"9f1c2ab-dirty", "v1.0.0", 0},
+	}
+	for _, c := range cases {
+		got := Compare(c.a, c.b)
+		if sign(got) != c.want {
+			t.Errorf("Compare(%q, %q) = %d, want sign %d", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+func sign(n int) int {
+	switch {
+	case n < 0:
+		return -1
+	case n > 0:
+		return 1
+	}
+	return 0
+}

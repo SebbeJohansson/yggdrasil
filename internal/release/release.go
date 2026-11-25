@@ -22,6 +22,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -36,6 +37,53 @@ var versionPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]
 // ValidVersion reports whether v is a release version: v1.2.3, or v1.2.3-rc.1.
 func ValidVersion(v string) bool {
 	return versionPattern.MatchString(v)
+}
+
+// Compare is below zero when release version a is older than b, zero when
+// the same, above when newer; a prerelease is older than its release. A
+// string that is not a release version compares as the same as anything.
+func Compare(a, b string) int {
+	left, okLeft := parse(a)
+	right, okRight := parse(b)
+	if !okLeft || !okRight {
+		return 0
+	}
+	for i := range 3 {
+		if left.numbers[i] != right.numbers[i] {
+			return left.numbers[i] - right.numbers[i]
+		}
+	}
+	switch {
+	case left.pre == right.pre:
+		return 0
+	case left.pre == "":
+		return 1
+	case right.pre == "":
+		return -1
+	}
+	return strings.Compare(left.pre, right.pre)
+}
+
+type parsed struct {
+	numbers [3]int
+	pre     string
+}
+
+func parse(v string) (parsed, bool) {
+	if !ValidVersion(v) {
+		return parsed{}, false
+	}
+	core, pre, _ := strings.Cut(v[1:], "-")
+	var out parsed
+	for i, field := range strings.SplitN(core, ".", 3) {
+		n, err := strconv.Atoi(field)
+		if err != nil {
+			return parsed{}, false
+		}
+		out.numbers[i] = n
+	}
+	out.pre = pre
+	return out, true
 }
 
 // Asset is the bundle's file name for version and arch (amd64, arm64).

@@ -96,6 +96,20 @@ the release's image for the container parts. Settings and tokens in
 `~/.config/yggdrasil` stay; the installed version is in
 `~/.config/yggdrasil/version`.
 
+A `ygg` command typed at a terminal (`ygg status`, `ygg version`…) says
+when a newer release is out, in one line after its output:
+
+```
+Yggdrasil v0.3.0 is out (this machine runs v0.2.1): ygg upgrade v0.3.0
+```
+
+It asks GitHub at most every 6 hours (the answer is kept in
+`~/.cache/yggdrasil/latest-release.json`) and waits at most a second for
+it, so a command is never held up. There is no notice for a `ygg` built from
+a checkout, when stderr is not a terminal, under CI, or with
+`YGG_NO_UPDATE_CHECK=1`. The parts themselves never ask; the widget's
+Machines card shows each machine's version against the newest release.
+
 Without a download (a machine that should not reach GitHub), copy the bundle
 and `SHA256SUMS` over and:
 

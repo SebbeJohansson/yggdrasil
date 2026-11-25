@@ -43,9 +43,12 @@ func installHome() (string, error) {
 	return filepath.Join(home, ".local/share/yggdrasil"), nil
 }
 
+// latestURL is where the newest release is asked for; tests point it elsewhere.
+var latestURL = "https://api.github.com/repos/" + release.Repo + "/releases/latest"
+
 // latestVersion is the newest release's tag.
 func latestVersion(ctx context.Context, client *http.Client) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/"+release.Repo+"/releases/latest", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, latestURL, nil)
 	if err != nil {
 		return "", err
 	}

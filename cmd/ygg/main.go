@@ -82,17 +82,17 @@ func usage() {
 
 func main() {
 	if len(os.Args) >= 3 && os.Args[1] == "migrate" {
-		os.Exit(migrateCommand(os.Args[2:]))
+		os.Exit(withUpdateNotice(func() int { return migrateCommand(os.Args[2:]) }))
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "upgrade" {
 		os.Exit(upgradeCommand(os.Args[2:]))
 	}
 	if len(os.Args) >= 3 && os.Args[1] == "check" {
-		os.Exit(check(os.Args[2:]))
+		os.Exit(withUpdateNotice(func() int { return check(os.Args[2:]) }))
 	}
 	if len(os.Args) >= 2 {
 		if command, ok := tellCommands[os.Args[1]]; ok {
-			os.Exit(command.run(os.Args[2:]))
+			os.Exit(withUpdateNotice(func() int { return command.run(os.Args[2:]) }))
 		}
 	}
 	if len(os.Args) != 2 {
@@ -101,8 +101,10 @@ func main() {
 	}
 	name := os.Args[1]
 	if name == "version" {
-		fmt.Println(part.Version)
-		return
+		os.Exit(withUpdateNotice(func() int {
+			fmt.Println(part.Version)
+			return 0
+		}))
 	}
 	found, ok := parts[name]
 	if !ok {
