@@ -138,7 +138,9 @@ var (
 		"Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)", "Bash(grep:*)", "Bash(rg:*)",
 		"Bash(yarn test:*)", "Bash(npm test:*)", "Bash(npm run test:*)", "Bash(npx vitest:*)", "Bash(node --test:*)",
 	}
-	AskDenied = []string{"Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git branch:*)", "Bash(git worktree:*)",
+	// AskAsked are git writes a question agent asks you for each time, even
+	// in auto mode, so they show as an Allow/Deny request instead of failing.
+	AskAsked = []string{"Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git branch:*)", "Bash(git worktree:*)",
 		"Bash(git add:*)", "Bash(git commit:*)", "Bash(git stash:*)", "Bash(git reset:*)", "Bash(git restore:*)",
 		"Bash(git merge:*)", "Bash(git rebase:*)", "Bash(git cherry-pick:*)", "Bash(git push:*)"}
 )

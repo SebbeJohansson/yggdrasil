@@ -47,7 +47,9 @@ type StartRequest struct {
 	Slug            string   `json:"slug,omitempty"`
 	AllowedTools    []string `json:"allowedTools,omitempty"`
 	DisallowedTools []string `json:"disallowedTools,omitempty"`
-	NoTools         bool     `json:"noTools,omitempty"`
+	// AskTools are rules Claude asks you for every time, even in auto mode.
+	AskTools []string `json:"askTools,omitempty"`
+	NoTools  bool     `json:"noTools,omitempty"`
 	// NoRemote keeps a helper agent off Remote Control, so claude.ai/code
 	// lists only the agents worth following; POST .../remote still joins it.
 	NoRemote           bool   `json:"noRemote,omitempty"`
@@ -273,6 +275,9 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	if err := toolRules(request.DisallowedTools, "disallowedTools"); err != nil {
 		return nil, err
 	}
+	if err := toolRules(request.AskTools, "askTools"); err != nil {
+		return nil, err
+	}
 	if len(request.AppendSystemPrompt) > maxSystemPrompt {
 		return nil, httpErr(400, "`appendSystemPrompt` must be a string of at most %d characters", maxSystemPrompt)
 	}
@@ -332,7 +337,7 @@ func (m *Manager) startLocked(request StartRequest) (*Agent, error) {
 	now := m.ms()
 	a := &Agent{
 		ID: newID(), Label: label, Cwd: cwd, PermissionMode: mode, Model: request.Model, AddRoots: request.AddRoots,
-		Worktree: worktree, AllowedTools: allowed, DisallowedTools: request.DisallowedTools, NoTools: request.NoTools,
+		Worktree: worktree, AllowedTools: allowed, DisallowedTools: request.DisallowedTools, AskTools: request.AskTools, NoTools: request.NoTools,
 		NoRemote: request.NoRemote, AppendSystemPrompt: system, Task: prompt[:min(len(prompt), taskChars)], Status: Starting, Pending: []Pending{},
 		StartedAt: now, LastActivity: now, Log: []LogEntry{}, Session: request.Session,
 	}
@@ -393,6 +398,9 @@ func (m *Manager) launchClaudeLocked(a *Agent, resume bool) error {
 	args = append(append(args, "--allowedTools", UploadsRule()), a.AllowedTools...)
 	if len(a.DisallowedTools) > 0 {
 		args = append(append(args, "--disallowedTools"), a.DisallowedTools...)
+	}
+	if settings := AskSettings(a.AskTools); settings != "" {
+		args = append(args, "--settings", settings)
 	}
 	if a.NoTools {
 		args = append(args, "--tools", "", "--strict-mcp-config")
@@ -483,7 +491,7 @@ func (m *Manager) launchCopilotLocked(a *Agent, text string) error {
 			allowed = append(allowed, r)
 		}
 	}
-	for _, rule := range a.DisallowedTools {
+	for _, rule := range slices.Concat(a.DisallowedTools, a.AskTools) {
 		if r := CopilotRule(rule); r != "" {
 			denied = append(denied, r)
 		}
@@ -823,6 +831,36 @@ func (m *Manager) SetPermissionMode(id, mode string) error {
 	}
 	m.touchLocked(a)
 	return nil
+}
+
+// AskSettings is the --settings JSON that makes Claude ask for rules every
+// time, or "" for none.
+func AskSettings(rules []string) string {
+	if len(rules) == 0 {
+		return ""
+	}
+	body, _ := json.Marshal(map[string]any{"permissions": map[string]any{"ask": rules}})
+	return string(body)
+}
+
+// AskFor moves rules from an agent's deny list to the ones Claude asks you
+// for, so an older question agent asks instead of failing. A running
+// process is closed to pick them up on its next prompt.
+func (m *Manager) AskFor(id string, rules []string) {
+	m.mu.Lock()
+	a, err := m.getLocked(id)
+	if err != nil || a.NoTools || slices.Equal(a.AskTools, rules) {
+		m.mu.Unlock()
+		return
+	}
+	a.DisallowedTools = slices.DeleteFunc(a.DisallowedTools, func(rule string) bool { return slices.Contains(rules, rule) })
+	if len(a.DisallowedTools) == 0 {
+		a.DisallowedTools = nil
+	}
+	a.AskTools = rules
+	m.touchLocked(a)
+	m.mu.Unlock()
+	m.close(id)
 }
 
 // ResumeScheduled resumes an agent parked after a Claude usage limit.

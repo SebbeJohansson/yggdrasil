@@ -87,6 +87,9 @@ func ClaudeArgs(a *Agent, roots []string) []string {
 			args = append(args, "--add-dir", root)
 		}
 	}
+	if settings := AskSettings(a.AskTools); settings != "" {
+		args = append(args, "--settings", settings)
+	}
 	// Variadic, so last.
 	if len(a.DisallowedTools) > 0 {
 		args = append(append(args, "--disallowedTools"), a.DisallowedTools...)

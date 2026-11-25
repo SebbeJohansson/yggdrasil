@@ -116,6 +116,7 @@ type Agent struct {
 	Worktree           *Worktree     `json:"worktree,omitempty"`
 	AllowedTools       []string      `json:"allowedTools,omitempty"`
 	DisallowedTools    []string      `json:"disallowedTools,omitempty"`
+	AskTools           []string      `json:"askTools,omitempty"`
 	NoTools            bool          `json:"noTools,omitempty"`
 	NoRemote           bool          `json:"noRemote,omitempty"`
 	AppendSystemPrompt string        `json:"appendSystemPrompt,omitempty"`

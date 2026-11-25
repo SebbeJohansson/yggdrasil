@@ -338,7 +338,7 @@ const AskLabelPrefix = "ask: "
 
 // AskPermissionMode is the permission mode a question agent runs in for the
 // conversation's mode: auto lets Claude's auto mode decide each tool call
-// (git writes stay denied), anything else asks you for whatever is not
+// (git writes still ask you), anything else asks you for whatever is not
 // allowed up front.
 func AskPermissionMode(mode string) string {
 	if mode == "auto" {
@@ -367,6 +367,7 @@ func (w *Work) Ask(request AskRequest) (*Agent, error) {
 			if err := w.Agents.SetPermissionMode(existing.ID, AskPermissionMode(request.Mode)); err != nil {
 				return nil, err
 			}
+			w.Agents.AskFor(existing.ID, AskAsked)
 			a, err := w.Agents.Prompt(existing.ID, text, nil, false)
 			if err == nil {
 				_ = w.Store.Bind(a.ID, request.Session, request.Communication, request.Mode, "")
@@ -381,11 +382,11 @@ func (w *Work) Ask(request AskRequest) (*Agent, error) {
 	}
 	start := StartRequest{
 		Cwd: w.AskCwd, Prompt: prompt, Label: AskLabelPrefix + request.Name, Model: w.Model, AddRoots: true,
-		PermissionMode: AskPermissionMode(request.Mode), AllowedTools: w.askAllowed(), DisallowedTools: AskDenied, Session: request.Session,
+		PermissionMode: AskPermissionMode(request.Mode), AllowedTools: w.askAllowed(), AskTools: AskAsked, Session: request.Session,
 		NoRemote: true,
 	}
 	if request.NoTools {
-		start.AddRoots, start.AllowedTools, start.NoTools = false, nil, true
+		start.AddRoots, start.AllowedTools, start.AskTools, start.NoTools = false, nil, nil, true
 	}
 	a, err := w.start(start, request.Communication, request.Mode)
 	if err != nil {

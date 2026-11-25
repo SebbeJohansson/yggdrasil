@@ -111,6 +111,7 @@ paths:
                 slug: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,59}$" }
                 allowedTools: { type: array, maxItems: 150, items: { type: string } }
                 disallowedTools: { type: array, maxItems: 150, items: { type: string } }
+                askTools: { type: array, maxItems: 150, items: { type: string }, description: "Rules Claude asks you for every time, even in auto mode, so they show as an Allow/Deny request. Copilot denies them." }
                 noTools: { type: boolean }
                 noRemote: { type: boolean, description: "Keep this helper off Remote Control (SINDRI_REMOTE_CONTROL), so claude.ai/code lists only agents worth following. POST /v1/agents/{id}/remote still joins it." }
                 appendSystemPrompt: { type: string, maxLength: 8000 }
