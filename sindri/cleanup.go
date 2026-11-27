@@ -1,10 +1,10 @@
 package sindri
 
-// Cleaning projects nobody has touched in a long while. A project left for
-// months still holds its node_modules, build output and caches, often
-// gigabytes on a small VPS, and all of it comes back with one install or
-// build. Once a project has had no commit, checkout or file change for
-// CleanAfter (SINDRI_CLEAN_AFTER_DAYS, 90), those folders are removed:
+// Cleaning projects nobody is working on. A project left alone still holds
+// its node_modules, build output and caches, often gigabytes on a small VPS,
+// and all of it comes back with one install or build. Once a project has had
+// no commit, checkout or file change for CleanAfter (SINDRI_CLEAN_AFTER_DAYS,
+// 8), those folders are removed:
 //
 //   - only folders named in cleanNames (dependencies, build output, caches),
 //   - only when git ignores them, so nothing tracked or kept by hand goes,

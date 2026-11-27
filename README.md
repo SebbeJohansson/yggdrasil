@@ -422,7 +422,7 @@ starts cloud sessions from a bundle with no remote.
 
 ### Sindri: cleaning quiet projects
 
-A project nobody has touched for `SINDRI_CLEAN_AFTER_DAYS` (90) loses what an
+A project nobody has touched for `SINDRI_CLEAN_AFTER_DAYS` (8) loses what an
 install or build makes again: `node_modules`, `.nuxt`, `.output`, `.next`,
 `dist`, `build`, `target`, `.gradle`, `__pycache__`, `.venv`, caches and the
 like, anywhere up to six folders deep. Quiet means no commit, no checkout and
