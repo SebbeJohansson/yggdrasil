@@ -273,7 +273,10 @@ Claude's last words go along, cut to 600 characters.
 Only the device that owns a session carries a request out, through its own
 Sindri, and only for the devices in its `SAGA_DRIVE_FROM` (empty: look
 only). A request older than 30 minutes when it gets there is answered as not
-done. A session outside herdr can't be typed into from elsewhere: turn on
+done. Claude that Sindri starts in herdr (a start from the widget or the
+phone, a resume, a cloud session brought home) runs with `--remote-control`,
+so it opens in the Claude app too; `SINDRI_REMOTE_CONTROL=false` leaves it
+off. A session outside herdr can't be typed into from elsewhere: turn on
 Remote Control there (`/config`, *Enable Remote Control for all sessions*)
 and its `bridgeSessionId` opens it in the Claude app.
 

@@ -26,7 +26,7 @@ import (
 //	SINDRI_STATE        where the agents are kept (~/.local/state/yggdrasil/sindri-agents.json)
 //	SINDRI_MAX_RUNNING  how many agent processes at once (4)
 //	SINDRI_IDLE         how long an idle agent's process is kept (30m)
-//	SINDRI_REMOTE_CONTROL  coding agents join Remote Control, to follow them on claude.ai/code; screenshot and question agents only on POST .../remote (true)
+//	SINDRI_REMOTE_CONTROL  coding agents, and Claude started in herdr (a start, a resume, one brought home), join Remote Control, to follow them on claude.ai/code; screenshot and question agents only on POST .../remote (true)
 //	CLAUDE_BIN          Claude Code (~/.local/bin/claude); off turns it off
 //	CLAUDE_DIR          Claude Code's state (~/.claude); CLAUDE_SOCKET_DIR its live sockets
 //	OPENCODE_URL        a running `opencode serve` (http://127.0.0.1:4096); off turns it off
@@ -126,7 +126,8 @@ func Main(ctx context.Context) error {
 		Sessions:       NewAgentSessions(ClaudeRoot{ClaudeDir: claudeDir, SocketDir: socketDir}, opencode, herdr)}
 	s.Sessions.Agents = agents
 	s.Upgrader = &Upgrader{Dir: filepath.Join(home, ".local/state/yggdrasil"), Run: systemdRun}
-	cli := &ClaudeCloud{Bin: env.String("CLAUDE_BIN", filepath.Join(home, ".local/bin/claude")), StartWait: env.Duration("SINDRI_CLOUD_START_WAIT", 90*time.Second)}
+	cli := &ClaudeCloud{Bin: env.String("CLAUDE_BIN", filepath.Join(home, ".local/bin/claude")), StartWait: env.Duration("SINDRI_CLOUD_START_WAIT", 90*time.Second),
+		RemoteControl: env.String("SINDRI_REMOTE_CONTROL", "true") == "true"}
 	if herdr != nil {
 		cli.Herdr = herdr
 	}

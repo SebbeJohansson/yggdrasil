@@ -218,6 +218,9 @@ func (s *Sindri) mountSessions(p *part.Part) {
 				return
 			}
 		}
+		if body.Kind == "claude" && s.Agents != nil && s.Agents.RemoteControlOn() {
+			args = WithRemoteControl(args)
+		}
 		agent, err := s.Sessions.Herdr.Start(r.Context(), HerdrStart{Kind: body.Kind, Cwd: body.Cwd, Name: body.Name, Args: args})
 		if err != nil {
 			fail(w, herdrHTTPError(err))
