@@ -40,6 +40,8 @@ type Sindri struct {
 	Usage *Usage
 	// Upgrader upgrades this machine to a release (upgrade.go); nil is off.
 	Upgrader *Upgrader
+	// Cleaner removes build folders from long-quiet projects (cleanup.go); nil is off.
+	Cleaner *Cleaner
 }
 
 // Mount adds Sindri's routes and loops to the part.
@@ -53,6 +55,7 @@ func (s *Sindri) Mount(p *part.Part) {
 	p.Handle("POST /v1/claude-login/code", s.claudeLoginCode)
 	p.Handle("GET /v1/sessions/recent", s.sessions)
 	s.mountSessionPrompts(p)
+	s.mountCleanup(p)
 	p.Handle("GET /v1/activity", s.activity)
 	p.Handle("POST /v1/agents", s.start)
 	p.Handle("POST /v1/agents/close-idle", func(w http.ResponseWriter, _ *http.Request) {

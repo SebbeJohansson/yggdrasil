@@ -26,6 +26,7 @@ import (
 //	SINDRI_STATE        where the agents are kept (~/.local/state/yggdrasil/sindri-agents.json)
 //	SINDRI_MAX_RUNNING  how many agent processes at once (4)
 //	SINDRI_IDLE         how long an idle agent's process is kept (30m)
+//	SINDRI_CLEAN_AFTER_DAYS  a project quiet this long loses its git-ignored node_modules, build output and caches, daily (90; 0: only list, at GET /v1/cleanup)
 //	SINDRI_REMOTE_CONTROL  coding agents, and Claude started in herdr (a start, a resume, one brought home), join Remote Control, to follow them on claude.ai/code; screenshot and question agents only on POST .../remote (true)
 //	CLAUDE_BIN          Claude Code (~/.local/bin/claude); off turns it off
 //	CLAUDE_DIR          Claude Code's state (~/.claude); CLAUDE_SOCKET_DIR its live sockets
@@ -126,6 +127,8 @@ func Main(ctx context.Context) error {
 		Sessions:       NewAgentSessions(ClaudeRoot{ClaudeDir: claudeDir, SocketDir: socketDir}, opencode, herdr)}
 	s.Sessions.Agents = agents
 	s.Upgrader = &Upgrader{Dir: filepath.Join(home, ".local/state/yggdrasil"), Run: systemdRun}
+	s.Cleaner = &Cleaner{Root: roots[0], After: time.Duration(env.Int("SINDRI_CLEAN_AFTER_DAYS", 90)) * 24 * time.Hour,
+		StatePath: filepath.Join(home, ".local/state/yggdrasil/sindri-cleanup.json")}
 	cli := &ClaudeCloud{Bin: env.String("CLAUDE_BIN", filepath.Join(home, ".local/bin/claude")), StartWait: env.Duration("SINDRI_CLOUD_START_WAIT", 90*time.Second),
 		RemoteControl: env.String("SINDRI_REMOTE_CONTROL", "true") == "true"}
 	if herdr != nil {

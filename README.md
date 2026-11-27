@@ -420,6 +420,21 @@ Clone repos this way rather than by hand: a repo outside the root is no
 project, and one without a GitHub `origin` gets no issues as goals and
 starts cloud sessions from a bundle with no remote.
 
+### Sindri: cleaning quiet projects
+
+A project nobody has touched for `SINDRI_CLEAN_AFTER_DAYS` (90) loses what an
+install or build makes again: `node_modules`, `.nuxt`, `.output`, `.next`,
+`dist`, `build`, `target`, `.gradle`, `__pycache__`, `.venv`, caches and the
+like, anywhere up to six folders deep. Quiet means no commit, no checkout and
+no change git sees in the working tree. Only folders git ignores go, so
+nothing tracked or kept on purpose is touched; nothing in `.git`, and no link
+is followed. Sindri checks once a day; `0` turns that off and only lists.
+
+`GET /v1/cleanup` lists every project with its cleanable folders and sizes,
+which are quiet, what cleaning would free, and the last run. `POST
+/v1/cleanup` (owner) cleans the quiet ones now; `{ "project": "x" }` cleans
+that one now, however recent. An install brings it all back.
+
 ### Sindri: goals from GitHub issues
 
 `GET /v1/goals/candidates?from=github` lists the open issues of the projects
