@@ -268,7 +268,7 @@ Claude's last words go along, cut to 600 characters.
 | Route | Who | What it does |
 | --- | --- | --- |
 | `GET /v1/sessions` | anyone | `{ device, devices, asked }`: each other device's sessions with when it was last heard from and whether it takes this machine's requests (`drivable`), and what you asked in the last day (`waiting`, `done`, `failed`) |
-| `POST /v1/sessions/{device}/requests` | owner | `{ kind, … }`: ask a thing of another device's session. `session.prompt` (session, text) and `session.choose` (session, question, key, label) need the session in a herdr pane there; `session.resume` (session, cwd); `cloud.start` (cwd, task), `cloud.message` (session, text), `cloud.teleport` (session) |
+| `POST /v1/sessions/{device}/requests` | owner | `{ kind, … }`: ask a thing of another device's session. `session.prompt` (session, text) and `session.choose` (session, question, key, label) need the session in a herdr pane there; `session.resume` (session, cwd); `session.start` (cwd, task): Claude on that device itself, in a herdr pane in the project, starting on the task; `cloud.start` (cwd, task), `cloud.message` (session, text), `cloud.teleport` (session) |
 
 Only the device that owns a session carries a request out, through its own
 Sindri, and only for the devices in its `SAGA_DRIVE_FROM` (empty: look

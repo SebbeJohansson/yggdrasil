@@ -39,6 +39,7 @@ const (
 	kindPrompt        = "sindri.session.prompt"
 	kindChoose        = "sindri.session.choose"
 	kindResume        = "sindri.session.resume"
+	kindStart         = "sindri.session.start"
 	kindCloudStart    = "sindri.cloud.start"
 	kindCloudMessage  = "sindri.cloud.message"
 	kindCloudTeleport = "sindri.cloud.teleport"
@@ -46,7 +47,7 @@ const (
 )
 
 // requestKinds are what one device may ask of another's sessions.
-var requestKinds = []string{kindPrompt, kindChoose, kindResume, kindCloudStart, kindCloudMessage, kindCloudTeleport}
+var requestKinds = []string{kindPrompt, kindChoose, kindResume, kindStart, kindCloudStart, kindCloudMessage, kindCloudTeleport}
 
 const (
 	// sessionsBeat: the sessions go again this often even when nothing
@@ -492,6 +493,9 @@ func (s *Saga) carryOut(ctx context.Context, kind string, r SessionRequest) (str
 			map[string]string{"question": r.Question, "key": r.Key, "label": r.Label}, nil)
 	case kindResume:
 		return "", s.Sindri.Do(ctx, http.MethodPost, "/v1/sessions/herdr", map[string]string{"kind": "claude", "cwd": r.Cwd, "resume": r.Session}, nil)
+	case kindStart:
+		// Claude on this machine, in a herdr pane in the project, starting on the task.
+		return "", s.Sindri.Do(ctx, http.MethodPost, "/v1/sessions/herdr", map[string]string{"kind": "claude", "cwd": r.Cwd, "prompt": r.Task}, nil)
 	case kindCloudStart:
 		var started struct {
 			Session RemoteCloud `json:"session"`
@@ -587,7 +591,7 @@ func (s *Saga) ask(w http.ResponseWriter, r *http.Request) {
 	req.ID, req.Origin = newID(), device
 	need := map[string][]string{
 		kindPrompt: {"session", "text"}, kindChoose: {"session", "question", "key", "label"}, kindResume: {"session", "cwd"},
-		kindCloudStart: {"cwd", "task"}, kindCloudMessage: {"session", "text"}, kindCloudTeleport: {"session"},
+		kindStart: {"cwd", "task"}, kindCloudStart: {"cwd", "task"}, kindCloudMessage: {"session", "text"}, kindCloudTeleport: {"session"},
 	}
 	values := map[string]string{"session": req.Session, "text": req.Text, "question": req.Question, "key": req.Key, "label": req.Label, "cwd": req.Cwd, "task": req.Task}
 	for _, field := range need[kind] {
