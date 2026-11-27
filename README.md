@@ -404,6 +404,19 @@ a winner, a draft goal of that kind that does not race shows the conduit
 that wins it most (`suggestion`; none on a tie). It only suggests: you
 choose with `PUT /v1/goals/{id}/conduit`.
 
+### Sindri: projects
+
+Projects are the git repos in `SINDRI_ROOTS`' first folder (`~/projects`)
+and one folder deeper. `GET /v1/projects` lists them. `POST /v1/projects
+{ name }` (owner) starts an empty one there; `{ repo, name? }`, with
+`owner/name` or its github.com link, clones that repo there instead, named
+after it unless `name` is given, with the GitHub CLI's login (`gh repo
+clone`, so private repos work) or, without `gh`, git over https. A repo
+already here, under any name, is refused, and a failed clone leaves nothing.
+Clone repos this way rather than by hand: a repo outside the root is no
+project, and one without a GitHub `origin` gets no issues as goals and
+starts cloud sessions from a bundle with no remote.
+
 ### Sindri: goals from GitHub issues
 
 `GET /v1/goals/candidates?from=github` lists the open issues of the projects

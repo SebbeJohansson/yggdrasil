@@ -33,8 +33,9 @@ A VPS that ran from a checkout adds `--from-checkout <its folder>`, which
 stops it and moves its data into the install (releases.md).
 
 The profile is remembered in `~/.config/yggdrasil/profile`; `ygg upgrade` and
-`install.sh` keep it. Personal repos for Sindri go anywhere
-you like; add them as projects from the widget or `POST /v1/projects`.
+`install.sh` keep it. Clone personal repos for Sindri from the widget's
+Projects page, the phone's Code tab or `POST /v1/projects {"repo": "owner/name"}`:
+they land in `~/projects`, where Sindri looks.
 
 Only personal repos and personal accounts belong here. Work stays on the work
 laptop's own node.

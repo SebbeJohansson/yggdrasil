@@ -440,12 +440,20 @@ func (s *Sindri) unowned(step string) http.HandlerFunc {
 func (s *Sindri) createProject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name string `json:"name"`
+		// Repo, owner/name or its github.com link, clones it instead of starting an empty repo.
+		Repo string `json:"repo"`
 	}
 	if err := part.Decode(r, &body); err != nil {
 		part.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	project, err := CreateProject(s.Root, body.Name)
+	var project ProjectInfo
+	var err error
+	if body.Repo != "" {
+		project, err = CloneProject(r.Context(), s.Root, body.Repo, body.Name)
+	} else {
+		project, err = CreateProject(s.Root, body.Name)
+	}
 	if err != nil {
 		fail(w, err)
 		return
