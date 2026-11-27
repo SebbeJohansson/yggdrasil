@@ -229,6 +229,8 @@ type ClaudeCloud struct {
 	Herdr *Herdr
 	// StartWait is how long a start may take to print the session's link.
 	StartWait time.Duration
+	// RemoteControl: a session brought home joins Remote Control (SINDRI_REMOTE_CONTROL).
+	RemoteControl bool
 }
 
 func (c *ClaudeCloud) on() error {
@@ -382,7 +384,11 @@ func (c *ClaudeCloud) Teleport(ctx context.Context, cwd, id string) (HerdrAgent,
 	if c.Herdr == nil {
 		return HerdrAgent{}, httpErr(503, "herdr is off here, and --teleport needs a terminal: run `claude --teleport %s` in %s", id, cwd)
 	}
-	agent, err := c.Herdr.Start(ctx, HerdrStart{Kind: "claude", Cwd: cwd, Args: []string{"--teleport", id}})
+	args := []string{"--teleport", id}
+	if c.RemoteControl {
+		args = WithRemoteControl(args)
+	}
+	agent, err := c.Herdr.Start(ctx, HerdrStart{Kind: "claude", Cwd: cwd, Args: args})
 	var down *HerdrDown
 	if errors.As(err, &down) {
 		return HerdrAgent{}, &HTTPError{Status: 503, Code: "not_running",

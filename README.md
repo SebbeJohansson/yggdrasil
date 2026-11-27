@@ -268,12 +268,15 @@ Claude's last words go along, cut to 600 characters.
 | Route | Who | What it does |
 | --- | --- | --- |
 | `GET /v1/sessions` | anyone | `{ device, devices, asked }`: each other device's sessions with when it was last heard from and whether it takes this machine's requests (`drivable`), and what you asked in the last day (`waiting`, `done`, `failed`) |
-| `POST /v1/sessions/{device}/requests` | owner | `{ kind, … }`: ask a thing of another device's session. `session.prompt` (session, text) and `session.choose` (session, question, key, label) need the session in a herdr pane there; `session.resume` (session, cwd); `cloud.start` (cwd, task), `cloud.message` (session, text), `cloud.teleport` (session) |
+| `POST /v1/sessions/{device}/requests` | owner | `{ kind, … }`: ask a thing of another device's session. `session.prompt` (session, text) and `session.choose` (session, question, key, label) need the session in a herdr pane there; `session.resume` (session, cwd); `session.start` (cwd, task): Claude on that device itself, in a herdr pane in the project, starting on the task; `cloud.start` (cwd, task), `cloud.message` (session, text), `cloud.teleport` (session) |
 
 Only the device that owns a session carries a request out, through its own
 Sindri, and only for the devices in its `SAGA_DRIVE_FROM` (empty: look
 only). A request older than 30 minutes when it gets there is answered as not
-done. A session outside herdr can't be typed into from elsewhere: turn on
+done. Claude that Sindri starts in herdr (a start from the widget or the
+phone, a resume, a cloud session brought home) runs with `--remote-control`,
+so it opens in the Claude app too; `SINDRI_REMOTE_CONTROL=false` leaves it
+off. A session outside herdr can't be typed into from elsewhere: turn on
 Remote Control there (`/config`, *Enable Remote Control for all sessions*)
 and its `bridgeSessionId` opens it in the Claude app.
 

@@ -60,6 +60,11 @@ func (f *fakeSindri) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&body)
 		f.calls = append(f.calls, r.URL.Path+" "+body["text"])
 		json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	case "POST /v1/sessions/herdr":
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		f.calls = append(f.calls, "here "+body["kind"]+" "+body["cwd"]+" "+body["prompt"]+body["resume"])
+		json.NewEncoder(w).Encode(map[string]any{"agent": map[string]any{"paneId": "w2:p1"}})
 	case "POST /v1/cloud":
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)
@@ -278,6 +283,31 @@ func TestASessionOutsideHerdrCantBeTypedInto(t *testing.T) {
 	do(t, server, ownerToken, "GET", "/v1/sessions", "", &answer)
 	if len(sindri.calls) != 0 || answer.Asked[0].State != "failed" || !strings.Contains(answer.Asked[0].Error, "Remote Control") {
 		t.Fatalf("asked %+v, calls %v", answer.Asked[0], sindri.calls)
+	}
+}
+
+func TestASessionStartsOnTheLaptopItself(t *testing.T) {
+	f := newFixture(t)
+	l, sindri := laptop(t, f, "desktop")
+	syncOf(t, l)
+	f.sync()
+	server := desktopServer(t, f)
+	if status := do(t, server, ownerToken, "POST", "/v1/sessions/laptop/requests", `{"kind":"session.start","cwd":"/home/me/projects/app"}`, nil); status != 400 {
+		t.Fatalf("a start with no task answered %d", status)
+	}
+	if status := do(t, server, ownerToken, "POST", "/v1/sessions/laptop/requests", `{"kind":"session.start","cwd":"/home/me/projects/app","task":"Fix the scroll bug"}`, nil); status != 202 {
+		t.Fatalf("asking answered %d", status)
+	}
+	f.sync()
+	syncOf(t, l)
+	if err := l.RunRequests(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	sindri.mu.Lock()
+	calls := append([]string{}, sindri.calls...)
+	sindri.mu.Unlock()
+	if len(calls) != 1 || calls[0] != "here claude /home/me/projects/app Fix the scroll bug" {
+		t.Fatalf("Sindri was asked %v", calls)
 	}
 }
 

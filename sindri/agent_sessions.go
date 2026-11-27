@@ -183,6 +183,8 @@ func (s *Sindri) mountSessions(p *part.Part) {
 		}
 		var body struct {
 			Kind, Cwd, Name, Resume string
+			// Prompt is what a new Claude starts on, typed as its first message.
+			Prompt string
 		}
 		if err := part.Decode(r, &body); err != nil {
 			part.Error(w, http.StatusBadRequest, err.Error())
@@ -201,12 +203,23 @@ func (s *Sindri) mountSessions(p *part.Part) {
 			return
 		}
 		var args []string
+		if strings.TrimSpace(body.Prompt) != "" {
+			if body.Resume != "" || body.Kind != "claude" {
+				part.Error(w, http.StatusBadRequest, "`prompt` starts a new Claude session only: not with `resume`, not for "+body.Kind)
+				return
+			}
+			// After "--", so a prompt starting with "-" is never read as an option.
+			args = []string{"--", body.Prompt}
+		}
 		if body.Resume != "" {
 			var err error
 			if args, err = ResumeArgs(body.Kind, body.Resume); err != nil {
 				fail(w, err)
 				return
 			}
+		}
+		if body.Kind == "claude" && s.Agents != nil && s.Agents.RemoteControlOn() {
+			args = WithRemoteControl(args)
 		}
 		agent, err := s.Sessions.Herdr.Start(r.Context(), HerdrStart{Kind: body.Kind, Cwd: body.Cwd, Name: body.Name, Args: args})
 		if err != nil {

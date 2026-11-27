@@ -1734,6 +1734,20 @@ func (m *Manager) ClaudeOn() bool {
 	return m.options.ClaudeBin != "off"
 }
 
+// RemoteControlOn says whether Claude started here joins Remote Control (SINDRI_REMOTE_CONTROL).
+func (m *Manager) RemoteControlOn() bool {
+	return m.options.RemoteControl
+}
+
+// WithRemoteControl puts --remote-control first in an interactive Claude's
+// arguments, so a session started in herdr (a start, a resume, one from
+// another device) can be followed and typed into from claude.ai and the
+// Claude app, whatever that machine's /config says. First, because its name
+// is optional: before a prompt it would take the prompt as the session's name.
+func WithRemoteControl(args []string) []string {
+	return append([]string{"--remote-control"}, args...)
+}
+
 // CopilotOn is whether GitHub Copilot CLI is turned on here: COPILOT_BIN=off
 // turns it off, so no agent starts or carries on in it.
 func (m *Manager) CopilotOn() bool {
